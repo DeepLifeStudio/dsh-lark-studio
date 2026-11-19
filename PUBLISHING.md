@@ -1,81 +1,47 @@
 # 发布与收录
 
-当前包名 `dsh-lark-studio`，版本 `1.1.0`。已具备：
+当前状态（2026-11-19）：
 
-- `dsh.bundle.patch`（可被 `dsh plugin add` 安装）
-- `engines.dsh`
-- `locale/en.json` + `locale/zh.json`（中英标题/简介）
-- `icon.svg` 和 `assets/icon-256.png`
-- `LICENSE`（MIT）
-- `README.md` 中的 `dsh plugin` 安装命令
+- 公开仓库：<https://github.com/DeepLifeStudio/dsh-lark-studio>
+- `main` 已推送，GitHub topic 已加：`dsh-plugin`
+- npm 包名 `dsh-lark-studio`，版本 `1.1.0`
+- `package.json` 已含 `repository` / `homepage` / `engines.dsh` / `dsh.bundle`
+- 还差：npm 发布；awesome-dsh-plugin 需要仓库创建满 1 天后才能过 CI（最早 2026-11-20 07:27 UTC）
 
-还差：公开 GitHub 仓库、`repository` / `homepage`、npm 发布。
+## 1. 发布到 npm
 
-## 1. 建公开仓库
-
-GitHub → New repository → 名称 `dsh-lark-studio` → **Public**，不要勾选初始化 README。
-然后在本目录执行（把 `<owner>` 换成你的 GitHub 用户名）：
-
-```bash
-git init -b main
-git add -A
-git commit -m "dsh-lark-studio 1.1.0"
-git remote add origin https://github.com/<owner>/dsh-lark-studio.git
-git push -u origin main
-```
-
-## 2. 加 GitHub topic
-
-仓库主页 → About 右侧齿轮 → Topics 填 `dsh-plugin` → Save。
-
-dsh-plugin.org 会扫这个 topic；dshopen.org 等社区索引也以它为主要入口。
-
-## 3. 补 package.json
-
-在 `repository` 和 `homepage` 写入真实地址（dsh-market 靠它关联 GitHub Stars）：
-
-```json
-"repository": {
-  "type": "git",
-  "url": "https://github.com/<owner>/dsh-lark-studio.git"
-},
-"homepage": "https://github.com/<owner>/dsh-lark-studio#readme"
-```
-
-## 4. 发布到 npm
-
-本机 npm registry 当前是 `https://registry.npmmirror.com`（只读镜像），发布必须显式指定官方源：
+本机 npm 当前未登录，且默认 registry 是 `https://registry.npmmirror.com`（只读镜像）。发布必须走官方源：
 
 ```bash
 npm login --registry=https://registry.npmjs.org
 npm publish --access public --registry=https://registry.npmjs.org
 ```
 
-发布前可先用 `npm pack --dry-run` 检查包内容。
+发布前可用 `npm pack --dry-run` 检查包内容。
 
-## 5. 提交 awesome-dsh-plugin
+## 2. 提交 awesome-dsh-plugin
 
-在 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提 PR，新增
-`data/plugins/<owner>__dsh-lark-studio.yml`：
+仓库满 1 天后，在 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提 PR，新增
+`data/plugins/DeepLifeStudio__dsh-lark-studio.yml`：
 
 ```yaml
-url: https://github.com/<owner>/dsh-lark-studio
-name: <owner>/dsh-lark-studio
+url: https://github.com/DeepLifeStudio/dsh-lark-studio
+name: DeepLifeStudio/dsh-lark-studio
 category: tools
+icon: https://raw.githubusercontent.com/DeepLifeStudio/dsh-lark-studio/main/assets/icon-256.png
 description:
   en: A Feishu/Lark workbench for DeepSeek Harness: build a Base from one sentence and operate calendar, tasks, chat, mail, and contacts from the sidebar.
   zh: 飞书智能工作台：一句话生成多维表格，并在侧栏处理日程、待办、群聊、邮件与通讯录。
 ```
 
-可选图标（GitHub 托管的 PNG/JPG/WebP，SVG 会被拒）：
+dshmarket.com 和 awesome-dsh-plugin.com 读的是同一份列表。
 
-```yaml
-icon: https://raw.githubusercontent.com/<owner>/dsh-lark-studio/main/assets/icon-256.png
-```
+## 3. dsh-plugin.org
 
-收录要求：仓库公开、`package.json` 声明 `dsh.bundle`、仓库创建满 1 天、描述与代码一致。
+它扫描 GitHub topic `dsh-plugin`，无需 PR；加 topic 后等待下一次刷新即可。如果几天后仍未出现，可在
+[dsh-plugin-hub issues](https://github.com/dshplugin/dsh-plugin-hub/issues) 用提交模板开一个 issue。
 
-## 6. 验证
+## 4. 验证
 
 ```bash
 dsh plugin --profile desktop add dsh-lark-studio

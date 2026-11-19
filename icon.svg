@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Lark Workbench">
+  <rect x="4" y="8" width="56" height="48" rx="11" fill="#2F6BFF"/>
+  <rect x="4" y="8" width="56" height="48" rx="11" fill="url(#g)"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3D7BFF"/>
+      <stop offset="1" stop-color="#1F4FD8"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.95">
+    <path d="M7 22.5h50"/>
+    <path d="M25.5 22.5v30"/>
+    <path d="M40 34.5v10"/>
+    <path d="M35 39.5h10"/>
+  </g>
+  <g fill="#FFFFFF" opacity="0.28">
+    <rect x="11" y="27" width="10" height="7" rx="2"/>
+    <rect x="11" y="38" width="10" height="7" rx="2"/>
+    <rect x="30" y="27" width="13" height="4" rx="2"/>
+    <rect x="45" y="27" width="8" height="4" rx="2"/>
+  </g>
+</svg>

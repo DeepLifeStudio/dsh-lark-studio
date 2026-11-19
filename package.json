@@ -1,0 +1,60 @@
+{
+  "name": "dsh-lark-studio",
+  "version": "1.1.0",
+  "type": "module",
+  "description": "Feishu/Lark workbench for DeepSeek Harness: build a Base from one sentence, or run calendar, tasks, chat, mail, and contacts from the sidebar.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DeepLifeStudio/dsh-lark-studio.git"
+  },
+  "homepage": "https://github.com/DeepLifeStudio/dsh-lark-studio#readme",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "lark",
+    "feishu",
+    "bitable",
+    "base",
+    "calendar",
+    "tasks",
+    "mail",
+    "contacts",
+    "workbench"
+  ],
+  "icon": "icon.svg",
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "ops.js",
+    "planner.js",
+    "adjust-planner.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "slots",
+        "locale",
+        "sidebarRight",
+        "sidebarRightTabs"
+      ]
+    }
+  }
+}

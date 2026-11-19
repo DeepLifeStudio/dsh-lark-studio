@@ -2,27 +2,24 @@
 
 当前状态（2026-11-19）：
 
-- 公开仓库：<https://github.com/DeepLifeStudio/dsh-lark-studio>
-- `main` 已推送，GitHub topic 已加：`dsh-plugin`
-- npm 包名 `dsh-lark-studio`，版本 `1.1.0`
-- `package.json` 已含 `repository` / `homepage` / `engines.dsh` / `dsh.bundle`
-- 还差：npm 发布；awesome-dsh-plugin 需要仓库创建满 1 天后才能过 CI（最早 2026-11-20 07:27 UTC）
+- GitHub：<https://github.com/DeepLifeStudio/dsh-lark-studio>
+- npm：<https://www.npmjs.com/package/dsh-lark-studio>（`1.1.0`，`latest`）
+- 首次发布产生的 `0.0.0-stage` 占位版本已 deprecate
+- dsh-plugin.org：等它扫描 `dsh-plugin` topic
+- awesome-dsh-plugin：仓库创建满 1 天后（2026-11-20 15:27 北京时间）提 PR
 
-## 1. 发布到 npm
-
-本机 npm 当前未登录，且默认 registry 是 `https://registry.npmmirror.com`（只读镜像）。发布必须走官方源：
+## 以后发新版本
 
 ```bash
-npm login --registry=https://registry.npmjs.org
+cd lark-workbench
+npm version patch
 npm publish --access public --registry=https://registry.npmjs.org
 ```
 
-> 账号开了 2FA 时，`npm publish` 会要求输入 6 位验证码；网页登录拿到的 token 不能绕过发布 2FA。
-> 如果 CLI 直接报 403，重新在终端执行并在提示时输入验证码，或使用带 **Bypass 2FA** 的 Granular Access Token。
+账号开了 2FA 时，`npm publish` 需要用带 **Bypass 2FA** 的 Granular Access Token，或在终端输入 6 位验证码。
+网页登录拿到的 token 不能直接发布；`Read and write (stage only)` 的 token 只能 `npm stage publish`。
 
-发布前可用 `npm pack --dry-run` 检查包内容。
-
-## 2. 提交 awesome-dsh-plugin
+## 提交 awesome-dsh-plugin
 
 仓库满 1 天后，在 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提 PR，新增
 `data/plugins/DeepLifeStudio__dsh-lark-studio.yml`：
@@ -39,12 +36,12 @@ description:
 
 dshmarket.com 和 awesome-dsh-plugin.com 读的是同一份列表。
 
-## 3. dsh-plugin.org
+## dsh-plugin.org
 
 它扫描 GitHub topic `dsh-plugin`，无需 PR；加 topic 后等待下一次刷新即可。如果几天后仍未出现，可在
 [dsh-plugin-hub issues](https://github.com/dshplugin/dsh-plugin-hub/issues) 用提交模板开一个 issue。
 
-## 4. 验证
+## 验证
 
 ```bash
 dsh plugin --profile desktop add dsh-lark-studio

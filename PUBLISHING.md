@@ -17,6 +17,9 @@ npm login --registry=https://registry.npmjs.org
 npm publish --access public --registry=https://registry.npmjs.org
 ```
 
+> 账号开了 2FA 时，`npm publish` 会要求输入 6 位验证码；网页登录拿到的 token 不能绕过发布 2FA。
+> 如果 CLI 直接报 403，重新在终端执行并在提示时输入验证码，或使用带 **Bypass 2FA** 的 Granular Access Token。
+
 发布前可用 `npm pack --dry-run` 检查包内容。
 
 ## 2. 提交 awesome-dsh-plugin

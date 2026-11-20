@@ -1,5 +1,7 @@
 # 飞书智能工作台 (Lark Workbench for DeepSeek Harness)
 
+[English](README_EN.md) | [简体中文](README.md)
+
 > **一句话，建一张表；一句话，调度飞书全域协同。**  
 > 专为 [DeepSeek Harness](https://github.com/deepseek-ai) 生态打造的大模型原生（LLM-Native）飞书全域协同与多维表格智能工作台插件。
 

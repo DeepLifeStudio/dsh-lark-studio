@@ -1,6 +1,6 @@
 {
   "name": "dsh-lark-studio",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "description": "Feishu/Lark workbench for DeepSeek Harness: build a Base from one sentence, or run calendar, tasks, chat, mail, and contacts from the sidebar.",
   "license": "MIT",
@@ -42,7 +42,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "README_EN.md"
   ],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },

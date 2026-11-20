@@ -110,23 +110,31 @@ function describe(result) {
 }
 
 function describePlan(plan) {
-  const lines = [`建议的多维表格：「${plan.baseName}」`]
-  if (plan.intro) lines.push(plan.intro)
-  for (const table of plan.tables) {
-    const fields = table.fields
-      .map((field) => {
-        if (field.type === 'select') {
-          return `${field.name}（单选：${field.options.map((option) => option.name).join('/')}）`
-        }
-        return `${field.name}（${field.type}）`
-      })
-      .join('、')
-    const extra = table.kanbanField ? `；看板按「${table.kanbanField}」分栏` : ''
-    lines.push(`- ${table.name}：${fields}${extra}`)
-    if (table.records.length > 0) lines.push(`  示例数据 ${table.records.length} 条`)
-  }
-  lines.push('确认无误后即可创建。')
-  lines.push('建好之后想加列、改选项、换视图，也能一句话继续改。')
+  const tbl = plan.tables?.[0]
+  const fields = tbl?.fields || []
+  const records = tbl?.records || []
+  const fieldNames = fields.map((f) => f.name)
+  const headerRow = `| ${fieldNames.join(' | ')} |`
+  const alignRow = `| ${fieldNames.map(() => '---').join(' | ')} |`
+  const sampleRows = records
+    .map((r) => `| ${fieldNames.map((fn) => (Array.isArray(r[fn]) ? r[fn].join(', ') : (r[fn] ?? '-'))).join(' | ')} |`)
+    .join('\n')
+
+  const lines = [
+    `### 📋 多维表格结构规划：「${plan.baseName}」`,
+    `> ${plan.intro || '已为您规划标准字段结构与示例数据'}`,
+    ``,
+    `**字段清单 (${fields.length} 列)**: ${fields.map((f) => `\`${f.name}\` (${f.type})`).join(' · ')}`,
+    ...(tbl?.kanbanField ? [`**看板视图**: 按「${tbl.kanbanField}」泳道分栏`] : []),
+    ``,
+    headerRow,
+    alignRow,
+    sampleRows || `| ${fieldNames.map(() => '-').join(' | ')} |`,
+    ``,
+    `💡 **在下方原生输入框继续完成**：`,
+    `- 需要微调？直接说：*“再加一列来源”*、*“把优先级改成高/中/低”*`,
+    `- 确认无误？直接说：*“确认建表”*，我将直接在您的飞书空间生成此表！`,
+  ]
   return lines.join('\n')
 }
 

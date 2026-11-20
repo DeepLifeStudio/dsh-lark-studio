@@ -3,7 +3,8 @@
 当前状态（2026-11-19）：
 
 - GitHub：<https://github.com/DeepLifeStudio/dsh-lark-studio>
-- npm：<https://www.npmjs.com/package/dsh-lark-studio>（`1.1.0`，`latest`）
+- npm：<https://www.npmjs.com/package/dsh-lark-studio>（`1.1.1`，`latest`）
+- `1.1.1` 包含英文 README（`README_EN.md`）和 Markdown 表格预览
 - 首次发布产生的 `0.0.0-stage` 占位版本已 deprecate
 - dsh-plugin.org：等它扫描 `dsh-plugin` topic
 - awesome-dsh-plugin：仓库创建满 1 天后（2026-11-20 15:27 北京时间）提 PR

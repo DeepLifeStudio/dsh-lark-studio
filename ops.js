@@ -729,7 +729,7 @@ export function createOperations({ ctx, config = {}, planner }) {
     }
     const record = { code: deviceCode, done: false, ok: false, message: undefined, startedAt: Date.now() }
     exchange = record
-    runJson(['auth', 'login', '--device-code', deviceCode])
+    runJson(['auth', 'login', '--device-code', deviceCode, '--json'])
       .then(async (result) => {
         if (result.ok) {
           const auth = await authStatus(undefined).catch(() => undefined)
@@ -950,6 +950,14 @@ export function createOperations({ ctx, config = {}, planner }) {
     return runJson(['contact', '+search-user', '--query', query || '', '--json', ...asArgs()], signal)
   }
 
+  async function docsSearch(query, signal) {
+    return runJson(['docs', '+search', '--query', query || '', '--json', ...asArgs()], signal)
+  }
+
+  async function wikiSpaceList(signal) {
+    return runJson(['wiki', '+space-list', '--json', ...asArgs()], signal)
+  }
+
   function parseModelJson(raw) {
     const text = typeof raw === 'string' ? raw : (raw?.text || raw?.content || '')
     if (!text || !text.trim()) return undefined
@@ -1102,22 +1110,24 @@ export function createOperations({ ctx, config = {}, planner }) {
 3. "get_chats": 查询或搜索用户加入的飞书群聊、讨论组、项目群。
 4. "get_mails": 查询邮件速览、近期重要邮件、收件箱。
 5. "search_contacts": 查找企业通讯录中的联系人/同事/邮箱/部门。需提供 "query" 字段（人名或关键词）。
-6. "suggest_create_table": 用户明确想要“新建/创建”一张飞书多维表格（Bitable Base）或业务数据表、台账。
-7. "reply": 不需要调用飞书 API，直接基于上下文回答用户。场景包括：
+6. "search_wiki": 搜索飞书团队知识库、云文档、在线规范、规章制度、文档内容。需提供 "query" 字段（关键词，如“规范”、“指南”等）。
+7. "list_spaces": 查询或列出团队拥有的知识库空间列表。
+8. "suggest_create_table": 用户明确想要“新建/创建”一张飞书多维表格（Bitable Base）或业务数据表、台账。
+9. "reply": 不需要调用飞书 API，直接基于上下文回答用户。场景包括：
    - 正常问答交流、日常对话、寒暄、致谢（如用户说“谢谢”、“好的”、“你好”等，请自然友好地回应）；
    - 格式化与排版需求（如“以表格的形式给出”、“转成Markdown表格”、“排成表格”）：必须在 "reply" 字段中，将上文中的飞书数据整理为美观整洁的 Markdown 表格！
    - 上下文追问、提问与统计（如“第二封邮件讲了什么”、“哪个会议最早”、“帮我写个回复”）；
    - 协作撰写建议、办公咨询等。
 
 核心推理规则：
-- 如果用户是在追问、质疑或要求重查上一轮数据（例如“确定吗？你再重新查一次”、“刷新一下”、“再搜搜”、“没有吗”、“你不查了吗”），请回溯对话历史，选择上一轮查询对应的 action（如 get_chats/get_calendar/get_mails/get_tasks 等）！
+- 如果用户是在追问、质疑或要求重查上一轮数据（例如“确定吗？你再重新查一次”、“刷新一下”、“再搜搜”、“没有吗”、“你不查了吗”），请回溯对话历史，选择上一轮查询对应的 action（如 get_chats/get_calendar/get_mails/get_tasks/search_wiki 等）！
 - 如果用户要求“以表格的形式给出”或类似排版指令，动作必须为 "reply"，并在 "reply" 字段中输出包含 Markdown 表格的回答，严禁选 suggest_create_table。
 - 如果用户只是在进行正常问答、对话或致谢，动作必须为 "reply"，直接给出自然对话回复，绝对不要调用任何飞书查询工具！
 
 请只输出合法的 JSON 对象，不要输出代码块外部的文字：
 {
-  "action": "get_calendar" | "get_tasks" | "get_chats" | "get_mails" | "search_contacts" | "suggest_create_table" | "reply",
-  "query": "搜索关键词（仅 search_contacts 需要）",
+  "action": "get_calendar" | "get_tasks" | "get_chats" | "get_mails" | "search_contacts" | "search_wiki" | "list_spaces" | "suggest_create_table" | "reply",
+  "query": "搜索关键词（search_contacts 与 search_wiki 需要）",
   "reply": "当 action 为 reply 时的回答内容（支持 Markdown）"
 }`
 
@@ -1375,6 +1385,60 @@ export function createOperations({ ctx, config = {}, planner }) {
         reply: `👤 为您找到以下飞书联系人：\n\n${lines.join('\n')}`,
         summary: `已找到 ${users.length} 位联系人`,
         data: users,
+      }
+    }
+
+    // 9. 知识库与云文档检索
+    if (chosenAction === 'search_wiki' || (isOffline && /知识库|文档|wiki|规范|指南|手册|制度/i.test(text))) {
+      let q = agentDecision?.query || text.replace(/在团队知识库中搜索|在知识库中搜索|知识库|搜索|查一下|查找|查|搜/g, '').trim()
+      if (!q) q = '规范'
+      const res = await docsSearch(q, signal)
+      if (!res.ok) {
+        if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
+          return scopeError('docs', res.error?.missing_scopes || ['wiki:space:read', 'search:docs:read'], '知识库与云文档', '文档')
+        }
+        return { ok: false, type: 'answer', reply: `检索知识库与文档失败：${res.message || '未知错误'}` }
+      }
+      const results = res.value?.data?.results || res.value?.results || []
+      if (!Array.isArray(results) || results.length === 0) {
+        return {
+          ok: true,
+          type: 'collab',
+          domain: 'wiki',
+          reply: `📚 知识库与文档检索：\n\n未检索到与「${q}」相关的文档或知识库内容。建议更换关键词重试。`,
+          summary: '未找到相关文档',
+        }
+      }
+      const lines = results.slice(0, 5).map((item, i) => {
+        const title = (item.title_highlighted || item.result_meta?.title || '未命名文档').replace(/<\/?h>/g, '')
+        const url = item.result_meta?.url || ''
+        const summary = (item.summary_highlighted || '').replace(/<\/?h>/g, '')
+        const link = url ? `[${title}](${url})` : title
+        return `${i + 1}. 📄 **${link}**\n   ${summary || '暂无摘要'}`
+      })
+      return {
+        ok: true,
+        type: 'collab',
+        domain: 'wiki',
+        reply: `📚 为您在飞书知识库与云文档中找到以下与「${q}」相关的内容：\n\n${lines.join('\n\n')}`,
+        summary: `已找到 ${results.length} 篇相关文档`,
+        data: results,
+      }
+    }
+
+    if (chosenAction === 'list_spaces' || (isOffline && /知识库列表|有哪些知识库|知识库空间/i.test(text))) {
+      const res = await wikiSpaceList(signal)
+      if (res.ok && res.value?.data?.spaces) {
+        const spaces = res.value.data.spaces
+        const lines = spaces.map((sp, i) => `${i + 1}. 📚 **${sp.name}** (${sp.space_type === 'team' ? '团队知识库' : '个人知识库'})`)
+        return {
+          ok: true,
+          type: 'collab',
+          domain: 'wiki',
+          reply: `📚 为您找到以下飞书知识库空间：\n\n${lines.join('\n')}`,
+          summary: `已查询到 ${spaces.length} 个知识库`,
+          data: spaces,
+        }
       }
     }
 
@@ -2547,6 +2611,8 @@ export function createOperations({ ctx, config = {}, planner }) {
     mailSend,
     mailReply,
     contactSearch,
+    docsSearch,
+    wikiSpaceList,
     dispatchCollab,
     installCommand: INSTALL_COMMAND,
   }

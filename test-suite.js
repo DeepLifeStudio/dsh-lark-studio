@@ -6,6 +6,7 @@ import assert from 'node:assert'
 import { spawn } from 'node:child_process'
 import { sanitizeOps, createAdjustPlanner } from './adjust-planner.js'
 import { destructiveChanges, createOperations } from './ops.js'
+import { verifyApiSecurity } from './index.js'
 
 console.log('🚀 开始执行飞书工作台多维表格全功能自动化测试...\n')
 
@@ -609,6 +610,120 @@ test('9.3 前端多态自适应逻辑校验 (isTableMode 判定与操作栏收�
 
   assert.deepStrictEqual(getHeaderActions(tableSession), ['同步数据', '复制链接', '展开表格', '外部打开'])
   assert.deepStrictEqual(getHeaderActions(collabSession), ['清空对话'])
+})
+
+test('9.4 飞书全域协同指令与 lark_collab 调度验证', async () => {
+  const ops = createOperations({ ctx: { subprocess: realSubprocess } }, process.cwd())
+  const res = await ops.dispatchCollab({ instruction: '查一下我今天的日程安排与会议' })
+  assert.strictEqual(res.ok, true)
+  assert.strictEqual(res.domain, 'calendar')
+  assert.ok(typeof res.reply === 'string' && res.reply.length > 0)
+})
+
+test('9.5 飞书团队知识库与云文档检索调度验证', async () => {
+  const ops = createOperations({ ctx: { subprocess: realSubprocess } }, process.cwd())
+  const res = await ops.dispatchCollab({ instruction: '在团队知识库中搜索最新规范' })
+  assert.strictEqual(res.ok, true)
+  assert.strictEqual(res.domain, 'wiki')
+  assert.ok(typeof res.reply === 'string' && res.reply.includes('知识库'))
+})
+
+test('10.1 Host 与 Origin 安全边界防护测试 (全方法拦截外域与跨站伪造)', () => {
+  const mockCtx = {
+    webServer: {
+      getOrigin: () => 'http://127.0.0.1:49152'
+    }
+  }
+
+  // 1. 正常本地请求通过
+  const validReq = {
+    method: 'GET',
+    headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152' }
+  }
+  const res1 = verifyApiSecurity(validReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
+  assert.strictEqual(res1.ok, true)
+
+  // 2. 缺少 Host 头直接拦截 403
+  const noHostReq = {
+    method: 'GET',
+    headers: { origin: 'http://127.0.0.1:49152' }
+  }
+  const res2 = verifyApiSecurity(noHostReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
+  assert.strictEqual(res2.ok, false)
+  assert.strictEqual(res2.status, 403)
+
+  // 3. DNS Rebinding 外网 Host 拦截 403
+  const badHostReq = {
+    method: 'GET',
+    headers: { host: 'attacker.com' }
+  }
+  const res3 = verifyApiSecurity(badHostReq, new URL('http://attacker.com/dsh-lark/api/state'), mockCtx)
+  assert.strictEqual(res3.ok, false)
+  assert.strictEqual(res3.status, 403)
+
+  // 4. 浏览器 Cross-Site 标记拦截 403
+  const crossSiteReq = {
+    method: 'POST',
+    headers: { host: '127.0.0.1:49152', 'sec-fetch-site': 'cross-site' }
+  }
+  const res4 = verifyApiSecurity(crossSiteReq, new URL('http://127.0.0.1:49152/dsh-lark/api/adjust'), mockCtx)
+  assert.strictEqual(res4.ok, false)
+  assert.strictEqual(res4.status, 403)
+
+  // 5. 非法 Origin 拦截 403 (GET / POST 全方法生效)
+  const badOriginReq = {
+    method: 'GET',
+    headers: { host: '127.0.0.1:49152', origin: 'https://evil.site' }
+  }
+  const res5 = verifyApiSecurity(badOriginReq, new URL('http://127.0.0.1:49152/dsh-lark/api/records'), mockCtx)
+  assert.strictEqual(res5.ok, false)
+  assert.strictEqual(res5.status, 403)
+})
+
+test('10.2 DSH 会话身份验证测试 (ctx.sessions 拦截未授权访问)', () => {
+  const fakeSession = { id: 'session-valid-12345', cwd: '/workspace' }
+  const mockCtx = {
+    webServer: { getOrigin: () => 'http://127.0.0.1:49152' },
+    sessions: {
+      get: (id) => (id === 'session-valid-12345' ? fakeSession : undefined),
+      list: () => [fakeSession]
+    }
+  }
+
+  // 1. 未携带 x-dsh-session-id 拦截 401
+  const reqNoSession = {
+    method: 'GET',
+    headers: { host: '127.0.0.1:49152' }
+  }
+  const res1 = verifyApiSecurity(reqNoSession, new URL('http://127.0.0.1:49152/dsh-lark/api/records'), mockCtx)
+  assert.strictEqual(res1.ok, false)
+  assert.strictEqual(res1.status, 401)
+  assert.ok(res1.error.includes('会话鉴权失败'))
+
+  // 2. 伪造或过期的 session id 拦截 401
+  const reqBadSession = {
+    method: 'POST',
+    headers: { host: '127.0.0.1:49152', 'x-dsh-session-id': 'session-fake-99999' }
+  }
+  const res2 = verifyApiSecurity(reqBadSession, new URL('http://127.0.0.1:49152/dsh-lark/api/adjust'), mockCtx)
+  assert.strictEqual(res2.ok, false)
+  assert.strictEqual(res2.status, 401)
+
+  // 3. 携带合法 x-dsh-session-id 鉴权通过
+  const reqGoodSession = {
+    method: 'GET',
+    headers: { host: '127.0.0.1:49152', 'x-dsh-session-id': 'session-valid-12345' }
+  }
+  const res3 = verifyApiSecurity(reqGoodSession, new URL('http://127.0.0.1:49152/dsh-lark/api/records'), mockCtx)
+  assert.strictEqual(res3.ok, true)
+
+  // 4. URL query 参数携带合法 sessionId 鉴权通过
+  const reqQuerySession = {
+    method: 'GET',
+    headers: { host: '127.0.0.1:49152' }
+  }
+  const res4 = verifyApiSecurity(reqQuerySession, new URL('http://127.0.0.1:49152/dsh-lark/api/records?sessionId=session-valid-12345'), mockCtx)
+  assert.strictEqual(res4.ok, true)
 })
 
 Promise.all(pendingTests).then(() => {

@@ -39,6 +39,48 @@ window.__ModuleLoader__.load({
     const NS = 'dsh-lark-studio'
     const RECENT_KEY = 'dsh-lark-recent'
 
+    let currentDshSessionId = ''
+
+    function resolveDshSessionId(props, ctx) {
+      if (props && props.sessionId) return String(props.sessionId)
+      if (props && props.session && props.session.id) return String(props.session.id)
+      if (props && props.isStandalone) return 'desktop-workbench'
+      try {
+        const fromMounted = ctx && ctx.sidebarRight && ctx.sidebarRight.mounted && typeof ctx.sidebarRight.mounted.getSnapshot === 'function'
+          ? ctx.sidebarRight.mounted.getSnapshot()
+          : undefined
+        if (fromMounted) return String(fromMounted)
+      } catch {}
+      try {
+        const cur = localStorage.getItem('dsh.sessions.current')
+        if (cur) return cur
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k && k.startsWith('dsh.conversation.')) {
+            const id = k.replace(/^dsh\.conversation\./, '')
+            if (id) return id
+          }
+        }
+      } catch {}
+      return 'desktop-workbench'
+    }
+
+    function authFetch(url, options = {}) {
+      const sid = currentDshSessionId || resolveDshSessionId()
+      let targetUrl = url
+      if (sid && typeof targetUrl === 'string' && targetUrl.includes('/dsh-lark/api')) {
+        const sep = targetUrl.includes('?') ? '&' : '?'
+        if (!targetUrl.includes('sessionId=')) {
+          targetUrl = `${targetUrl}${sep}sessionId=${encodeURIComponent(sid)}`
+        }
+      }
+      const headers = new Headers(options.headers || {})
+      if (sid && !headers.has('x-dsh-session-id')) {
+        headers.set('x-dsh-session-id', sid)
+      }
+      return fetch(targetUrl, { ...options, headers })
+    }
+
     // ── Content ────────────────────────────────────────────────────────────
 
     const SCENARIOS = [
@@ -539,9 +581,9 @@ window.__ModuleLoader__.load({
   --lw-ink-3:#7C7568;
   --lw-line:rgba(25,23,19,.08);
   --lw-line-2:rgba(25,23,19,.15);
-  --lw-accent:#2B4FE0;
-  --lw-accent-2:#1E3BB0;
-  --lw-accent-soft:rgba(43,79,224,.07);
+  --lw-accent:#3370FF;
+  --lw-accent-2:#245BDB;
+  --lw-accent-soft:rgba(51,112,255,.08);
   --lw-solid:#1A1813;
   --lw-solid-hover:#2E2A22;
   --lw-solid-ink:#FBFAF7;
@@ -824,18 +866,18 @@ window.__ModuleLoader__.load({
   transition:border-color var(--fast) var(--ease),box-shadow 260ms var(--ease);
 }
 .lw-composer:focus-within{
-  border-color:color-mix(in srgb,var(--lw-accent) 40%,transparent);
-  box-shadow:0 0 0 4px var(--lw-accent-soft),var(--lw-e3);
+  border-color:color-mix(in srgb,var(--lw-ink) 35%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--lw-ink) 6%,transparent),var(--lw-e3);
 }
 .lw-composer-area{
-  font:inherit;font-size:15px;line-height:1.72;color:var(--lw-ink);
-  width:100%;min-height:76px;padding:19px 22px 4px;border:0;background:transparent;
-  outline:none;resize:none;display:block;
+  font:inherit;font-size:14.5px;line-height:1.6;color:var(--lw-ink);
+  width:100%;min-height:56px;padding:14px 18px 4px;border:0;background:transparent;
+  outline:none;resize:none;display:block;box-sizing:border-box;
 }
 .lw-composer-area::placeholder{color:color-mix(in srgb,var(--lw-ink) 38%,transparent)}
 .lw-composer-bar{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:10px 12px 12px 20px;border-top:1px solid var(--lw-line);
+  padding:8px 12px 10px 18px;border-top:1px solid var(--lw-line);
 }
 .lw-trust{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--lw-ink-3)}
 .lw-composer-right{display:flex;align-items:center;gap:10px;margin-left:auto}
@@ -874,6 +916,7 @@ window.__ModuleLoader__.load({
 .lw-preview-title{font-size:24px;font-weight:600;letter-spacing:-.026em;color:var(--lw-ink);margin:0;line-height:1.3}
 .lw-preview-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--lw-ink-3);margin-top:7px;font-variant-numeric:tabular-nums}
 .lw-preview-sep{opacity:.45}
+.lw-preview-scroll{flex:1 1 auto;overflow-y:auto;padding:24px 20px;min-height:0;width:100%;background:var(--lw-bg);display:flex;flex-direction:column;align-items:center}
 
 /* ── Real table + console stage ───────────────────────────────────────── */
 .lw.is-workspace{
@@ -1063,13 +1106,13 @@ window.__ModuleLoader__.load({
   width:36px;
   height:36px;
   border-radius:10px;
-  background:linear-gradient(135deg, #2b5aed 0%, #3370ff 50%, #7052ff 100%);
-  color:#ffffff;
+  background:var(--lw-solid);
+  color:var(--lw-solid-ink);
   display:flex;
   align-items:center;
   justify-content:center;
   flex:none;
-  box-shadow:0 3px 10px rgba(51,112,255,.28);
+  box-shadow:0 2px 6px rgba(24,20,14,.18);
 }
 .lw-hero-title-wrap{
   display:flex;
@@ -1122,23 +1165,23 @@ window.__ModuleLoader__.load({
 }
 .lw-hero-hint-pill{
   border:1px solid var(--lw-line);
-  background:var(--lw-surface-2);
-  color:var(--lw-ink);
-  padding:6px 13px;
-  border-radius:20px;
+  background:var(--lw-surface);
+  color:var(--lw-ink-2);
+  padding:5px 12px;
+  border-radius:9px;
   font-size:12.5px;
+  font-weight:500;
   cursor:pointer;
-  transition:all .15s ease;
+  transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease);
   display:inline-flex;
   align-items:center;
   gap:6px;
+  box-shadow:0 1px 1px rgba(24,20,14,.02);
 }
 .lw-hero-hint-pill:hover{
-  background:var(--lw-surface);
-  border-color:var(--lw-accent);
-  color:var(--lw-accent);
-  transform:translateY(-1px);
-  box-shadow:0 2px 6px rgba(0,0,0,.04);
+  background:var(--lw-surface-2);
+  border-color:color-mix(in srgb,var(--lw-ink) 18%,transparent);
+  color:var(--lw-ink);
 }
 .lw-msg{
   display:flex;
@@ -1157,13 +1200,13 @@ window.__ModuleLoader__.load({
   align-items:flex-end;
 }
 .lw-msg-user .lw-msg-text{
-  background:var(--lw-accent);
-  color:#ffffff;
+  background:var(--lw-solid);
+  color:var(--lw-solid-ink);
   padding:10px 16px;
   border-radius:18px 18px 4px 18px;
   font-size:13.5px;
   line-height:1.5;
-  box-shadow:0 2px 10px color-mix(in srgb, var(--lw-accent) 25%, transparent);
+  box-shadow:0 1px 3px rgba(24,20,14,.12);
 }
 .lw-msg-ai{
   align-self:flex-start;
@@ -1799,6 +1842,25 @@ window.__ModuleLoader__.load({
 @media (prefers-reduced-motion:reduce){
   .lw *,.lw *::before,.lw *::after{animation-duration:0s!important;transition-duration:0s!important}
 }
+
+/* ── Hide host conversation bottom composer when Workbench is active ── */
+body:has(.lw) [data-composer-seat],
+body:has(.lw) [data-conversation-region="composer"],
+body:has(.lw) [class*="composerSeat"],
+body:has(.lw) [class*="composerStack"] {
+  display: none !important;
+}
+body:has(.lw) [data-conversation-scroll] {
+  overflow-y: hidden !important;
+}
+body:has(.lw) [data-slot="conversation.session"],
+body:has(.lw) [class*="viewArea"] {
+  height: 100% !important;
+  flex: 1 1 100% !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
 `
 
     // ── i18n ───────────────────────────────────────────────────────────────
@@ -2008,6 +2070,112 @@ window.__ModuleLoader__.load({
         h('path', { d: 'M9.2 9.4v10.2' }),
         h('path', { d: 'M14.6 13.2v3.4' }),
         h('path', { d: 'M12.9 14.9h3.4' }),
+      )
+    }
+
+    function UnifiedComposer({
+      value = '',
+      onChange = () => {},
+      onSubmit = () => {},
+      placeholder = '',
+      busy = false,
+      busyText = '处理中…',
+      buttonText = '发送',
+      disabled = false,
+      models = [],
+      selectedModel = null,
+      modelKey = (m) => (m ? `${m.provider || ''}:${m.id || ''}` : ''),
+      changeModel = () => {},
+      trustText = '直连你的飞书账号，安全隐私仅自己可见',
+      minHeight = 60,
+      id = 'lw-composer-input',
+      ariaLabel = '输入框',
+      inputRef = null,
+    }) {
+      return h(
+        'div',
+        { className: `lw-composer${busy ? ' is-busy' : ''}` },
+        h('textarea', {
+          id,
+          ref: inputRef,
+          className: 'lw-composer-area',
+          style: { minHeight: `${minHeight}px` },
+          value,
+          placeholder,
+          'aria-label': ariaLabel,
+          'aria-busy': busy ? 'true' : undefined,
+          readOnly: Boolean(busy),
+          spellCheck: false,
+          onChange: (event) => onChange(event.target.value),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey || !event.shiftKey)) {
+              event.preventDefault()
+              if (value.trim().length >= 1 && !busy && !disabled) {
+                onSubmit(value)
+              }
+            }
+          },
+        }),
+        h(
+          'div',
+          { className: 'lw-composer-bar' },
+          h(
+            'span',
+            { className: 'lw-trust' },
+            h(Icon, { name: 'lock', size: 12 }),
+            h('span', null, trustText),
+          ),
+          h(
+            'div',
+            { className: 'lw-composer-right', style: { display: 'flex', alignItems: 'center', gap: 8 } },
+            h(
+              'div',
+              { className: 'lw-model-picker', title: '切换当前使用的 AI 模型' },
+              h(
+                'select',
+                {
+                  value: modelKey(selectedModel),
+                  onChange: (e) => changeModel(e.target.value),
+                  disabled: Boolean(busy),
+                },
+                !models || models.length === 0
+                  ? [h('option', { key: 'empty', value: '' }, '加载模型中…')]
+                  : models.map((m) =>
+                      h(
+                        'option',
+                        { key: modelKey(m), value: modelKey(m) },
+                        m.name + (m.kind ? ` ${m.kind}` : ''),
+                      ),
+                    ),
+              ),
+              h(
+                'span',
+                { className: 'lw-model-picker-arrow' },
+                h(Icon, { name: 'chevronDown', size: 12 }),
+              ),
+            ),
+            busy
+              ? h(
+                  'span',
+                  { className: 'lw-busy-inline', role: 'status' },
+                  h('span', { className: 'lw-dot is-busy' }),
+                  busyText,
+                )
+              : h(
+                  Button,
+                  {
+                    key: 'submit-btn',
+                    variant: 'primary',
+                    size: 'sm',
+                    disabled: Boolean(busy) || disabled || !value.trim(),
+                    onClick: () => {
+                      if (value.trim() && !busy && !disabled) onSubmit(value)
+                    },
+                  },
+                  buttonText,
+                ),
+          ),
+        ),
       )
     }
 
@@ -2516,12 +2684,14 @@ window.__ModuleLoader__.load({
       }, [busy])
 
       const post = useCallback(async (path, body) => {
-        const response = await fetch(`${API}${path}`, {
+        const response = await authFetch(`${API}${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body ?? {}),
         })
-        return response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }))
+        const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }))
+        if (data && !data.message && data.error) data.message = data.error
+        return data
       }, [])
 
       const copyInstall = useCallback(() => {
@@ -2576,8 +2746,18 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setError(null)
         try {
+          const curState = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
+          if (curState && curState.stage === 'ready' && curState.auth && curState.auth.userReady) {
+            onRecheck()
+            return
+          }
           const payload = await post('/connect/login/finish', { deviceCode })
           if (payload.ok) {
+            onRecheck()
+            return
+          }
+          const afterState = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
+          if (afterState && afterState.stage === 'ready' && afterState.auth && afterState.auth.userReady) {
             onRecheck()
             return
           }
@@ -2592,7 +2772,7 @@ window.__ModuleLoader__.load({
             const deadline = Date.now() + 20000
             while (Date.now() < deadline) {
               await new Promise((resolve) => setTimeout(resolve, 1200))
-              const state = await fetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
+              const state = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
               if (state && state.ok) {
                 onRecheck()
                 return
@@ -3128,6 +3308,10 @@ window.__ModuleLoader__.load({
     // ── Panel ──────────────────────────────────────────────────────────────
 
     function Workbench(props) {
+      if (props) {
+        const resolved = resolveDshSessionId(props, props.ctx)
+        if (resolved) currentDshSessionId = resolved
+      }
       const t = useMemo(() => translator(props), [props.t])
       const theme = useHostTheme()
       const [stage, setStage] = useState('pick')
@@ -3234,7 +3418,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let isMount = true
-        fetch('/dsh-lark/api/models')
+        authFetch('/dsh-lark/api/models')
           .then((r) => r.json())
           .then((data) => {
             if (isMount && data && data.ok && Array.isArray(data.models) && data.models.length > 0) {
@@ -3320,12 +3504,33 @@ window.__ModuleLoader__.load({
         }
       }, [props.sessionId, realTable])
 
+      const lastSyncedActiveRef = useRef(null)
+
       const refreshHealth = useCallback(async () => {
         try {
-          const payload = await fetch(`${API}/state`).then((response) => response.json())
+          const payload = await authFetch(`${API}/state`).then((response) => response.json())
           if (alive.current) {
             setHealth(payload)
             setError(null)
+            if (payload && payload.active && payload.active.updatedAt) {
+              const incoming = payload.active
+              if (!lastSyncedActiveRef.current || incoming.updatedAt > (lastSyncedActiveRef.current.updatedAt || 0)) {
+                lastSyncedActiveRef.current = incoming
+                if (incoming.preview && incoming.plan) {
+                  setPlan(incoming.plan)
+                  setStage('preview')
+                } else if (incoming.url) {
+                  setActive(incoming)
+                  setStage('view')
+                  try {
+                    const existing = readRecent()
+                    const next = [incoming, ...existing.filter((e) => e.url !== incoming.url)].slice(0, 8)
+                    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+                    setRecent(next)
+                  } catch {}
+                }
+              }
+            }
           }
         } catch {
           if (alive.current) setHealth({ stage: 'unknown' })
@@ -3335,8 +3540,12 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         alive.current = true
         refreshHealth()
+        const timer = setInterval(() => {
+          if (alive.current) refreshHealth()
+        }, 3000)
         return () => {
           alive.current = false
+          clearInterval(timer)
         }
       }, [refreshHealth])
 
@@ -3355,11 +3564,40 @@ window.__ModuleLoader__.load({
         }
       }, [stage, history, busy, liveReasoning])
 
+      // Hide host conversation bottom composer when Workbench is active in conversation
+      useEffect(() => {
+        const findAndHide = () => {
+          const seats = document.querySelectorAll(
+            '[data-composer-seat], [data-conversation-region="composer"], [class*="composerSeat"], [class*="composerStack"]'
+          )
+          seats.forEach((seat) => {
+            if (seat && !seat.dataset.lwHidden) {
+              seat.dataset.lwHidden = 'true'
+              seat.style.setProperty('display', 'none', 'important')
+            }
+          })
+        }
+        findAndHide()
+        const timer = setInterval(findAndHide, 250)
+        return () => {
+          clearInterval(timer)
+          const seats = document.querySelectorAll(
+            '[data-composer-seat], [data-conversation-region="composer"], [class*="composerSeat"], [class*="composerStack"]'
+          )
+          seats.forEach((seat) => {
+            if (seat && seat.dataset.lwHidden === 'true') {
+              delete seat.dataset.lwHidden
+              seat.style.removeProperty('display')
+            }
+          })
+        }
+      }, [])
+
       const connected = Boolean(health && health.stage === 'ready' && health.auth && health.auth.userReady)
       const toolOk = !health || !health.cli || health.cli.available !== false
 
       const post = useCallback(async (path, body) => {
-        const response = await fetch(`${API}${path}`, {
+        const response = await authFetch(`${API}${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
@@ -3442,7 +3680,7 @@ window.__ModuleLoader__.load({
         try {
           const query = new URLSearchParams({ token, limit: '12' })
           if (item.table) query.set('table', item.table)
-          const payload = await fetch(`${API}/records?${query.toString()}`, { signal: controller.signal })
+          const payload = await authFetch(`${API}/records?${query.toString()}`, { signal: controller.signal })
             .then((response) => response.json())
           if (!alive.current) return
           if (payload && payload.ok) {
@@ -3491,7 +3729,7 @@ window.__ModuleLoader__.load({
         try {
           const query = new URLSearchParams({ token, limit: '12' })
           if (item.table) query.set('table', item.table)
-          const res = await fetch(`${API}/records?${query}`).then((r) => r.json())
+          const res = await authFetch(`${API}/records?${query}`).then((r) => r.json())
           if (alive.current && res && res.ok) {
             setLive({
               ok: true,
@@ -3636,7 +3874,7 @@ window.__ModuleLoader__.load({
         try {
           let payload
           if (isCollab && typeof window !== 'undefined' && window.fetch) {
-            const resp = await fetch(`${API}/adjust`, {
+            const resp = await authFetch(`${API}/adjust`, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({
@@ -3749,7 +3987,7 @@ window.__ModuleLoader__.load({
               await applyAdjust(s, { collab: true })
               return
             }
-            setError(payload?.message || t('error.title'))
+            setError(payload?.message || payload?.error || t('error.title'))
           } catch (err) {
             if (alive.current) {
               setError(err instanceof Error ? err.message : String(err))
@@ -3839,7 +4077,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (showAccountModal) {
-          fetch(`${API}/connect/scopes`)
+          authFetch(`${API}/connect/scopes`)
             .then((r) => r.json())
             .then((data) => {
               if (data && data.ok) setScopesInfo(data)
@@ -3970,91 +4208,30 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'lw-own' },
-            h(
-              'div',
-              { className: `lw-composer${planning ? ' is-busy' : ''}` },
-              h('textarea', {
-                id: 'lw-own',
-                className: 'lw-composer-area',
-                value: sentence,
-                placeholder: t('pick.placeholder'),
-                'aria-label': t('pick.own'),
-                'aria-busy': planning ? 'true' : undefined,
-                readOnly: planning,
-                spellCheck: false,
-                onChange: (event) => {
-                  setSentence(event.target.value)
-                  setError(null)
-                },
-                onKeyDown: (event) => {
-                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault()
-                    planFor(sentence)
-                  }
-                },
-              }),
-              h(
-                'div',
-                { className: 'lw-composer-bar' },
-                h(
-                  'span',
-                  { className: 'lw-trust' },
-                  h(Icon, { name: 'lock', size: 12 }),
-                  h('span', null, t('pick.trust')),
-                ),
-                h(
-                  'div',
-                  { className: 'lw-composer-right', style: { display: 'flex', alignItems: 'center', gap: 8 } },
-                  h(
-                    'div',
-                    { className: 'lw-model-picker', title: '切换当前使用的 AI 模型' },
-                    h(
-                      'select',
-                      {
-                        value: modelKey(selectedModel),
-                        onChange: (e) => changeModel(e.target.value),
-                        disabled: Boolean(busy),
-                      },
-                      models.length === 0
-                        ? [h('option', { key: 'empty', value: '' }, '加载模型中…')]
-                        : models.map((m) =>
-                            h(
-                              'option',
-                              { key: modelKey(m), value: modelKey(m) },
-                              m.name + (m.kind ? ` ${m.kind}` : ''),
-                            ),
-                          ),
-                    ),
-                    h(
-                      'span',
-                      { className: 'lw-model-picker-arrow' },
-                      h(Icon, { name: 'chevronDown', size: 12 }),
-                    ),
-                  ),
-                  planning
-                    ? h(
-                        'span',
-                        { className: 'lw-busy-inline', role: 'status' },
-                        h('span', { className: 'lw-dot is-busy' }),
-                        t('busy.planning'),
-                      )
-                    : [
-                        h('kbd', { className: 'lw-kbd', key: 'kbd' }, t('pick.shortcut')),
-                        h(
-                          Button,
-                          {
-                            key: 'go',
-                            variant: 'primary',
-                            size: 'sm',
-                            disabled: Boolean(busy) || !sentence.trim() || !toolOk,
-                            onClick: () => planFor(sentence),
-                          },
-                          t('pick.submit'),
-                        ),
-                      ],
-                ),
-              ),
-            ),
+            h(UnifiedComposer, {
+              value: sentence,
+              onChange: (val) => {
+                setSentence(val)
+                setError(null)
+              },
+              onSubmit: () => {
+                if (sentence.trim().length >= 2) planFor(sentence)
+              },
+              placeholder: t('pick.placeholder'),
+              busy: planning,
+              busyText: t('busy.planning'),
+              buttonText: '生成预览',
+              disabled: !toolOk || sentence.trim().length < 2,
+              models,
+              selectedModel,
+              modelKey,
+              changeModel,
+              trustText: t('pick.trust'),
+              minHeight: 76,
+              id: 'lw-own',
+              ariaLabel: t('pick.own'),
+            }),
+          ),
           error
             ? h(Banner, {
                 tone: 'error',
@@ -4092,31 +4269,30 @@ window.__ModuleLoader__.load({
                   ),
                 ),
               ),
-        ),
-        planning
-          ? h(
-              'div',
-              { className: 'lw-planning', 'aria-live': 'polite' },
-              h('p', { className: 'lw-meta' }, t('busy.planningSub')),
-              h(TableSkeleton),
-            )
-          : h(Recent, {
-              items: recent,
-              t,
-              onOpen: openRecent,
-              onForget: forgetRecent,
-              disabled: Boolean(busy) || !toolOk,
-            }),
-      )
+          planning
+            ? h(
+                'div',
+                { className: 'lw-planning', 'aria-live': 'polite' },
+                h('p', { className: 'lw-meta' }, t('busy.planningSub')),
+                h(TableSkeleton),
+              )
+            : h(Recent, {
+                items: recent,
+                t,
+                onOpen: openRecent,
+                onForget: forgetRecent,
+                disabled: Boolean(busy) || !toolOk,
+              }),
+        )
       } else if (stage === 'preview' && plan) {
         const primaryTable = plan.tables[0]
         const totalCols = plan.tables.reduce((sum, tbl) => sum + tbl.fields.length, 0)
         const totalRows = primaryTable ? (primaryTable.records ?? []).length : 0
         const hasKanban = plan.tables.some((tbl) => Boolean(tbl.kanbanField))
 
-        content = h(
+        const previewCard = h(
           'section',
-          { className: 'lw-card' },
+          { className: 'lw-card', style: { width: '100%', maxWidth: 1040, margin: '0 auto' } },
           h(
             'div',
             { className: 'lw-preview-head' },
@@ -4165,33 +4341,109 @@ window.__ModuleLoader__.load({
           showDetails
             ? plan.tables.map((table) => h(Legend, { key: `legend-${table.name}`, table }))
             : null,
+        )
+
+        const tweakDock = h(
+          'div',
+          { className: 'lw-ws-dock' },
           h(
             'div',
-            { className: 'lw-tweak-row' },
-            h('input', {
-              id: 'lw-tweak',
-              type: 'text',
-              className: 'lw-input',
-              value: tweakText,
-              placeholder: t('preview.tweakPlaceholder'),
-              spellCheck: false,
-              onChange: (event) => setTweakText(event.currentTarget.value),
-              onKeyDown: (event) => {
-                if (event.key === 'Enter' && tweakText.trim()) {
-                  event.preventDefault()
-                  refine(tweakText)
-                }
-              },
-            }),
+            { className: 'lw-composer-wrap', style: { maxWidth: 1040 } },
             h(
-              Button,
-              {
-                disabled: Boolean(busy) || !tweakText.trim(),
-                onClick: () => refine(tweakText),
+              'div',
+              { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 4 } },
+              h('span', { style: { fontSize: 12, color: 'var(--lw-ink-3)', marginRight: 2 } }, '快捷调整:'),
+              [
+                { label: '+ 加一列状态', prompt: '增加一列「状态」，单选：待处理/进行中/已完成' },
+                { label: '+ 加一列负责人', prompt: '增加一列「负责人」，关联团队成员' },
+                { label: '+ 增加优先级', prompt: '增加一列「优先级」，单选：高/中/低' },
+                { label: '生成看板视图', prompt: '针对当前表生成一个按状态分组的看板视图' },
+                { label: '补充示例数据', prompt: '再帮我补充 3 条真实的业务示例记录' },
+              ].map((item, idx) =>
+                h(
+                  'button',
+                  {
+                    key: idx,
+                    type: 'button',
+                    className: 'lw-chip',
+                    style: { padding: '4px 10px', fontSize: 12, height: 'auto' },
+                    disabled: Boolean(busy),
+                    onClick: () => {
+                      setTweakText(item.prompt)
+                      refine(item.prompt)
+                    },
+                  },
+                  item.label,
+                ),
+              ),
+            ),
+            h(UnifiedComposer, {
+              value: tweakText,
+              onChange: (val) => setTweakText(val),
+              onSubmit: () => {
+                if (tweakText.trim()) refine(tweakText)
               },
-              t('preview.tweakBtn'),
+              placeholder: t('preview.tweakPlaceholder') || '想微调？比如：再加一列「来源」，或去掉「预计金额」',
+              busy: busy === 'plan',
+              busyText: '调整中…',
+              buttonText: '调整方案',
+              disabled: !tweakText.trim(),
+              models,
+              selectedModel,
+              modelKey,
+              changeModel,
+              trustText: '直连你的飞书账号，安全隐私仅自己可见',
+              minHeight: 52,
+              id: 'lw-tweak',
+              ariaLabel: '微调方案',
+            }),
+          ),
+        )
+
+        content = h(
+          'div',
+          { className: 'lw-workspace' },
+          h(
+            'div',
+            { className: 'lw-ws-header' },
+            h(
+              'div',
+              { className: 'lw-ws-header-left' },
+              h(
+                'button',
+                { type: 'button', className: 'lw-back', disabled: Boolean(busy), onClick: restart, title: t('preview.back') },
+                h(Icon, { name: 'arrowLeft', size: 14 }),
+                h('span', null, t('preview.back')),
+              ),
+              h('div', { className: 'lw-ws-sep' }),
+              h('span', { className: 'lw-ws-title' }, plan.baseName || '多维表格方案预览'),
+              statusBadge,
+            ),
+            h(
+              'div',
+              { className: 'lw-ws-header-right' },
+              h(
+                Button,
+                { variant: 'primary', size: 'sm', disabled: Boolean(busy) || !toolOk, onClick: build },
+                busy === 'build' ? t('busy.building') : busy === 'plan' ? t('busy.planning') : t('preview.build'),
+              ),
             ),
           ),
+          h(
+            'div',
+            { className: 'lw-preview-scroll' },
+            error
+              ? h(Banner, {
+                  tone: 'error',
+                  title: t('error.title'),
+                  children: humanize(error),
+                  style: { maxWidth: 1040, width: '100%', marginBottom: 12 },
+                  action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (sentence ? planFor(sentence) : restart()) }, t('error.retry')),
+                })
+              : null,
+            previewCard,
+          ),
+          tweakDock,
         )
       } else if (stage === 'done' && result) {
         const steps = [t('done.step1'), t('done.step2'), t('done.step3'), t('done.step4')]
@@ -4401,11 +4653,6 @@ window.__ModuleLoader__.load({
 
         const handleUsePrompt = (promptText) => {
           setAdjustText(promptText)
-          if (adjustInputRef.current) {
-            adjustInputRef.current.focus()
-            adjustInputRef.current.style.height = 'auto'
-            adjustInputRef.current.style.height = Math.min(adjustInputRef.current.scrollHeight, 120) + 'px'
-          }
         }
 
         const heroCard = h(
@@ -4447,11 +4694,11 @@ window.__ModuleLoader__.load({
                 {
                   key: idx,
                   type: 'button',
-                  className: 'lw-hero-hint-pill',
+                  className: 'lw-chip',
                   onClick: () => handleUsePrompt(item.prompt),
                   title: `填入指令：${item.prompt}`,
                 },
-                h(Icon, { name: item.icon, size: 14, strokeWidth: 1.8, style: { color: item.color } }),
+                h(Icon, { name: item.icon, size: 13, className: 'lw-chip-ico' }),
                 h('span', null, item.label),
               ),
             ),
@@ -4515,7 +4762,7 @@ window.__ModuleLoader__.load({
                               while (Date.now() < deadline && !curAbort.aborted) {
                                 await new Promise((r) => setTimeout(r, 1500))
                                 if (curAbort.aborted) return
-                                const st = await fetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
+                                const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
                                 if (st && st.ok) {
                                   setSyncingAuth(false)
                                   const lastUser = [...history.slice(0, idx)].reverse().find((m) => m && m.role === 'user')
@@ -4650,95 +4897,29 @@ window.__ModuleLoader__.load({
             : h(
                 'div',
                 { className: 'lw-composer-wrap' },
-                h(
-                  'div',
-                  { className: 'lw-composer-card' },
-                  h('textarea', {
-                    ref: adjustInputRef,
-                    className: 'lw-composer-textarea',
-                    rows: 1,
-                    value: adjustText,
-                    placeholder: isTableMode
-                      ? '发送消息或描述表格修改指令，Shift+Enter 换行…'
-                      : '输入任何飞书协同指令（如查日程、查待办、发消息、建表），Shift+Enter 换行…',
-                    spellCheck: false,
-                    disabled: Boolean(busy),
-                    onChange: (event) => {
-                      setAdjustText(event.currentTarget.value)
-                      event.currentTarget.style.height = 'auto'
-                      event.currentTarget.style.height = Math.min(event.currentTarget.scrollHeight, 120) + 'px'
-                    },
-                    onKeyDown: (event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault()
-                        if (adjustText.trim() && !busy) {
-                          applyAdjust()
-                        }
-                      }
-                    },
-                  }),
-                  h(
-                    'div',
-                    { className: 'lw-composer-actions' },
-                    h(
-                      'div',
-                      { className: 'lw-composer-left' },
-                      history.length > 0
-                        ? h(
-                            'button',
-                            {
-                              type: 'button',
-                              className: 'lw-composer-clear-btn',
-                              onClick: () => setHistory([]),
-                              title: '清空会话上下文与多轮记忆',
-                            },
-                            '清空记录',
-                          )
-                        : null,
-                    ),
-                    h(
-                      'div',
-                      { className: 'lw-composer-right' },
-                      h(
-                        'div',
-                        { className: 'lw-model-picker', title: '切换当前使用的 AI 模型' },
-                        h(
-                          'select',
-                          {
-                            value: modelKey(selectedModel),
-                            onChange: (e) => changeModel(e.target.value),
-                            disabled: Boolean(busy),
-                          },
-                          models.length === 0
-                            ? [h('option', { key: 'empty', value: '' }, '加载模型中…')]
-                            : models.map((m) =>
-                                h(
-                                  'option',
-                                  { key: modelKey(m), value: modelKey(m) },
-                                  m.name + (m.kind ? ` ${m.kind}` : ''),
-                                ),
-                              ),
-                        ),
-                        h(
-                          'span',
-                          { className: 'lw-model-picker-arrow' },
-                          h(Icon, { name: 'chevronDown', size: 12 }),
-                        ),
-                      ),
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'lw-composer-send-circle',
-                          title: busy === 'adjust' ? t('view.adjustBusy') : t('view.adjustBtn'),
-                          disabled: Boolean(busy) || !adjustText.trim(),
-                          onClick: applyAdjust,
-                        },
-                        h(Icon, { name: 'arrowUp', size: 16, strokeWidth: 2.2 }),
-                      ),
-                    ),
-                  ),
-                ),
+                h(UnifiedComposer, {
+                  value: adjustText,
+                  onChange: (val) => setAdjustText(val),
+                  onSubmit: () => {
+                    if (adjustText.trim()) applyAdjust()
+                  },
+                  placeholder: isTableMode
+                    ? '输入表格调整指令（如：加一列负责人、批量改状态），回车调整…'
+                    : '输入飞书协同指令，回车发送…',
+                  busy: busy === 'adjust',
+                  busyText: '思考执行中…',
+                  buttonText: isTableMode ? '调整' : '发送',
+                  disabled: !adjustText.trim(),
+                  models,
+                  selectedModel,
+                  modelKey,
+                  changeModel,
+                  trustText: '直连你的飞书账号，安全隐私仅自己可见',
+                  minHeight: 52,
+                  id: 'lw-adjust-input',
+                  ariaLabel: '协同指令输入框',
+                  inputRef: adjustInputRef,
+                }),
                 adjustError
                   ? h(Banner, { tone: 'error', title: t('error.title'), children: humanize(adjustError) })
                   : null,
@@ -4878,7 +5059,7 @@ window.__ModuleLoader__.load({
         )
       }
 
-      const isWorkspace = stage === 'view' && Boolean(active)
+      const isWorkspace = (stage === 'view' && Boolean(active)) || (stage === 'preview' && Boolean(plan))
 
       const accountModal = showAccountModal
         ? h(
@@ -5027,36 +5208,74 @@ window.__ModuleLoader__.load({
                     ),
                   ),
                 ),
-                h(
-                  Button,
-                  {
-                    size: 'sm',
-                    variant: 'primary',
-                    disabled: busyAccount || syncingAuth,
-                    onClick: async () => {
-                      setSyncingAuth(true)
-                      try {
-                        const payload = await post('/connect/login/start', {})
-                        if (payload.ok && payload.url) {
-                          window.open(payload.url, '_blank', 'noopener')
-                          const deadline = Date.now() + 60000
-                          while (Date.now() < deadline) {
-                            await new Promise((r) => setTimeout(r, 1500))
-                            const st = await fetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-                            if (st && st.ok) {
-                              post('/connect/scopes').then((sc) => setScopesInfo(sc)).catch(() => {})
-                              break
+                Boolean(scopesInfo && [
+                  scopesInfo?.domains?.base?.ready,
+                  scopesInfo?.domains?.calendar?.ready,
+                  scopesInfo?.domains?.task?.ready,
+                  scopesInfo?.domains?.im?.ready,
+                  scopesInfo?.domains?.mail?.ready,
+                  scopesInfo?.domains?.contact?.ready,
+                ].every(Boolean))
+                  ? h(
+                      'div',
+                      {
+                        style: {
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          padding: '8px 12px',
+                          marginTop: 6,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          color: 'var(--lw-success)',
+                          background: 'color-mix(in srgb, var(--lw-success) 8%, var(--lw-surface))',
+                          borderRadius: 8,
+                          border: '1px solid color-mix(in srgb, var(--lw-success) 20%, transparent)',
+                        },
+                      },
+                      h(Icon, { name: 'shieldCheck', size: 15 }),
+                      '飞书全域协同能力已全部开通就绪',
+                    )
+                  : h(
+                      Button,
+                      {
+                        size: 'sm',
+                        variant: 'primary',
+                        disabled: busyAccount || syncingAuth,
+                        onClick: async () => {
+                          setSyncingAuth(true)
+                          try {
+                            const payload = await post('/connect/login/start', {})
+                            if (payload.ok && payload.url) {
+                              window.open(payload.url, '_blank', 'noopener')
+                              const deadline = Date.now() + 60000
+                              while (Date.now() < deadline) {
+                                await new Promise((r) => setTimeout(r, 1200))
+                                const sc = await authFetch(`${API}/connect/scopes`).then((r) => r.json()).catch(() => null)
+                                if (sc && sc.ok) {
+                                  setScopesInfo(sc)
+                                  const allOk = Object.values(sc.domains || {}).every((d) => d.ready)
+                                  if (allOk) {
+                                    refreshHealth()
+                                    break
+                                  }
+                                }
+                                const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
+                                if (st && st.ok) {
+                                  refreshHealth()
+                                  break
+                                }
+                              }
                             }
+                          } catch {} finally {
+                            setSyncingAuth(false)
                           }
-                        }
-                      } catch {} finally {
-                        setSyncingAuth(false)
-                      }
-                    },
-                    style: { marginTop: 4, width: '100%' },
-                  },
-                  syncingAuth ? '正在等待全域授权确认…' : '一键开通全域协同授权 ↗',
-                ),
+                        },
+                        style: { marginTop: 4, width: '100%' },
+                      },
+                      syncingAuth ? '正在等待全域授权确认…' : '一键开通全域协同授权 ↗',
+                    ),
               ),
               accountConfirm === 'logout'
                 ? h(
@@ -5175,13 +5394,13 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('main', () =>
           ctx.slots.register(
             { name: 'main', key: 'lark-workbench', locale: NS },
-            (props) => h(Workbench, { ...props, realTable, ctx }),
+            (props) => h(Workbench, { ...props, realTable, ctx, isStandalone: true }),
           ),
         )
         ctx.slots.inject('conversation.view', () =>
           ctx.slots.register(
             { name: 'conversation.view', id: 'lark-workbench', order: 5, label: () => t('app.name'), locale: NS },
-            (props) => h(Workbench, { ...props, realTable, ctx }),
+            (props) => h(Workbench, { ...props, realTable, ctx, isConversationView: true }),
           ),
         )
 

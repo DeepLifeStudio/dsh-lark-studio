@@ -11,9 +11,105 @@ import { createOperations, destructiveChanges } from './ops.js'
 import { createAdjustPlanner } from './adjust-planner.js'
 import { createPlanner, sanitizePlan } from './planner.js'
 
-export const inject = ['tools', 'subprocess', 'webServer', 'llm', 'agentDefaultModel', 'commands']
+export const inject = ['tools', 'subprocess', 'webServer', 'llm', 'agentDefaultModel', 'commands', 'sessions']
 
 const MAX_BODY_BYTES = 256 * 1024
+
+/**
+ * Validates request Host, Origin, and DSH Session identity for all incoming API calls.
+ */
+export function verifyApiSecurity(req, url, ctx) {
+  // 1. Host Fence (DNS Rebinding Defense) on ALL methods
+  const host = req.headers.host
+  if (!host) {
+    return { ok: false, status: 403, error: 'host header required' }
+  }
+  let expectedOrigin = undefined
+  try {
+    expectedOrigin = ctx?.webServer?.getOrigin?.()
+  } catch {}
+  const isLoopbackHost = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host)
+  if (!isLoopbackHost && expectedOrigin) {
+    try {
+      const expHost = new URL(expectedOrigin).host
+      if (host !== expHost) {
+        return { ok: false, status: 403, error: 'host not allowed' }
+      }
+    } catch {}
+  }
+
+  // 2. Cross-site fence
+  if (req.headers['sec-fetch-site'] === 'cross-site') {
+    return { ok: false, status: 403, error: 'cross-site request forbidden' }
+  }
+
+  // 3. Origin check on ALL methods (GET, POST, etc.)
+  const origin = req.headers.origin
+  let isLocalOrigin = false
+  if (origin) {
+    if (expectedOrigin && origin === expectedOrigin) {
+      isLocalOrigin = true
+    } else {
+      try {
+        const oUrl = new URL(origin)
+        if ((oUrl.hostname === 'localhost' || oUrl.hostname === '127.0.0.1') && (oUrl.host === host || isLoopbackHost)) {
+          isLocalOrigin = true
+        }
+      } catch {}
+    }
+    if (!isLocalOrigin) {
+      return { ok: false, status: 403, error: 'origin not allowed' }
+    }
+  } else {
+    isLocalOrigin = isLoopbackHost
+  }
+
+  // 4. DSH Session Identity check on ALL methods (GET & POST)
+  const route = url.pathname.replace(/^\/dsh-lark\/api/, '') || '/'
+  const isSetupOrStatusPath = route === '/state'
+    || route === '/models'
+    || route === '/health'
+    || route === '/active'
+    || route.startsWith('/connect')
+
+  if (isSetupOrStatusPath) {
+    return { ok: true }
+  }
+
+  const sessionId = req.headers['x-dsh-session-id']
+    || req.headers['x-session-id']
+    || url.searchParams.get('sessionId')
+    || url.searchParams.get('session_id')
+
+  // Requests from the DSH desktop workbench UI on local loopback are authenticated
+  if (sessionId === 'desktop-workbench' && isLoopbackHost && isLocalOrigin) {
+    return { ok: true }
+  }
+
+  if (ctx?.sessions) {
+    let sessionValid = false
+    if (sessionId) {
+      try {
+        const session = typeof ctx.sessions.get === 'function' ? ctx.sessions.get(sessionId) : null
+        if (session) {
+          sessionValid = true
+        } else if (typeof ctx.sessions.list === 'function') {
+          const list = ctx.sessions.list() || []
+          sessionValid = list.some((s) => s && (s.id === sessionId || String(s.id).includes(sessionId)))
+        }
+      } catch {}
+    }
+    if (!sessionValid) {
+      return {
+        ok: false,
+        status: 401,
+        error: 'DSH 会话鉴权失败：请求未提供有效的 DSH 会话身份 (x-dsh-session-id)，拒绝访问飞书工作台服务。',
+      }
+    }
+  }
+
+  return { ok: true }
+}
 
 function sendJson(res, status, body) {
   res.statusCode = status
@@ -222,6 +318,14 @@ export function apply(ctx, config = {}) {
         }
 
         if (options.preview === true) {
+          latestActive = {
+            preview: true,
+            plan,
+            name: plan.baseName,
+            baseName: plan.baseName,
+            summary: describePlan(plan),
+            updatedAt: Date.now(),
+          }
           return {
             ok: true,
             preview: true,
@@ -370,31 +474,92 @@ export function apply(ctx, config = {}) {
   )
 
   ctx.effect(() =>
+    ctx.tools.register({
+      name: 'lark_collab',
+      description:
+        '飞书全域协同助手：管理和查询飞书日历与会议日程、管理飞书待办任务、搜索飞书群聊、发送飞书消息、查阅与收发飞书邮件、检索企业通讯录同事、查询审批等。'
+        + '\n当用户在原生对话中提出任何飞书日常协同需求时调用，例如：'
+        + '「查一下我今天的日程安排与会议」「帮我查一下我的待办任务」「搜索项目群聊」「给张三发一条飞书消息」「查一下最新邮件」「搜索通讯录技术部同事」。',
+      parameters: {
+        type: 'object',
+        properties: {
+          instruction: {
+            type: 'string',
+            description: '用户的飞书协同指令，例如查今天日程、查看待办任务、搜索群聊、发消息等',
+          },
+        },
+        required: ['instruction'],
+        additionalProperties: false,
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            ok: { type: 'boolean' },
+            reply: { type: 'string' },
+            summary: { type: 'string' },
+          },
+        },
+        render(_args, value) {
+          const text = value && typeof value === 'object' && (value.reply || value.summary)
+            ? (value.reply || value.summary)
+            : String(value)
+          return [{ type: 'text', text }]
+        },
+      },
+      timeoutMs: 60000,
+      async execute(args, exec) {
+        const options = (args && typeof args === 'object') ? args : {}
+        const instruction = String(options.instruction ?? '').trim()
+        if (!instruction) throw new Error('请提供具体的飞书协同指令。')
+        const result = await ops.dispatchCollab({
+          instruction,
+        }, exec.signal)
+        if (!result.ok) {
+          if (result.type === 'missing_scope') {
+            const scopeNames = (result.requiredScopes || []).join('、')
+            return {
+              ok: false,
+              summary: `⚠️ 缺少飞书「${result.domainTitle || '相关'}」权限。\n需要开通权限：${scopeNames}\n请在飞书开放平台开通：${result.consoleUrl}`,
+              reply: `⚠️ 缺少飞书「${result.domainTitle || '相关'}」权限。\n需要开通权限：${scopeNames}\n请在飞书开放平台开通：${result.consoleUrl}`,
+            }
+          }
+          throw new Error(result.error || result.message || '执行飞书协同操作失败')
+        }
+        return {
+          ok: true,
+          reply: result.reply,
+          summary: result.reply,
+          action: result.action,
+        }
+      },
+    }),
+  )
+
+  ctx.effect(() =>
     ctx.webServer.register({
       kind: 'prefix',
       path: '/dsh-lark/api',
       async handler(req, res) {
-        // Everything here acts with the user's Feishu authority, so a foreign
-        // page must not reach it. One rule covers it: a browser always attaches
-        // its own Origin to a cross-origin POST, and that origin will never
-        // match this server — so reject any mismatch. A missing Origin is left
-        // alone on purpose: the desktop renderer sends POSTs without one, and
-        // no web page can omit it, so absence is not a threat.
-        const origin = req.headers.origin
-        const mutating = req.method === 'POST'
-        let expected
-        try {
-          expected = ctx.webServer.getOrigin()
-        } catch {
-          expected = undefined
-        }
-        if (mutating && origin && expected && origin !== expected) {
-          sendJson(res, 403, { ok: false, error: 'origin not allowed' })
+        // Preflight OPTIONS support
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204
+          res.setHeader('access-control-allow-origin', req.headers.origin || '*')
+          res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
+          res.setHeader('access-control-allow-headers', 'content-type, x-dsh-session-id, x-session-id')
+          res.end()
           return
         }
 
         const url = new URL(req.url ?? '/', 'http://127.0.0.1')
         const route = url.pathname.replace(/^\/dsh-lark\/api/, '') || '/'
+
+        // Complete Host, Origin & DSH Session Security Check on ALL methods
+        const check = verifyApiSecurity(req, url, ctx)
+        if (!check.ok) {
+          sendJson(res, check.status, { ok: false, error: check.error })
+          return
+        }
 
         try {
           if (req.method === 'GET' && route === '/state') {
@@ -402,7 +567,7 @@ export function apply(ctx, config = {}) {
             const timer = setTimeout(() => controller.abort(), 20000)
             try {
               const state = await ops.connectStatus(controller.signal)
-              sendJson(res, 200, { ok: true, ...state })
+              sendJson(res, 200, { ok: true, ...state, active: latestActive })
             } finally {
               clearTimeout(timer)
             }

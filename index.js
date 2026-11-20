@@ -64,18 +64,10 @@ export function verifyApiSecurity(req, url, ctx) {
     isLocalOrigin = isLoopbackHost
   }
 
-  // 4. DSH Session Identity check on ALL methods (GET & POST)
-  const route = url.pathname.replace(/^\/dsh-lark\/api/, '') || '/'
-  const isSetupOrStatusPath = route === '/state'
-    || route === '/models'
-    || route === '/health'
-    || route === '/active'
-    || route.startsWith('/connect')
-
-  if (isSetupOrStatusPath) {
-    return { ok: true }
-  }
-
+  // 4. DSH Session Identity check on ALL methods and ALL routes.
+  // Setup/status reads are not exempt: /state and /active expose the active
+  // Feishu Base token and connection state, so every /dsh-lark/api route must
+  // carry a DSH session identity (or the explicit desktop-workbench mode below).
   const sessionId = req.headers['x-dsh-session-id']
     || req.headers['x-session-id']
     || url.searchParams.get('sessionId')
@@ -95,7 +87,7 @@ export function verifyApiSecurity(req, url, ctx) {
           sessionValid = true
         } else if (typeof ctx.sessions.list === 'function') {
           const list = ctx.sessions.list() || []
-          sessionValid = list.some((s) => s && (s.id === sessionId || String(s.id).includes(sessionId)))
+          sessionValid = list.some((s) => s && s.id === sessionId)
         }
       } catch {}
     }

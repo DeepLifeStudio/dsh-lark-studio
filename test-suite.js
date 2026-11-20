@@ -629,16 +629,21 @@ test('9.5 飞书团队知识库与云文档检索调度验证', async () => {
 })
 
 test('10.1 Host 与 Origin 安全边界防护测试 (全方法拦截外域与跨站伪造)', () => {
+  const fakeSession = { id: 'session-valid-12345' }
   const mockCtx = {
     webServer: {
       getOrigin: () => 'http://127.0.0.1:49152'
+    },
+    sessions: {
+      get: (id) => (id === 'session-valid-12345' ? fakeSession : undefined),
+      list: () => [fakeSession]
     }
   }
 
   // 1. 正常本地请求通过
   const validReq = {
     method: 'GET',
-    headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152' }
+    headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152', 'x-dsh-session-id': 'session-valid-12345' }
   }
   const res1 = verifyApiSecurity(validReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
   assert.strictEqual(res1.ok, true)
@@ -724,6 +729,34 @@ test('10.2 DSH 会话身份验证测试 (ctx.sessions 拦截未授权访问)', (
   }
   const res4 = verifyApiSecurity(reqQuerySession, new URL('http://127.0.0.1:49152/dsh-lark/api/records?sessionId=session-valid-12345'), mockCtx)
   assert.strictEqual(res4.ok, true)
+})
+
+test('10.3 全部 /dsh-lark/api 路由（含 state/active/models/connect）均要求 DSH 会话身份', () => {
+  const fakeSession = { id: 'session-valid-12345' }
+  const mockCtx = {
+    webServer: { getOrigin: () => 'http://127.0.0.1:49152' },
+    sessions: {
+      get: (id) => (id === 'session-valid-12345' ? fakeSession : undefined),
+      list: () => [fakeSession]
+    }
+  }
+
+  for (const path of ['/state', '/active', '/models', '/connect/scopes', '/records']) {
+    const req = {
+      method: 'GET',
+      headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152' }
+    }
+    const res = verifyApiSecurity(req, new URL(`http://127.0.0.1:49152/dsh-lark/api${path}`), mockCtx)
+    assert.strictEqual(res.ok, false, `${path} should require a DSH session`)
+    assert.strictEqual(res.status, 401)
+  }
+
+  const okReq = {
+    method: 'GET',
+    headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152', 'x-dsh-session-id': 'session-valid-12345' }
+  }
+  const okRes = verifyApiSecurity(okReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
+  assert.strictEqual(okRes.ok, true)
 })
 
 Promise.all(pendingTests).then(() => {

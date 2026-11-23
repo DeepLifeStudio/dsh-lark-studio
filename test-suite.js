@@ -616,6 +616,29 @@ test('9.3 前端多态自适应逻辑校验 (isTableMode 判定与操作栏收�
 
   assert.deepStrictEqual(getHeaderActions(tableSession), ['同步数据', '复制链接', '展开表格', '外部打开'])
   assert.deepStrictEqual(getHeaderActions(collabSession), ['清空对话'])
+
+  // 3. 模拟 applyAdjust 状态机演进防回归校验
+  const simulateApplyAdjustState = (currentActive, options = {}) => {
+    let nextActive = currentActive
+    const isCollab = options.collab || (currentActive && currentActive.type === 'collab') || !currentActive
+    if (isCollab && (!currentActive || currentActive.type !== 'collab')) {
+      nextActive = { type: 'collab', name: '飞书协同助手' }
+    }
+    return nextActive
+  }
+
+  // 表格状态下发送消息，不得篡改 active 会话对象，必须保持表格模式与全部 4 个操作按钮
+  const stateAfterSendInTable = simulateApplyAdjustState(tableSession)
+  assert.strictEqual(checkTableMode(stateAfterSendInTable), true)
+  assert.strictEqual(stateAfterSendInTable.name, '工作任务台账')
+  assert.strictEqual(stateAfterSendInTable.url, 'https://feishu.cn/base/bascn123456')
+  assert.deepStrictEqual(getHeaderActions(stateAfterSendInTable), ['同步数据', '复制链接', '展开表格', '外部打开'])
+
+  // 空会话状态下发送协同指令，平滑进入协同模式
+  const stateAfterSendInEmpty = simulateApplyAdjustState(null, { collab: true })
+  assert.strictEqual(checkTableMode(stateAfterSendInEmpty), false)
+  assert.strictEqual(stateAfterSendInEmpty.type, 'collab')
+  assert.deepStrictEqual(getHeaderActions(stateAfterSendInEmpty), ['清空对话'])
 })
 
 test('9.4 飞书全域协同指令与 lark_collab 调度验证', async () => {

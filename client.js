@@ -3966,7 +3966,7 @@ body:has(.lw) [class*="viewArea"] {
           setAdjustError(t('view.noToken'))
           return
         }
-        if (!active || active.type !== 'collab') {
+        if (isCollab && (!active || active.type !== 'collab')) {
           const item = { type: 'collab', name: '飞书协同助手' }
           setActive(item)
           setStage('view')

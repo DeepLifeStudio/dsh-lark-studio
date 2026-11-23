@@ -35,7 +35,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const { useCallback, useEffect, useMemo, useRef, useState } = React
 
-    const API = '/dsh-lark/api'
+    const API = 'api/dsh-lark'
     const NS = 'dsh-lark-studio'
     const RECENT_KEY = 'dsh-lark-recent'
 
@@ -44,7 +44,6 @@ window.__ModuleLoader__.load({
     function resolveDshSessionId(props, ctx) {
       if (props && props.sessionId) return String(props.sessionId)
       if (props && props.session && props.session.id) return String(props.session.id)
-      if (props && props.isStandalone) return 'desktop-workbench'
       try {
         const fromMounted = ctx && ctx.sidebarRight && ctx.sidebarRight.mounted && typeof ctx.sidebarRight.mounted.getSnapshot === 'function'
           ? ctx.sidebarRight.mounted.getSnapshot()
@@ -62,13 +61,13 @@ window.__ModuleLoader__.load({
           }
         }
       } catch {}
-      return 'desktop-workbench'
+      return ''
     }
 
-    function authFetch(url, options = {}) {
+    async function authFetch(url, options = {}) {
       const sid = currentDshSessionId || resolveDshSessionId()
       let targetUrl = url
-      if (sid && typeof targetUrl === 'string' && targetUrl.includes('/dsh-lark/api')) {
+      if (sid && typeof targetUrl === 'string' && (targetUrl.includes('dsh-lark') || targetUrl.includes('/api/'))) {
         const sep = targetUrl.includes('?') ? '&' : '?'
         if (!targetUrl.includes('sessionId=')) {
           targetUrl = `${targetUrl}${sep}sessionId=${encodeURIComponent(sid)}`
@@ -78,7 +77,28 @@ window.__ModuleLoader__.load({
       if (sid && !headers.has('x-dsh-session-id')) {
         headers.set('x-dsh-session-id', sid)
       }
-      return fetch(targetUrl, { ...options, headers })
+
+      let res
+      try {
+        res = await fetch(targetUrl, { ...options, headers })
+      } catch (err) {
+        throw err
+      }
+
+      // If primary Connection route (api/dsh-lark) 404s on an older host, try legacy /dsh-lark/api fallback
+      if (res.status === 404 && typeof targetUrl === 'string' && targetUrl.includes('api/dsh-lark')) {
+        const fallbackUrl = targetUrl.replace(/(\/)?api\/dsh-lark/, '/dsh-lark/api')
+        try {
+          const fallbackHeaders = new Headers(options.headers || {})
+          if (sid) fallbackHeaders.set('x-dsh-session-id', sid)
+          const fallbackRes = await fetch(fallbackUrl, { ...options, headers: fallbackHeaders })
+          if (fallbackRes.ok || fallbackRes.status !== 404) {
+            return fallbackRes
+          }
+        } catch {}
+      }
+
+      return res
     }
 
     // ── Content ────────────────────────────────────────────────────────────
@@ -416,6 +436,7 @@ window.__ModuleLoader__.load({
       'gate.noAuth.reopen': '重新打开',
       'gate.noAuth.hint': '只需授权一次，过期时这里会提醒。',
       'gate.waiting': '正在确认，已等待 ',
+      'gate.autoChecking': '已唤起浏览器，正在自动检测就绪状态（也可随时点击手动确认）',
       'gate.pending': '飞书尚未返回确认，请确保浏览器中显示「授权成功」后再点一次。',
       'gate.idle': '正在检查连接…',
       'gate.retryBody': '连不上本地服务，可能是应用刚重启，点下方重新检查。',
@@ -540,6 +561,7 @@ window.__ModuleLoader__.load({
       'gate.noAuth.reopen': 'Open again',
       'gate.noAuth.hint': 'Only needed once until the token expires.',
       'gate.waiting': 'Confirming… waited ',
+      'gate.autoChecking': 'Browser opened. Auto-detecting status (you can also click manually)',
       'gate.pending': 'No confirmation yet. Make sure the browser says authorized, then click again.',
       'gate.idle': 'Checking connection…',
       'gate.retryBody': 'Local service did not respond — it may have just restarted.',
@@ -782,6 +804,8 @@ window.__ModuleLoader__.load({
 .lw-dot.is-bad{background:var(--lw-danger)}
 .lw-dot.is-busy{background:var(--lw-accent);animation:lw-pulse 1.4s var(--ease) infinite}
 @keyframes lw-pulse{0%,100%{opacity:.25}50%{opacity:1}}
+@keyframes lw-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.lw-spin{animation:lw-spin .8s linear infinite}
 
 /* ── Hero ─────────────────────────────────────────────────────────────── */
 .lw-hero{display:flex;flex-direction:column;gap:14px;padding:32px 0 8px}
@@ -2672,6 +2696,7 @@ body:has(.lw) [class*="viewArea"] {
       const [showTeam, setShowTeam] = useState(false)
       const [teamId, setTeamId] = useState('')
       const [teamSecret, setTeamSecret] = useState('')
+      const [autoChecking, setAutoChecking] = useState(false)
 
       useEffect(() => {
         if (!busy) {
@@ -2682,6 +2707,62 @@ body:has(.lw) [class*="viewArea"] {
         const timer = setInterval(() => setWaited(Math.round((Date.now() - startedAt) / 1000)), 500)
         return () => clearInterval(timer)
       }, [busy])
+
+      // 自动静默探活：Step 2 应用配置与 Step 3 用户授权自动感知并平滑推进下一步
+      useEffect(() => {
+        let active = true
+        let timer = null
+
+        const pollLoop = async () => {
+          if (!active) return
+
+          if (stage === 'no-app' && link) {
+            try {
+              const poll = await authFetch(`${API}/connect/app/poll`).then((r) => r.json()).catch(() => null)
+              if (active && poll && poll.done) {
+                onRecheck()
+                return
+              }
+              const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
+              if (active && st && st.app && st.app.ready) {
+                onRecheck()
+                return
+              }
+            } catch {}
+          }
+
+          if (stage === 'no-auth' && (link || deviceCode)) {
+            try {
+              const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
+              if (active && st && st.stage === 'ready' && st.auth && st.auth.userReady) {
+                onRecheck()
+                return
+              }
+              const loginState = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
+              if (active && loginState && loginState.done && loginState.ok) {
+                onRecheck()
+                return
+              }
+            } catch {}
+          }
+
+          if (active) {
+            timer = setTimeout(pollLoop, 1200)
+          }
+        }
+
+        if ((stage === 'no-app' && link) || (stage === 'no-auth' && (link || deviceCode))) {
+          setAutoChecking(true)
+          timer = setTimeout(pollLoop, 600)
+        } else {
+          setAutoChecking(false)
+        }
+
+        return () => {
+          active = false
+          if (timer) clearTimeout(timer)
+        }
+      }, [stage, link, deviceCode, onRecheck])
 
       const post = useCallback(async (path, body) => {
         const response = await authFetch(`${API}${path}`, {
@@ -2770,8 +2851,11 @@ body:has(.lw) [class*="viewArea"] {
           }
           if (payload.pending) {
             const deadline = Date.now() + 20000
+            let poll = 0
             while (Date.now() < deadline) {
-              await new Promise((resolve) => setTimeout(resolve, 1200))
+              const waitMs = poll < 4 ? 400 : 1200
+              await new Promise((resolve) => setTimeout(resolve, waitMs))
+              poll++
               const state = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
               if (state && state.ok) {
                 onRecheck()
@@ -2822,8 +2906,24 @@ body:has(.lw) [class*="viewArea"] {
         actions.push(h(Button, { key: 'done', disabled: busy, onClick: onRecheck }, t('gate.noApp.done')))
         if (link) actions.push(h(Button, { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') }, t('gate.noApp.reopen')))
       } else {
-        actions.push(h(Button, { key: 'auth', variant: 'primary', disabled: busy, onClick: startAuth }, busy ? `${t('gate.waiting')}…` : t('gate.noAuth.cta')))
-        actions.push(h(Button, { key: 'finish', disabled: busy || !deviceCode, onClick: finishAuth }, t('gate.noAuth.done')))
+        actions.push(
+          h(
+            Button,
+            { key: 'auth', variant: 'primary', disabled: busy, onClick: startAuth },
+            busy
+              ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } }, h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }), '正在确认…')
+              : t('gate.noAuth.cta'),
+          ),
+        )
+        actions.push(
+          h(
+            Button,
+            { key: 'finish', disabled: busy || !deviceCode, onClick: finishAuth },
+            busy
+              ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } }, h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }), '正在确认…')
+              : t('gate.noAuth.done'),
+          ),
+        )
         if (link) actions.push(h(Button, { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') }, t('gate.noAuth.reopen')))
       }
 
@@ -2847,6 +2947,24 @@ body:has(.lw) [class*="viewArea"] {
           : null,
         link ? h('a', { className: 'lw-url', href: link, target: '_blank', rel: 'noreferrer' }, link) : null,
         h('div', { className: 'lw-actions' }, actions),
+        autoChecking
+          ? h(
+              'div',
+              {
+                style: {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12,
+                  color: 'var(--lw-ink-3)',
+                  marginTop: 4,
+                  padding: '4px 2px',
+                },
+              },
+              h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }),
+              t('gate.autoChecking'),
+            )
+          : null,
         busy ? h(Heartbeat, { t, seconds: waited }) : null,
         error
           ? h(Banner, {
@@ -3418,7 +3536,7 @@ body:has(.lw) [class*="viewArea"] {
 
       useEffect(() => {
         let isMount = true
-        authFetch('/dsh-lark/api/models')
+        authFetch(`${API}/models`)
           .then((r) => r.json())
           .then((data) => {
             if (isMount && data && data.ok && Array.isArray(data.models) && data.models.length > 0) {
@@ -5198,12 +5316,14 @@ body:has(.lw) [class*="viewArea"] {
                             alignItems: 'center',
                             gap: 4,
                             fontSize: 10.5,
-                            color: item.ready ? 'var(--lw-success)' : 'var(--lw-ink-3)',
+                            color: item.ready ? 'var(--lw-success)' : !scopesInfo ? 'var(--lw-accent)' : 'var(--lw-ink-3)',
                           },
                         },
                         item.ready
                           ? [h('span', { className: 'lw-dot is-ok', style: { width: 5, height: 5 } }), item.count ? `${item.count}项就绪` : '已开通']
-                          : [h('span', { className: 'lw-dot', style: { width: 5, height: 5, background: 'var(--lw-ink-4)' } }), '未开启'],
+                          : !scopesInfo
+                            ? [h('span', { className: 'lw-dot is-busy', style: { width: 5, height: 5 } }), '核验中…']
+                            : [h('span', { className: 'lw-dot', style: { width: 5, height: 5, background: 'var(--lw-ink-4)' } }), '未开启'],
                       ),
                     ),
                   ),
@@ -5237,45 +5357,70 @@ body:has(.lw) [class*="viewArea"] {
                       h(Icon, { name: 'shieldCheck', size: 15 }),
                       '飞书全域协同能力已全部开通就绪',
                     )
-                  : h(
-                      Button,
-                      {
-                        size: 'sm',
-                        variant: 'primary',
-                        disabled: busyAccount || syncingAuth,
-                        onClick: async () => {
-                          setSyncingAuth(true)
-                          try {
-                            const payload = await post('/connect/login/start', {})
-                            if (payload.ok && payload.url) {
-                              window.open(payload.url, '_blank', 'noopener')
-                              const deadline = Date.now() + 60000
-                              while (Date.now() < deadline) {
-                                await new Promise((r) => setTimeout(r, 1200))
-                                const sc = await authFetch(`${API}/connect/scopes`).then((r) => r.json()).catch(() => null)
-                                if (sc && sc.ok) {
-                                  setScopesInfo(sc)
-                                  const allOk = Object.values(sc.domains || {}).every((d) => d.ready)
-                                  if (allOk) {
+                  : (!scopesInfo || syncingAuth)
+                    ? h(
+                        'div',
+                        {
+                          style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            padding: '8px 12px',
+                            marginTop: 6,
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: 'var(--lw-ink-2)',
+                            background: 'color-mix(in srgb, var(--lw-ink) 4%, var(--lw-surface))',
+                            borderRadius: 8,
+                            border: '1px solid var(--lw-line)',
+                          },
+                        },
+                        h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }),
+                        h('span', null, syncingAuth ? '正在开通全域协同…' : '正在核验全域权限…'),
+                      )
+                    : h(
+                        Button,
+                        {
+                          size: 'sm',
+                          variant: 'primary',
+                          disabled: busyAccount,
+                          onClick: async () => {
+                            setSyncingAuth(true)
+                            try {
+                              const payload = await post('/connect/login/start', {})
+                              if (payload.ok && payload.url) {
+                                window.open(payload.url, '_blank', 'noopener')
+                                const deadline = Date.now() + 60000
+                                let pollCount = 0
+                                while (Date.now() < deadline) {
+                                  const waitMs = pollCount < 4 ? 400 : 1200
+                                  await new Promise((r) => setTimeout(r, waitMs))
+                                  pollCount++
+                                  const sc = await authFetch(`${API}/connect/scopes`).then((r) => r.json()).catch(() => null)
+                                  if (sc && sc.ok) {
+                                    setScopesInfo(sc)
+                                    const allOk = Object.values(sc.domains || {}).every((d) => d.ready)
+                                    if (allOk) {
+                                      refreshHealth()
+                                      break
+                                    }
+                                  }
+                                  const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
+                                  if (st && st.ok) {
                                     refreshHealth()
                                     break
                                   }
                                 }
-                                const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-                                if (st && st.ok) {
-                                  refreshHealth()
-                                  break
-                                }
                               }
+                            } catch {} finally {
+                              setSyncingAuth(false)
                             }
-                          } catch {} finally {
-                            setSyncingAuth(false)
-                          }
+                          },
+                          style: { marginTop: 4, width: '100%' },
                         },
-                        style: { marginTop: 4, width: '100%' },
-                      },
-                      syncingAuth ? '正在等待全域授权确认…' : '一键开通全域协同授权 ↗',
-                    ),
+                        '一键开通全域协同授权 ↗',
+                      ),
               ),
               accountConfirm === 'logout'
                 ? h(

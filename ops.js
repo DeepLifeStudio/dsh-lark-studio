@@ -261,8 +261,8 @@ export function createOperations({ ctx, config = {}, planner }) {
       signal,
     })
     const outcome = await handle.done
-    const stdout = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
-    const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
+    const stdout = handle.collected?.stdout ? handle.collected.stdout.readFrom(0).text : (outcome?.stdout || '')
+    const stderr = handle.collected?.stderr ? handle.collected.stderr.readFrom(0).text : (outcome?.stderr || '')
     return { exitCode: outcome.exitCode, stdout, stderr }
   }
 
@@ -669,8 +669,8 @@ export function createOperations({ ctx, config = {}, planner }) {
       signal,
     })
     const outcome = await handle.done
-    const stdout = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
-    const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
+    const stdout = handle.collected?.stdout ? handle.collected.stdout.readFrom(0).text : (outcome?.stdout || '')
+    const stderr = handle.collected?.stderr ? handle.collected.stderr.readFrom(0).text : (outcome?.stderr || '')
     if (outcome.exitCode !== 0) {
       const detail = (stderr || stdout).replace(/\s+/g, ' ').trim().slice(0, 300)
       return {
@@ -793,8 +793,8 @@ export function createOperations({ ctx, config = {}, planner }) {
 
   async function getScopes(signal) {
     const raw = await runJson(['auth', 'scopes', '--json'], signal)
-    const conf = await readConfig(signal).catch(() => ({}))
-    const appId = conf.appId || (raw.ok && raw.value?.appId) || ''
+    const conf = (await readConfig(signal).catch(() => ({}))) || {}
+    const appId = conf?.appId || (raw.ok && raw.value?.appId) || ''
     const userScopes = new Set(
       raw.ok && Array.isArray(raw.value?.userScopes) ? raw.value.userScopes : []
     )
@@ -1222,7 +1222,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
           return scopeError('calendar', res.error?.missing_scopes || ['calendar:calendar.event:read'], '飞书日历与日程', '日历')
         }
-        return { ok: false, type: 'answer', reply: `查询日程失败：${res.message || '未知错误'}` }
+        return { ok: false, type: 'answer', domain: 'calendar', reply: `查询日程失败：${res.message || '未知错误'}` }
       }
       const events = res.value?.events || res.value?.data?.events || res.value?.data?.items || res.value?.items || []
       if (!Array.isArray(events) || events.length === 0) {
@@ -1252,7 +1252,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
           return scopeError('task', res.error?.missing_scopes || ['task:task:read'], '飞书任务与待办', '任务')
         }
-        return { ok: false, type: 'answer', reply: `查询待办失败：${res.message || '未知错误'}` }
+        return { ok: false, type: 'answer', domain: 'task', reply: `查询待办失败：${res.message || '未知错误'}` }
       }
       const tasks = res.value?.tasks || res.value?.data?.tasks || res.value?.data?.items || res.value?.items || []
       if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -1312,7 +1312,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
           return scopeError('mail', res.error?.missing_scopes || ['mail:user_mailbox.messages:readonly'], '飞书邮箱', '邮箱')
         }
-        return { ok: false, type: 'answer', reply: `查询邮件失败：${res.message || '未知错误'}` }
+        return { ok: false, type: 'answer', domain: 'mail', reply: `查询邮件失败：${res.message || '未知错误'}` }
       }
       const mails = res.value?.messages || res.value?.data?.messages || []
       if (!Array.isArray(mails) || mails.length === 0) {
@@ -1365,7 +1365,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
           return scopeError('contact', res.error?.missing_scopes || ['contact:contact:readonly'], '飞书通讯录', '通讯录')
         }
-        return { ok: false, type: 'answer', reply: `查询通讯录失败：${res.message || '未知错误'}` }
+        return { ok: false, type: 'answer', domain: 'contact', reply: `查询通讯录失败：${res.message || '未知错误'}` }
       }
       const users = res.value?.data?.users || res.value?.users || []
       if (!Array.isArray(users) || users.length === 0) {
@@ -1397,7 +1397,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
           return scopeError('docs', res.error?.missing_scopes || ['wiki:space:read', 'search:docs:read'], '知识库与云文档', '文档')
         }
-        return { ok: false, type: 'answer', reply: `检索知识库与文档失败：${res.message || '未知错误'}` }
+        return { ok: false, type: 'answer', domain: 'wiki', reply: `检索知识库与文档失败：${res.message || '未知错误'}` }
       }
       const results = res.value?.data?.results || res.value?.results || []
       if (!Array.isArray(results) || results.length === 0) {

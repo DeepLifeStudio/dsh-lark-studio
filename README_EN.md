@@ -5,6 +5,11 @@
 > **One sentence to design a Bitable; one sentence to orchestrate Lark across your entire workspace.**  
 > An LLM-Native universal collaboration and Bitable intelligence workbench plugin built for the [DeepSeek Harness](https://github.com/deepseek-ai) ecosystem.
 
+[![npm version](https://img.shields.io/npm/v/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
+[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin.org-orange.svg)](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)
+[![dshopen](https://img.shields.io/badge/DSH-Open.org-purple.svg)](https://dshopen.org)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 ---
 
 ## Table of Contents
@@ -23,6 +28,7 @@
 - [5. Core Architecture & Interaction Flow](#5-core-architecture--interaction-flow)
 - [6. Quick Start & Installation](#6-quick-start--installation)
   - [Prerequisites](#prerequisites)
+  - [Ecosystem Indexes & Plugin Marketplaces](#ecosystem-indexes--plugin-marketplaces)
   - [Installation Methods](#installation-methods)
   - [Three-Step Onboarding Wizard (ConnectGate)](#three-step-onboarding-wizard-connectgate)
 - [7. Frequently Asked Questions (FAQ)](#7-frequently-asked-questions-faq)
@@ -208,6 +214,18 @@ flowchart TD
    ```bash
    npm install -g @larksuite/cli
    ```
+
+### Ecosystem Indexes & Plugin Marketplaces
+
+As a premier application in the DeepSeek Harness ecosystem, this plugin is indexed, published, and discoverable across **5 major ecosystem registries and marketplaces**:
+
+| Platform / Registry | Channel Type | Access & Discovery |
+| :--- | :--- | :--- |
+| 🌐 **[dsh-plugin.org](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | DSH Official/Community Directory | [Direct Plugin Page](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio) or search `dsh-lark-studio` / `Lark` for ratings and status |
+| 🌟 **[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | Curated GitHub Directory | Featured under the office productivity and collaboration tools category |
+| 🛒 **[dshmarket.com](https://dshmarket.com)** | DSH App & Plugin Store | Search `dsh-lark-studio` / `Lark Workbench` in the store for one-click installation |
+| 📦 **[dsh-plugin-catalog](https://www.npmjs.com/package/dsh-lark-studio)** | npm & DSH Standard Registry | Official npm registry mirror; install via standard CLI: `dsh plugin add dsh-lark-studio` |
+| 🚀 **[dshopen.org](https://dshopen.org)** | DSH Open Ecosystem Portal | Search and discover in the open-source community ecosystem catalog |
 
 ### Installation Methods
 

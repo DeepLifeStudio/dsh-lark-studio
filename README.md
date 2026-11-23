@@ -5,6 +5,11 @@
 > **一句话，建一张表；一句话，调度飞书全域协同。**  
 > 专为 [DeepSeek Harness](https://github.com/deepseek-ai) 生态打造的大模型原生（LLM-Native）飞书全域协同与多维表格智能工作台插件。
 
+[![npm version](https://img.shields.io/npm/v/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
+[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin.org-orange.svg)](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)
+[![dshopen](https://img.shields.io/badge/DSH-Open.org-purple.svg)](https://dshopen.org)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 ---
 
 ## 目录
@@ -15,6 +20,7 @@
 - [5. 核心架构与交互流转](#5-核心架构与交互流转)
 - [6. 快速开始与安装部署](#6-快速开始与安装部署)
   - [前置依赖](#前置依赖)
+  - [生态收录与插件市场源](#生态收录与插件市场源)
   - [安装方式](#安装方式)
   - [首次连接三步向导 (ConnectGate)](#首次连接三步向导-connectgate)
 - [7. 常见问题 (FAQ)](#7-常见问题-faq)
@@ -201,6 +207,18 @@ flowchart TD
    ```bash
    npm install -g @larksuite/cli
    ```
+
+### 生态收录与插件市场源
+
+本插件作为 DeepSeek Harness 生态的核心应用，已同步收录并支持在以下 **5 大主流生态插件源与应用市场**中搜索、浏览、获取与下载：
+
+| 平台 / 索引源 | 渠道类型 | 访问与检索说明 |
+| :--- | :--- | :--- |
+| 🌐 **[dsh-plugin.org](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | DSH 官方与社区插件展示站 | [插件详情页直达](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio) 或在站点直接搜索 `dsh-lark-studio` / `飞书` 查看功能评级与动态 |
+| 🌟 **[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | GitHub 精选生态收录索引 | 官方收录于生产力与办公协同工具分类，支持在 Awesome 列表或网页专区快速查阅 |
+| 🛒 **[dshmarket.com](https://dshmarket.com)** | DSH 扩展插件应用市场 | 在市场首页或 Productivity 类目直接搜索 `dsh-lark-studio` / `飞书智能工作台` 一键获取 |
+| 📦 **[dsh-plugin-catalog](https://www.npmjs.com/package/dsh-lark-studio)** | npm 官方索引与包分发镜像 | 官方标准 npm 索引分发，支持在终端通过标准 `dsh plugin add` 原生指令全自动解析与安装 |
+| 🚀 **[dshopen.org](https://dshopen.org)** | DSH 开放生态门户 | 在开放生态索引专区与第三方插件专栏直接检索、获取配置指南并下载使用 |
 
 ### 安装方式
 

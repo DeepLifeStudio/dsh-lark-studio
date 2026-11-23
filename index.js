@@ -11,7 +11,7 @@ import { createOperations, destructiveChanges } from './ops.js'
 import { createAdjustPlanner } from './adjust-planner.js'
 import { createPlanner, sanitizePlan } from './planner.js'
 
-export const inject = ['tools', 'subprocess', 'webServer', 'llm', 'agentDefaultModel', 'commands', 'sessions']
+export const inject = ['tools', 'subprocess', 'webServer', 'llm', 'agentDefaultModel', 'commands', 'sessions', 'connection']
 
 const MAX_BODY_BYTES = 256 * 1024
 
@@ -108,6 +108,16 @@ function sendJson(res, status, body) {
   res.setHeader('content-type', 'application/json; charset=utf-8')
   res.setHeader('cache-control', 'no-store')
   res.end(JSON.stringify(body))
+}
+
+function jsonResponse(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  })
 }
 
 function readBody(req) {
@@ -852,6 +862,318 @@ export function apply(ctx, config = {}) {
       },
     }),
   )
+
+  // ── DSH Connection Fetch Routes ───────────────────────────────────────────
+  // Registers all Lark Workbench endpoints with DSH's native Connection service.
+  // When clients address 'api/dsh-lark/*', DSH Connection enforces native caller
+  // peer authentication and Host/Origin boundary defense before dispatch.
+  const connection = Reflect.get(ctx, 'connection') || ctx.connection
+  if (connection && connection.fetch && typeof connection.fetch.register === 'function') {
+    const connectionRoutes = [
+      { path: '/api/dsh-lark/state', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/models', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/active', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/records', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/plan', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/build', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/adjust', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/scopes', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/app/start', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/app/poll', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/app/manual', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/login/start', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/login/finish', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/login/state', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/logout', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/unbind', methods: ['POST'], requestBody: 'buffered' },
+    ]
+
+    for (const r of connectionRoutes) {
+      ctx.effect(() =>
+        connection.fetch.register({
+          path: r.path,
+          methods: r.methods,
+          requestBody: r.requestBody,
+          fetch: async (request) => {
+            const url = new URL(request.url, 'http://127.0.0.1')
+            const route = url.pathname.replace(/^\/api\/dsh-lark/, '') || '/'
+            const method = request.method
+
+            try {
+              if (method === 'GET' && route === '/state') {
+                const controller = new AbortController()
+                const timer = setTimeout(() => controller.abort(), 20000)
+                try {
+                  const state = await ops.connectStatus(controller.signal)
+                  return jsonResponse(200, { ok: true, ...state, active: latestActive })
+                } finally {
+                  clearTimeout(timer)
+                }
+              }
+
+              if (method === 'GET' && route === '/active') {
+                return jsonResponse(200, { ok: true, active: latestActive })
+              }
+
+              if (method === 'GET' && route === '/models') {
+                let current = { provider: 'deepseek-account', model: 'deepseek-flash' }
+                try {
+                  current = adjustPlanner.route()
+                } catch {}
+
+                const models = []
+                const seen = new Set()
+
+                function addModel(id, name, provider) {
+                  if (!id) return
+                  const key = `${provider}:${id}`
+                  if (seen.has(key)) return
+                  seen.add(key)
+                  models.push({ id, name: name || id, provider })
+                }
+
+                try {
+                  const providers = ctx.llm?.listProviders?.() || []
+                  for (const p of providers) {
+                    const providerId = p.id || p.provider || p
+                    try {
+                      let list = []
+                      if (typeof ctx.llm?.listModels === 'function') {
+                        list = await ctx.llm.listModels(providerId)
+                      } else {
+                        const reg = ctx.llm?.adapters?.get?.(providerId)
+                        if (reg?.adapter?.listModels) {
+                          list = await reg.adapter.listModels(providerId)
+                        }
+                      }
+                      if (Array.isArray(list)) {
+                        for (const m of list) addModel(m.id, m.name, providerId)
+                      }
+                    } catch (e) {
+                      try {
+                        const reg = ctx.llm?.adapters?.get?.(providerId)
+                        if (reg?.adapter?.listModels) {
+                          const list = await reg.adapter.listModels(providerId)
+                          if (Array.isArray(list)) {
+                            for (const m of list) addModel(m.id, m.name, providerId)
+                          }
+                        }
+                      } catch {}
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[dsh-lark] Failed to query ctx.llm models:', err)
+                }
+
+                if (current.model && !seen.has(`${current.provider}:${current.model}`)) {
+                  addModel(current.model, current.model, current.provider)
+                }
+
+                return jsonResponse(200, { ok: true, current, models })
+              }
+
+              if (method === 'GET' && route === '/records') {
+                const result = await ops.peek(
+                  url.searchParams.get('token') || '',
+                  url.searchParams.get('table') || '',
+                  url.searchParams.get('limit') || '6',
+                  undefined,
+                )
+                return jsonResponse(result.ok ? 200 : 422, result)
+              }
+
+              if (method === 'GET' && route === '/connect/scopes') {
+                const result = await ops.getScopes(undefined)
+                return jsonResponse(200, result)
+              }
+
+              if (method === 'POST' && route === '/connect/app/start') {
+                const result = await ops.startAppInit(undefined)
+                return jsonResponse(result.ok ? 200 : 500, result)
+              }
+
+              if (method === 'GET' && route === '/connect/app/poll') {
+                const result = await ops.pollAppInit()
+                return jsonResponse(200, result)
+              }
+
+              if (method === 'POST' && route === '/connect/app/manual') {
+                const body = await request.json().catch(() => ({}))
+                const result = await ops.bindApp(body.appId, body.appSecret, undefined)
+                return jsonResponse(result.ok ? 200 : 422, result)
+              }
+
+              if (method === 'POST' && route === '/connect/login/start') {
+                const body = await request.json().catch(() => ({}))
+                const result = await ops.startLogin(undefined, body?.domain)
+                return jsonResponse(result.ok ? 200 : 500, result)
+              }
+
+              if (method === 'POST' && route === '/connect/login/finish') {
+                const body = await request.json().catch(() => ({}))
+                const result = await ops.finishLogin(body.deviceCode, undefined)
+                return jsonResponse(result.ok ? 200 : 422, result)
+              }
+
+              if (method === 'GET' && route === '/connect/login/state') {
+                return jsonResponse(200, ops.exchangeState())
+              }
+
+              if (method === 'POST' && route === '/connect/logout') {
+                const result = await ops.logout(undefined)
+                return jsonResponse(result.ok ? 200 : 422, result)
+              }
+
+              if (method === 'POST' && route === '/connect/unbind') {
+                const result = await ops.unbindApp(undefined)
+                return jsonResponse(result.ok ? 200 : 422, result)
+              }
+
+              if (method === 'POST' && route === '/plan') {
+                const body = await request.json().catch(() => ({}))
+                const planned = await planner.plan(body.sentence, undefined, undefined, {
+                  model: body.model,
+                  provider: body.provider,
+                })
+                return jsonResponse(200, planned)
+              }
+
+              if (method === 'POST' && route === '/build') {
+                const body = await request.json().catch(() => ({}))
+                let plan = body.plan
+                if (!plan || typeof plan !== 'object') {
+                  const planned = await planner.plan(body.sentence, undefined)
+                  if (!planned.ok) {
+                    return jsonResponse(422, planned)
+                  }
+                  plan = planned.plan
+                }
+                const result = await ops.build(plan, {
+                  name: body.name,
+                  kanban: body.kanban,
+                  sample: body.sample,
+                })
+                return jsonResponse(result.ok ? 200 : 500, result)
+              }
+
+              if (method === 'POST' && route === '/adjust') {
+                const body = await request.json().catch(() => ({}))
+                const token = String(body.token ?? '').trim()
+                const instruction = String(body.instruction ?? '').trim()
+                const isCollab = body.type === 'collab' || !token
+
+                if (isCollab) {
+                  if (body.stream) {
+                    const encoder = new TextEncoder()
+                    const stream = new ReadableStream({
+                      async start(controller) {
+                        const onDelta = (event) => {
+                          try {
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+                          } catch {}
+                        }
+                        try {
+                          const collabRes = await ops.dispatchCollab({
+                            instruction,
+                            history: body.history,
+                            model: body.model,
+                            provider: body.provider,
+                            onDelta,
+                          })
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', payload: collabRes })}\n\n`))
+                        } catch (err) {
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: String(err) })}\n\n`))
+                        } finally {
+                          controller.close()
+                        }
+                      },
+                    })
+                    return new Response(stream, {
+                      status: 200,
+                      headers: {
+                        'content-type': 'text/event-stream; charset=utf-8',
+                        'cache-control': 'no-cache, no-transform',
+                      },
+                    })
+                  }
+
+                  const collabRes = await ops.dispatchCollab({
+                    instruction,
+                    history: body.history,
+                    model: body.model,
+                    provider: body.provider,
+                  })
+                  return jsonResponse(200, collabRes)
+                }
+
+                let planned = Array.isArray(body.ops) && body.ops.length > 0 ? body.ops : undefined
+                let aiReply = undefined
+                if (!planned) {
+                  const schema = await ops.readSchema(token)
+                  let liveRecords = await ops.peek(token, body.table || '', '50')
+                  if (!liveRecords.ok) liveRecords = await ops.peek(token, '', '50')
+                  const result = await adjustPlanner.plan({
+                    instruction,
+                    history: body.history,
+                    model: body.model,
+                    provider: body.provider,
+                    table: body.table,
+                  }, schema, liveRecords)
+                  if (!result.ok) {
+                    return jsonResponse(422, result)
+                  }
+                  if (result.type === 'answer' || (!result.ops || result.ops.length === 0)) {
+                    return jsonResponse(200, {
+                      ok: true,
+                      type: 'answer',
+                      summary: result.reply || '已为您查询完成。',
+                      reply: result.reply || '已为您查询完成。',
+                    })
+                  }
+                  planned = result.ops
+                  aiReply = result.reply
+                }
+
+                const risky = destructiveChanges(planned)
+                if (risky.length > 0 && body.confirm !== true) {
+                  return jsonResponse(200, {
+                    ok: true,
+                    needsConfirm: true,
+                    destructive: risky,
+                    ops: planned,
+                    summary: ['这几处改了没法撤销：', ...risky.map((line) => `· ${line}`)].join('\n'),
+                  })
+                }
+
+                const adjusted = await ops.adjust(token, planned, { table: body.table })
+                let live = await ops.peek(token, body.table || '', '12')
+                if (!live.ok) live = await ops.peek(token, '', '12')
+
+                return jsonResponse(200, {
+                  ...adjusted,
+                  type: 'ops',
+                  planned,
+                  reply: aiReply,
+                  summary: aiReply ? `${aiReply}\n${adjusted.summary}` : adjusted.summary,
+                  live: live.ok
+                    ? { ok: true, fields: live.fields, rows: live.rows, more: live.more, table: live.table }
+                    : { ok: false, message: live.message },
+                })
+              }
+
+              return jsonResponse(404, { ok: false, error: 'unknown route' })
+            } catch (error) {
+              return jsonResponse(500, {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
+          },
+        }),
+        `dsh-lark: connection fetch ${r.path}`,
+      )
+    }
+  }
 
   // The most discoverable entrance: `/lark <一句话>` right in the composer.
   ctx.effect(() =>

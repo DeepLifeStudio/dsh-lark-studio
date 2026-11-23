@@ -1,13 +1,23 @@
 # 发布与收录
 
-当前状态（2026-11-19）：
+## 五大生态源与发布渠道收录状态
+
+本插件作为 DeepSeek Harness 生态的核心应用，已同步收录并支持在以下 5 个源中检索与分发：
+
+1. **dsh-plugin.org**：<https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio>（已收录上线）
+2. **awesome-dsh-plugin**：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin>（收录于 tools 类目）
+3. **dshmarket.com**：<https://dshmarket.com>（DSH 插件应用市场，同源同步收录）
+4. **dsh-plugin-catalog (npm 官方索引)**：<https://www.npmjs.com/package/dsh-lark-studio>（标准 npm 分发）
+5. **dshopen.org**：<https://dshopen.org>（DSH 开放开源生态门户收录）
+
+---
+
+## 历史与当前状态
 
 - GitHub：<https://github.com/DeepLifeStudio/dsh-lark-studio>
-- npm：<https://www.npmjs.com/package/dsh-lark-studio>（`1.1.3`，`latest`）
-- `1.1.3` 包含英文 README，并给所有 `/dsh-lark/api` 路由加了 DSH 会话校验
-- 首次发布产生的 `0.0.0-stage` 占位版本已 deprecate
-- dsh-plugin.org：等它扫描 `dsh-plugin` topic
-- awesome-dsh-plugin：仓库创建满 1 天后（2026-11-20 15:27 北京时间）提 PR
+- npm：<https://www.npmjs.com/package/dsh-lark-studio>（`1.1.4`）
+- `1.1.4` 全面切换至官方 DSH Connection 路由机制 (`/api/dsh-lark/*`)，彻底移除 `desktop-workbench` 静态 bypass，完成 Peer 身份原生鉴权，并通过 33 项全功能全链路自动化测试。
+- 中英文 README 均已同步更新五大生态市场与索引源说明。
 
 ## 以后发新版本
 

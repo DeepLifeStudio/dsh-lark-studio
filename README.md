@@ -6,6 +6,7 @@
 > 专为 [DeepSeek Harness](https://github.com/deepseek-ai) 生态打造的大模型原生（LLM-Native）飞书全域协同与多维表格智能工作台插件。
 
 [![npm version](https://img.shields.io/npm/v/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio)
 [![DSH Plugin](https://img.shields.io/badge/DSH-Plugin.org-orange.svg)](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)
 [![dshopen](https://img.shields.io/badge/DSH-Open.org-purple.svg)](https://dshopen.org)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,10 +20,11 @@
 - [4. 飞书全功能清单（全景列表）](#4-飞书全功能清单全景列表)
 - [5. 核心架构与交互流转](#5-核心架构与交互流转)
 - [6. 快速开始与安装部署](#6-快速开始与安装部署)
-  - [前置依赖](#前置依赖)
-  - [生态收录与插件市场源](#生态收录与插件市场源)
-  - [安装方式](#安装方式)
-  - [首次连接三步向导 (ConnectGate)](#首次连接三步向导-connectgate)
+  - [6.1 前置依赖](#61-前置依赖)
+  - [6.2 生态收录与各大插件市场源](#62-生态收录与各大插件市场源)
+  - [6.3 推荐安装方式（npm / 商店）](#63-推荐安装方式强烈建议通过-npm--商店安装)
+  - [6.4 插件更新升级方式](#64-插件更新升级方式)
+  - [6.5 首次连接三步向导 (ConnectGate)](#65-首次连接三步向导-connectgate)
 - [7. 常见问题 (FAQ)](#7-常见问题-faq)
 - [8. 开源协议](#8-开源协议)
 
@@ -124,10 +126,13 @@
 - [x] **统计分析仪表盘（Dashboard）**：自动为表格配置多维度图表与统计看板。
 - [x] **收集问卷表单（Form）**：自动将表格转为外发数据收集问卷。
 
-### 4.5 飞书全域办公协同（Universal Collaboration）
 ### 4.5 飞书全域办公协同（Universal Collaboration CRUD 矩阵）
 
 对照飞书官方 `lark-cli` 体系，工作台不仅支持多维表格的深度运维，还对飞书协同生态各域提供了完整的**增（Create）、删（Delete）、改（Update）、查（Retrieve/Query）**全生命周期能力覆盖：
+
+<details>
+<summary><b>👉 点击展开查看完整 CRUD 协同能力矩阵（日历、任务、即时通讯、邮件、通讯录、审批、云文档与权限大盘）</b></summary>
+<br>
 
 #### 📅 日历与会议（Calendar）
 * **增 (Create)**：创建日程与预约会议（`calendar +create`，支持指定主题、起止时间与参会人）、加入日程（`+join-event`）。
@@ -173,6 +178,8 @@
 * **全域诊断**：自动检测当前账号已获批的 22 种开放平台权限领域（涵盖表格、日历、待办、消息、邮件、通讯录、审批、云文档等）。
 * **优雅降级**：调用任何未授权功能时，自动拦截报错并生成带 App ID 的直达授权链接卡片，指导用户一键在开放平台开通相应权限。
 
+</details>
+
 ---
 
 ## 5. 核心架构与交互流转
@@ -201,44 +208,76 @@ flowchart TD
 
 ## 6. 快速开始与安装部署
 
-### 前置依赖
+### 6.1 前置依赖
 1. **Node.js**：版本 `>= 18.0.0`
 2. **飞书命令行工具 (`lark-cli`)**：
    ```bash
    npm install -g @larksuite/cli
    ```
 
-### 生态收录与插件市场源
+### 6.2 生态收录与各大插件市场源
 
-本插件作为 DeepSeek Harness 生态的核心应用，已同步收录并支持在以下 **5 大主流生态插件源与应用市场**中搜索、浏览、获取与下载：
+本插件作为 DeepSeek Harness 生态的核心应用，已同步收录并入驻以下各大官方与社区主流生态插件源、精选目录与应用市场，方便按需检索与获取：
 
 | 平台 / 索引源 | 渠道类型 | 访问与检索说明 |
 | :--- | :--- | :--- |
-| 🌐 **[dsh-plugin.org](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | DSH 官方与社区插件展示站 | [插件详情页直达](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio) 或在站点直接搜索 `dsh-lark-studio` / `飞书` 查看功能评级与动态 |
-| 🌟 **[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | GitHub 精选生态收录索引 | 官方收录于生产力与办公协同工具分类，支持在 Awesome 列表或网页专区快速查阅 |
-| 🛒 **[dshmarket.com](https://dshmarket.com)** | DSH 扩展插件应用市场 | 在市场首页或 Productivity 类目直接搜索 `dsh-lark-studio` / `飞书智能工作台` 一键获取 |
-| 📦 **[dsh-plugin-catalog](https://www.npmjs.com/package/dsh-lark-studio)** | npm 官方索引与包分发镜像 | 官方标准 npm 索引分发，支持在终端通过标准 `dsh plugin add` 原生指令全自动解析与安装 |
-| 🚀 **[dshopen.org](https://dshopen.org)** | DSH 开放生态门户 | 在开放生态索引专区与第三方插件专栏直接检索、获取配置指南并下载使用 |
+| 📦 **[npm Registry](https://www.npmjs.com/package/dsh-lark-studio)** | 原生官方包分发源 | 官方标准 npm 索引分发，原生支持标准 `dsh plugin add` 解析、自动版本发现与无缝升级 |
+| 🛒 **[dsh-market](https://github.com/dsh-market/dsh-market)** | 内置可视化商店（装机量第一） | 在 DSH 客户端直接内置安装 `dshmarket`，在「设置 → 插件市场」搜索 `dsh-lark-studio` / `飞书` 一键安装与更新 |
+| 🏪 **[DeepSeek 1024 插件商店](https://deepseek1024.com)** | 自动化大型插件市场 | 自动化格式校验收录，支持在 `deepseek1024.com` 网页或配套 CLI（`dsh-1024store`）检索与安装 |
+| 🌟 **[Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | 社区核心精选列表与索引基准 | 官方收录于生产力与办公协同分类，作为全网各大可视化市场的底层精选索引数据源 |
+| 🌐 **[DSH Plugin Hub](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | 体量最大聚合展示中心 | [插件详情页直达](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)，每日自动化爬虫同步 npm 与 GitHub 发版动态 |
+| 🔎 **[DSHSeek](https://dshseek.com/zh/plugins/)** | 中文精选核验目录 | 主打人工对照仓库与链接可达性复核的中文插件索引目录 |
+| 📚 **[Awesome DeepSeek Harness](https://github.com/libukai/awesome-deepseek-harness)** | 综合型生态指南清单 | 官方与社区精选指南仓库，汇总高星插件与入门资源 |
+| 💬 **[官方 Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154)** | DeepSeek 官方原生社区阵地 | 官方「Show Your Plugins!」专区正式发布展示与开发者交流索引 |
+| 🚀 **[dshopen 插件索引](https://dshopen.org)** | 开放生态索引门户 | 开放生态索引专区，收录配置指南与集成文档 |
 
-### 安装方式
+### 6.3 推荐安装方式（强烈推荐通过 npm / 商店安装）
 
-#### 方式 A：从 npm 安装（推荐）
-发布到 npm 后，在终端执行：
+推荐直接通过 npm 包管理安装至当前使用的 profile（如 `web` 或 `desktop`）：
 ```bash
+# 推荐：安装到当前 profile
+dsh plugin --profile web add dsh-lark-studio
+
+# 若使用桌面端 profile：
 dsh plugin --profile desktop add dsh-lark-studio
 ```
-装完重启 DSH，左侧栏出现「飞书工作台」入口。
 
-#### 方式 B：从 GitHub 源码安装
+或在已安装 `dsh-market` 的 DSH 客户端中，直接在图形化市场界面点击 **「安装」**。
+
+> **启动提示**：若使用 Web UI 界面，启动 DSH 时请加上 `--patch` 参数，本工作台才能在右侧边栏即时加载生效：
+> ```bash
+> dsh start --patch
+> ```
+
+---
+
+### 6.4 插件更新升级方式
+
+#### 方式一：终端命令行一键升级（推荐）
 ```bash
-git clone https://github.com/DeepLifeStudio/dsh-lark-studio.git
-cd dsh-lark-studio
-dsh plugin --profile desktop add .
+# 升级本插件至最新版本
+dsh plugin --profile web update dsh-lark-studio
+
+# 或检查并升级全量已安装插件
+dsh plugin update
 ```
 
-> 本地开发也可以直接把当前目录链进 profile：`dsh plugin --profile desktop add /path/to/lark-workbench`。
+#### 方式二：图形化市场一键更新
+如果您是在 `dsh-market` 或 `1024store` 等可视化市场中安装的，插件发布新版本后，DSH 的「设置 → 插件市场」会出现红点更新提示，点击 **「更新」** 按钮即可一键静默升级。
 
-### 首次连接三步向导 (ConnectGate)
+---
+
+> [!WARNING]
+> ### ⚠️ 为什么强烈不建议使用 Git 源码（`git clone`）方式安装？
+> 
+> 虽然部分开发者习惯使用 `git clone` 或 `github:用户名/仓库名` 进行安装，但我们**强烈不建议**普通用户和生产环境采用 Git 方式：
+> 1. **无法接收版本更新通知**：Git 仓库分支拉取不携带 npm 的语义化版本（SemVer）标签元数据，DSH 宿主检测不到上游新版本的发布，导致你长期停留在旧版本且无从知晓；
+> 2. **无法使用 `dsh plugin update` 一键升级**：通过 Git 源码安装的插件会被标记为本地外链目录，执行 `dsh plugin update` 时会被跳过，必须用户手动进终端 `cd` 目录、`git pull`、再重新构建依赖，极易产生依赖断层和运行故障；
+> 3. **缺少发布完整性校验**：npm 官方源在发布时自带安全扫描与 SHA512 Integrity Hash 完整性校验，能杜绝因 Git 中间网络抖动造成的代码文件丢失。
+> 
+> **请始终优先使用 `dsh plugin add dsh-lark-studio`（npm 源）进行安装与更新！**
+
+### 6.5 首次连接三步向导 (ConnectGate)
 安装完成后，在 DeepSeek Harness 侧边栏打开「飞书工作台」，界面会自动检测环境：
 1. **连接工具检测 (CLI)**：自动检测 `lark-cli` 是否可用。若未检测到，界面提供一键复制命令。
 2. **应用配置绑定 (App)**：可点击直达飞书开放平台自动初始化应用，或手动填入企业自建应用的 `App ID` 与 `App Secret`。

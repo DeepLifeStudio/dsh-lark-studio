@@ -6,6 +6,7 @@
 > An LLM-Native universal collaboration and Bitable intelligence workbench plugin built for the [DeepSeek Harness](https://github.com/deepseek-ai) ecosystem.
 
 [![npm version](https://img.shields.io/npm/v/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio)
 [![DSH Plugin](https://img.shields.io/badge/DSH-Plugin.org-orange.svg)](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)
 [![dshopen](https://img.shields.io/badge/DSH-Open.org-purple.svg)](https://dshopen.org)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -27,10 +28,11 @@
   - [4.5 Universal Collaboration (Full CRUD Matrix)](#45-universal-collaboration-full-crud-matrix)
 - [5. Core Architecture & Interaction Flow](#5-core-architecture--interaction-flow)
 - [6. Quick Start & Installation](#6-quick-start--installation)
-  - [Prerequisites](#prerequisites)
-  - [Ecosystem Indexes & Plugin Marketplaces](#ecosystem-indexes--plugin-marketplaces)
-  - [Installation Methods](#installation-methods)
-  - [Three-Step Onboarding Wizard (ConnectGate)](#three-step-onboarding-wizard-connectgate)
+  - [6.1 Prerequisites](#61-prerequisites)
+  - [6.2 Ecosystem Indexes & Major Plugin Marketplaces](#62-ecosystem-indexes--major-plugin-marketplaces)
+  - [6.3 Recommended Installation (via npm / Visual Store)](#63-recommended-installation-via-npm--visual-store)
+  - [6.4 How to Update & Upgrade](#64-how-to-update--upgrade)
+  - [6.5 Three-Step Onboarding Wizard (ConnectGate)](#65-three-step-onboarding-wizard-connectgate)
 - [7. Frequently Asked Questions (FAQ)](#7-frequently-asked-questions-faq)
 - [8. License](#8-license)
 
@@ -136,6 +138,10 @@ The workbench provides full coverage across Lark Open Platform capabilities:
 
 Aligned with the official `lark-cli` ecosystem, the workbench covers the complete **Create, Read, Update, Delete** lifecycle across all workplace domains:
 
+<details>
+<summary><b>👉 Click to expand full CRUD Collaboration Matrix (Calendar, Tasks, IM, Mail, Contacts, Approvals, Docs & Scopes Inspector)</b></summary>
+<br>
+
 #### 📅 Calendar & Meetings
 * **Create**: Schedule events and meetings (`calendar +create`, specifying subject, time slots, and attendees), join events (`+join-event`).
 * **Delete**: Delete or cancel calendar events (`calendar +delete`, supports recurring events and exceptions).
@@ -180,6 +186,8 @@ Aligned with the official `lark-cli` ecosystem, the workbench covers the complet
 * **Full Diagnostic**: Automatically inspects granted permissions across 22 Open Platform domains.
 * **Graceful Degradation**: When invoking an ungranted capability, intercepts errors and displays a card with direct links to the Lark developer console for one-click authorization.
 
+</details>
+
 ---
 
 ## 5. Core Architecture & Interaction Flow
@@ -208,44 +216,76 @@ flowchart TD
 
 ## 6. Quick Start & Installation
 
-### Prerequisites
+### 6.1 Prerequisites
 1. **Node.js**: Version `>= 18.0.0`
 2. **Lark CLI Tool (`lark-cli`)**:
    ```bash
    npm install -g @larksuite/cli
    ```
 
-### Ecosystem Indexes & Plugin Marketplaces
+### 6.2 Ecosystem Indexes & Major Plugin Marketplaces
 
-As a premier application in the DeepSeek Harness ecosystem, this plugin is indexed, published, and discoverable across **5 major ecosystem registries and marketplaces**:
+As a premier application in the DeepSeek Harness ecosystem, this plugin is indexed, published, and discoverable across major official and community registries and marketplaces:
 
 | Platform / Registry | Channel Type | Access & Discovery |
 | :--- | :--- | :--- |
-| 🌐 **[dsh-plugin.org](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | DSH Official/Community Directory | [Direct Plugin Page](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio) or search `dsh-lark-studio` / `Lark` for ratings and status |
-| 🌟 **[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | Curated GitHub Directory | Featured under the office productivity and collaboration tools category |
-| 🛒 **[dshmarket.com](https://dshmarket.com)** | DSH App & Plugin Store | Search `dsh-lark-studio` / `Lark Workbench` in the store for one-click installation |
-| 📦 **[dsh-plugin-catalog](https://www.npmjs.com/package/dsh-lark-studio)** | npm & DSH Standard Registry | Official npm registry mirror; install via standard CLI: `dsh plugin add dsh-lark-studio` |
-| 🚀 **[dshopen.org](https://dshopen.org)** | DSH Open Ecosystem Portal | Search and discover in the open-source community ecosystem catalog |
+| 📦 **[npm Registry](https://www.npmjs.com/package/dsh-lark-studio)** | Official Primary Package Registry | Standard npm distribution supporting native `dsh plugin add`, automated version detection, and clean updates |
+| 🛒 **[dsh-market](https://github.com/dsh-market/dsh-market)** | Built-in Visual Store (#1 by downloads) | Install `dshmarket` in your DSH client, then search `dsh-lark-studio` / `Lark` in Settings → Plugin Market for one-click installation and updates |
+| 🏪 **[DeepSeek 1024 Plugin Store](https://deepseek1024.com)** | Automated Enterprise Store | Automated static format validation; browse via `deepseek1024.com` or install via CLI (`dsh-1024store`) |
+| 🌟 **[Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | Curated Benchmark Directory | Featured under productivity and collaboration tools, serving as the foundational index for visual marketplaces |
+| 🌐 **[DSH Plugin Hub](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | Largest Aggregated Directory | [Direct Plugin Page](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio), automatically synced daily with npm and GitHub releases |
+| 🔎 **[DSHSeek](https://dshseek.com/zh/plugins/)** | Verified Community Catalog | Human-verified directory ensuring link reachability and integration stability |
+| 📚 **[Awesome DeepSeek Harness](https://github.com/libukai/awesome-deepseek-harness)** | Comprehensive Guide & Toolkit | Community-curated guidebook listing top plugins and starter resources |
+| 💬 **[Official Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154)** | DeepSeek Native Community | Formally listed under the official "Show Your Plugins!" showcase section |
+| 🚀 **[dshopen Plugin Index](https://dshopen.org)** | Open Ecosystem Portal | Curated indexing portal providing configuration guides and setup documentation |
 
-### Installation Methods
+### 6.3 Recommended Installation (via npm / Visual Store)
 
-#### Method A: Install via npm (Recommended)
-In your terminal, run:
+We strongly recommend installing via npm to your active DSH profile (such as `web` or `desktop`):
 ```bash
+# Recommended: Install to active profile
+dsh plugin --profile web add dsh-lark-studio
+
+# For desktop profile:
 dsh plugin --profile desktop add dsh-lark-studio
 ```
-Restart DeepSeek Harness, and the "飞书工作台" (Lark Workbench) icon will appear in your left sidebar.
 
-#### Method B: Install from GitHub Source
+Alternatively, open the built-in **`dsh-market`** visual store inside DeepSeek Harness and click **「Install」**.
+
+> **Startup Notice**: When using the Web UI, always launch DSH with the `--patch` parameter so that the sidebar workbench loads properly:
+> ```bash
+> dsh start --patch
+> ```
+
+---
+
+### 6.4 How to Update & Upgrade
+
+#### Method 1: One-Click CLI Upgrade (Recommended)
 ```bash
-git clone https://github.com/DeepLifeStudio/dsh-lark-studio.git
-cd dsh-lark-studio
-dsh plugin --profile desktop add .
+# Upgrade this plugin to latest version
+dsh plugin --profile web update dsh-lark-studio
+
+# Or check and upgrade all installed plugins
+dsh plugin update
 ```
 
-> For local development, link the local directory directly: `dsh plugin --profile desktop add /path/to/lark-workbench`.
+#### Method 2: Graphical One-Click Update
+If installed through visual stores like `dsh-market` or `1024store`, a red update indicator will appear under DSH **Settings → Plugin Market** whenever a new release is available. Click **「Update」** for seamless in-place upgrade.
 
-### Three-Step Onboarding Wizard (ConnectGate)
+---
+
+> [!WARNING]
+> ### ⚠️ Why Git Source Installation (`git clone`) is Strongly Discouraged
+> 
+> While some developers may be accustomed to using `git clone` or `github:owner/repo`, we **strongly advise against** this in production:
+> 1. **No Version Update Alerts**: Cloning Git branches bypasses SemVer metadata; DSH cannot detect upstream releases, leaving your installation permanently outdated;
+> 2. **Incompatible with `dsh plugin update`**: Plugins installed via Git are treated as external local directories and skipped during `dsh plugin update`. Users must manually `cd`, `git pull`, and rebuild dependencies, which often introduces version skew and runtime errors;
+> 3. **Lacks Automated Integrity Verification**: npm distribution includes automated security reviews and SHA-512 integrity hashes, preventing corrupt or truncated files caused by transient network failures.
+> 
+> **Always prefer `dsh plugin add dsh-lark-studio` (npm package) for installation and maintenance!**
+
+### 6.5 Three-Step Onboarding Wizard (ConnectGate)
 When opening the workbench for the first time, it automatically verifies your environment:
 1. **Tool Check (CLI)**: Verifies whether `lark-cli` is installed. If missing, provides a one-click copy command.
 2. **App Configuration (App)**: One-click jump to the Lark Developer Console to auto-initialize an app, or manually enter your enterprise `App ID` and `App Secret`.

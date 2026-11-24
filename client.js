@@ -1,31 +1,20 @@
 /**
  * Lark Workbench — Client half.
  *
- * Design notes: Paper & Ink
- * ─────────────────────────
- * A warm, low-chroma canvas carries the page; one white stage (the composer)
- * carries the action; everything else is type, space and hairlines.
- *
- * 1. One focus per screen. The composer owns the first screen; the six
- *    scenarios are a one-line chip row underneath, never a wall of cards.
- * 2. Type does the hierarchy — a 40px question, a 15px supporting line,
- *    12px metadata — so no borders are needed to separate sections.
- * 3. One light source: warm, low-contrast shadows and hairline rules. The
- *    only saturated colour is the Feishu blue mark, plus the status dot and
- *    the option pills in the table preview.
- * 4. Every state keeps the same composer: planning, errors and refinement
- *    happen in place instead of replacing the screen.
- * 5. Created tables stay reachable: Recent reopens a live view through the
- *    same CLI, and entries can be removed (with confirmation) without ever
- *    touching the table itself.
- * 6. A built table is a workspace, not a receipt. The success card hands off
- *    to the same table, whose one-line adjust composer keeps the "say one
- *    sentence" promise; deleting something always asks first.
- * 7. The real Base is the source of truth. The host's right-docked browser
- *    opens the native Feishu page (own login, no iframe), so this panel never
- *    re-implements a table: it shows the shape, samples on demand, and keeps
- *    the one-line composer. Without that browser it falls back to the system
- *    browser, and the read-only sample opens by default.
+ * Design System: Radical Restraint & Spatial Clarity (Notion / Linear / Apple ethos)
+ * ──────────────────────────────────────────────────────────────────────────────────
+ * 1. Less, but better: generous whitespace, hairline borders, zero instructional walls.
+ * 2. One focal action per screen; progressive disclosure hides what is not needed now.
+ * 3. Unified Apple-calibrated motion grammar: GPU-only compositing, interruptible
+ *    disclosure & overlay transitions, direct 0ms pointer-tracked resizing, full
+ *    `prefers-reduced-motion` support.
+ * 4. Precision 1.55px-stroke SVG icon system — zero emojis, zero raw Unicode glyphs.
+ * 5. True Light/Dark parity synced with DSH host (`body[data-ds-dark-theme]`) and
+ *    container-aware responsiveness (`ResizeObserver`) for mobile, right-sidebar,
+ *    and wide split-screen layouts.
+ * 6. Humane safeguards: IME-safe Enter, cancelable in-flight requests, non-destructive
+ *    Undo toasts, explicit guards for irreversible mutations, and preserved chat history
+ *    on live table sync.
  */
 
 window.__ModuleLoader__.load({
@@ -38,16 +27,19 @@ window.__ModuleLoader__.load({
     const API = 'api/dsh-lark'
     const NS = 'dsh-lark-studio'
     const RECENT_KEY = 'dsh-lark-recent'
+    const STYLE_ID = 'dsh-lark-studio-styles'
 
     let currentDshSessionId = ''
+    let styleRefCount = 0
 
     function resolveDshSessionId(props, ctx) {
       if (props && props.sessionId) return String(props.sessionId)
       if (props && props.session && props.session.id) return String(props.session.id)
       try {
-        const fromMounted = ctx && ctx.sidebarRight && ctx.sidebarRight.mounted && typeof ctx.sidebarRight.mounted.getSnapshot === 'function'
-          ? ctx.sidebarRight.mounted.getSnapshot()
-          : undefined
+        const fromMounted =
+          ctx && ctx.sidebarRight && ctx.sidebarRight.mounted && typeof ctx.sidebarRight.mounted.getSnapshot === 'function'
+            ? ctx.sidebarRight.mounted.getSnapshot()
+            : undefined
         if (fromMounted) return String(fromMounted)
       } catch {}
       try {
@@ -77,89 +69,20 @@ window.__ModuleLoader__.load({
       if (sid && !headers.has('x-dsh-session-id')) {
         headers.set('x-dsh-session-id', sid)
       }
-
       return fetch(targetUrl, { ...options, headers })
     }
 
-    // ── Content ────────────────────────────────────────────────────────────
-
-    const SCENARIOS = [
-      {
-        id: 'crm',
-        type: 'base',
-        icon: 'table',
-        title: '客户和生意',
-        desc: '谁在跟、谈到哪一步、别忘下次联系',
-        prompt: '我想记客户往来：公司、联系人、现在谈到哪一步、下次什么时候联系',
-      },
-      {
-        id: 'task',
-        type: 'base',
-        icon: 'check',
-        title: '工作任务',
-        desc: '谁负责、什么时候交、做完没有',
-        prompt: '我想记工作任务：任务、负责人、做到哪一步了、截止时间',
-      },
-      {
-        id: 'content',
-        type: 'base',
-        icon: 'calendar',
-        title: '内容排期',
-        desc: '写什么、发哪里、什么时候发',
-        prompt: '我想排内容：选题、发在哪个平台、什么状态、什么时候发',
-      },
-      {
-        id: 'collab-calendar',
-        type: 'collab',
-        icon: 'calendar',
-        title: '今日日程',
-        desc: '查今天会议安排与空闲时段',
-        prompt: '查一下我今天的日程安排与会议',
-      },
-      {
-        id: 'collab-todo',
-        type: 'collab',
-        icon: 'check',
-        title: '我的待办',
-        desc: '未完成待办任务与截止日期',
-        prompt: '列出我所有未完成的待办事项',
-      },
-      {
-        id: 'collab-chat',
-        type: 'collab',
-        icon: 'people',
-        title: '搜索群聊',
-        desc: '查找可见的项目群聊列表',
-        prompt: '搜索我加入的飞书群聊',
-      },
-      {
-        id: 'collab-mail',
-        type: 'collab',
-        icon: 'receipt',
-        title: '邮件速览',
-        desc: '查最近收到的重要邮件',
-        prompt: '查一下我最近收到的重要邮件',
-      },
-      {
-        id: 'expense',
-        type: 'base',
-        icon: 'receipt',
-        title: '花钱报销',
-        desc: '花在哪、多少钱、报了没有',
-        prompt: '我想记报销：花在什么事上、金额、日期、报销到哪一步',
-      },
-    ]
+    // ── Precision SVG Icon System (Zero Emojis, Zero Raw Unicode Glyphs) ───
 
     const ICONS = {
-      people: [
-        'M8.5 10a2.6 2.6 0 100-5.2 2.6 2.6 0 000 5.2Z',
-        'M15.5 10.4a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4Z',
-        'M3.5 18.5c0-2.8 2.2-4.6 5-4.6s5 1.8 5 4.6',
-        'M14.2 13.9c2.3.2 4.1 1.9 4.1 4.2',
+      table: [
+        'M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2Z',
+        'M4 10h16',
+        'M10 10v10',
       ],
-      check: [
+      checkSquare: [
         'M4.5 6.5A2 2 0 016.5 4.5h11a2 2 0 012 2v11a2 2 0 01-2 2h-11a2 2 0 01-2-2Z',
-        'M8.2 12.1l2.4 2.4 5-5',
+        'M8.5 12.2l2.3 2.3 4.8-4.8',
       ],
       calendar: [
         'M4.5 7.5A2 2 0 016.5 5.5h11a2 2 0 012 2v9a2 2 0 01-2 2h-11a2 2 0 01-2-2Z',
@@ -167,116 +90,102 @@ window.__ModuleLoader__.load({
         'M8.5 3.8v3.4',
         'M15.5 3.8v3.4',
       ],
-      user: [
-        'M12 11.6a3.1 3.1 0 100-6.2 3.1 3.1 0 000 6.2Z',
-        'M5.6 19.6c0-3.4 2.9-5.5 6.4-5.5s6.4 2.1 6.4 5.5',
+      people: [
+        'M8.5 10a2.6 2.6 0 100-5.2 2.6 2.6 0 000 5.2Z',
+        'M15.5 10.4a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4Z',
+        'M3.5 18.5c0-2.8 2.2-4.6 5-4.6s5 1.8 5 4.6',
+        'M14.2 13.9c2.3.2 4.1 1.9 4.1 4.2',
+      ],
+      mail: [
+        'M4 6.5A2 2 0 016 4.5h12a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2Z',
+        'M4.5 7l7.5 5.5L19.5 7',
       ],
       receipt: [
         'M6.5 3.8h11v15.4l-2.2-1.4-2.2 1.4-2.2-1.4-2.2 1.4-2.2-1.4Z',
-        'M9.5 8.2h5',
-        'M9.5 11.8h5',
+        'M9.5 8.5h5',
+        'M9.5 12h5',
+      ],
+      user: [
+        'M12 11.4a3.1 3.1 0 100-6.2 3.1 3.1 0 000 6.2Z',
+        'M5.6 19.4c0-3.4 2.9-5.4 6.4-5.4s6.4 2 6.4 5.4',
       ],
       book: [
         'M4.5 5.4c2.6-.9 5.2-.9 7.5.4 2.3-1.3 4.9-1.3 7.5-.4v12c-2.6-.9-5.2-.9-7.5.4-2.3-1.3-4.9-1.3-7.5-.4Z',
         'M12 5.8v12',
       ],
-      lock: [
-        'M7 10.5V8a5 5 0 0110 0v2.5',
-        'M5.5 10.5h13a1.5 1.5 0 011.5 1.5v6.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 18.5V12a1.5 1.5 0 011.5-1.5Z',
-      ],
       refresh: [
-        'M4 12a8 8 0 0114.9-4M20 4v5h-5',
-        'M20 12a8 8 0 01-14.9 4M4 20v-5h5',
+        'M4.5 12a7.5 7.5 0 0113.8-4.1',
+        'M19.5 4.5v4h-4',
+        'M19.5 12a7.5 7.5 0 01-13.8 4.1',
+        'M4.5 19.5v-4h4',
       ],
-      arrowLeft: ['M19 12H5', 'M11 6l-6 6 6 6'],
+      arrowLeft: ['M18.5 12h-13', 'M11 6.5L5.5 12 11 17.5'],
+      arrowUp: ['M12 18.5v-13', 'M6.5 11L12 5.5 17.5 11'],
       arrowUpRight: ['M7 17L17 7', 'M9 7h8v8'],
-      chevron: ['M9 6l6 6-6 6'],
-      tick: ['M4.8 12.4l4.6 4.6L19.2 7.2'],
-      table: [
+      chevronRight: ['M9.5 6.5L15 12l-5.5 5.5'],
+      chevronDown: ['M6.5 9.5L12 15l5.5-5.5'],
+      check: ['M5 12.5l4.5 4.5L19 7.5'],
+      close: ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11'],
+      copy: [
+        'M9 9.5A1.5 1.5 0 0110.5 8h8A1.5 1.5 0 0120 9.5v9a1.5 1.5 0 01-1.5 1.5h-8A1.5 1.5 0 019 18.5Z',
+        'M15 8V5.5A1.5 1.5 0 0013.5 4h-8A1.5 1.5 0 004 5.5v9A1.5 1.5 0 005.5 16H9',
+      ],
+      splitPane: [
         'M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2Z',
-        'M4 10h16',
-        'M10 10v10',
+        'M12.5 4v16',
+      ],
+      stop: {
+        filled: true,
+        paths: ['M7.5 7.5h9a1 1 0 011 1v7a1 1 0 01-1 1h-9a1 1 0 01-1-1v-7a1 1 0 011-1Z'],
+      },
+      trash: [
+        'M4.5 7h15',
+        'M9.5 4h5',
+        'M6.5 7l.8 11.2A1.8 1.8 0 009.1 20h5.8a1.8 1.8 0 001.8-1.8L17.5 7',
+      ],
+      alertCircle: [
+        'M12 21a9 9 0 100-18 9 9 0 000 18Z',
+        'M12 8.2v4.3',
+        'M12 15.8h.01',
+      ],
+      shieldCheck: [
+        'M12 21s7.5-3.6 7.5-9.5V5.8L12 3 4.5 5.8v5.7C4.5 17.4 12 21 12 21Z',
+        'M9 12.2l2.1 2.1 4.2-4.2',
+      ],
+      chart: ['M18 19V10', 'M12 19V5', 'M6 19v-6'],
+      layout: [
+        'M4 5.5A1.5 1.5 0 015.5 4h13A1.5 1.5 0 0120 5.5v13a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 18.5Z',
+        'M4 9.5h16',
+        'M9.5 9.5V20',
+      ],
+      plus: ['M12 5.5v13', 'M5.5 12h13'],
+      moreHorizontal: [
+        'M6 12h.01',
+        'M12 12h.01',
+        'M18 12h.01',
+      ],
+      spark: [
+        'M12 3.5l1.6 5.2 5.2 1.6-5.2 1.6L12 17.1l-1.6-5.2-5.2-1.6 5.2-1.6Z',
       ],
       fieldText: ['M5 7.5h14', 'M5 12h10', 'M5 16.5h12.5'],
-      fieldNumber: ['M9.6 4.4L8 19.6', 'M16 4.4l-1.6 15.2', 'M4.9 9.2h14.2', 'M4.3 14.8h14.2'],
-      fieldSelect: ['M6.8 9.4l5.2 5.2 5.2-5.2'],
+      fieldNumber: ['M9.6 4.6L8 19.4', 'M16 4.6l-1.6 14.8', 'M5 9.2h14', 'M4.4 14.8h14'],
+      fieldSelect: ['M6.8 9.5l5.2 5.2 5.2-5.2'],
       fieldDate: [
         'M5.2 7.6a2 2 0 012-2h9.6a2 2 0 012 2v9.2a2 2 0 01-2 2H7.2a2 2 0 01-2-2Z',
         'M5.2 10.6h13.6',
         'M9 4.8v3.4',
         'M15 4.8v3.4',
       ],
-      fieldUser: ['M12 11.6a3.1 3.1 0 100-6.2 3.1 3.1 0 000 6.2Z', 'M5.6 19.6c0-3.4 2.9-5.5 6.4-5.5s6.4 2.1 6.4 5.5'],
+      fieldUser: ['M12 11.4a3.1 3.1 0 100-6.2 3.1 3.1 0 000 6.2Z', 'M5.6 19.4c0-3.4 2.9-5.4 6.4-5.4s6.4 2 6.4 5.4'],
       fieldCheck: [
         'M5.6 6.3a1.8 1.8 0 011.8-1.8h9.2a1.8 1.8 0 011.8 1.8v11.4a1.8 1.8 0 01-1.8 1.8H7.4a1.8 1.8 0 01-1.8-1.8Z',
         'M8.7 12.1l2.3 2.3 4.5-4.5',
       ],
-      sparkles: [
-        'M12 3v3m0 12v3m9-9h-3M6 12H3m14.5-6.5l-2.1 2.1M8.6 15.4l-2.1 2.1m0-11l2.1 2.1m8.8 8.8l2.1 2.1',
-      ],
-      send: [
-        'M22 2L11 13',
-        'M22 2l-7 20-4-9-9-4 20-7z',
-      ],
-      robot: [
-        'M12 2a2 2 0 012 2v2a2 2 0 01-2 2 2 2 0 01-2-2V4a2 2 0 012-2z',
-        'M4 11a2 2 0 012-2h12a2 2 0 012 2v7a2 2 0 01-2 2H6a2 2 0 01-2-2v-7z',
-        'M9 14h.01',
-        'M15 14h.01',
-      ],
-      arrowUp: [
-        'M12 19V5',
-        'M5 12l7-7 7 7',
-      ],
-      chevronDown: [
-        'M6 9l6 6 6-6',
-      ],
-      chart: [
-        'M18 20V10',
-        'M12 20V4',
-        'M6 20v-6',
-      ],
-      form: [
-        'M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2',
-        'M9 2h6a1 1 0 011 1v2a1 1 0 01-1 1H9a1 1 0 01-1-1V3a1 1 0 011-1z',
-        'M9 12h6',
-        'M9 16h6',
-      ],
-      dashboard: [
-        'M3 3h8v9H3z',
-        'M13 3h8v5h-8z',
-        'M13 12h8v9h-8z',
-        'M3 16h8v5H3z',
-      ],
-      layout: [
-        'M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2Z',
-        'M4 9h16',
-        'M9 9v11',
-      ],
-      shieldCheck: [
-        'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
-        'M9 12l2 2 4-4',
-      ],
-      zap: [
-        'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
-      ],
-      helpCircle: [
-        'M12 22a10 10 0 100-20 10 10 0 000 20z',
-        'M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3',
-        'M12 17h.01',
-      ],
-      larkAi: {
-        filled: true,
-        paths: [
-          'M11 3c0 4.4-3.6 8-8 8 4.4 0 8 3.6 8 8 0-4.4 3.6-8 8-8-4.4 0-8-3.6-8-8Z',
-          'M19 2.5c0 1.8-1.2 3-3 3 1.8 0 3 1.2 3 3 0-1.8 1.2-3 3-3-1.8 0-3-1.2-3-3Z',
-        ],
-      },
     }
 
-    function Icon({ name, size = 16, strokeWidth = 1.65, className, style }) {
-      const def = ICONS[name] ?? ICONS.check
-      const isCustomFill = Boolean(def && !Array.isArray(def) && def.filled)
+    function Icon({ name, size = 15, strokeWidth = 1.6, className, style }) {
+      const def = ICONS[name] ?? ICONS.checkSquare
+      const isFilled = Boolean(def && !Array.isArray(def) && def.filled)
       const paths = Array.isArray(def) ? def : (def.paths || [])
       return h(
         'svg',
@@ -284,8 +193,8 @@ window.__ModuleLoader__.load({
           viewBox: '0 0 24 24',
           width: size,
           height: size,
-          fill: isCustomFill ? 'currentColor' : 'none',
-          stroke: isCustomFill ? 'none' : 'currentColor',
+          fill: isFilled ? 'currentColor' : 'none',
+          stroke: isFilled ? 'none' : 'currentColor',
           strokeWidth,
           strokeLinecap: 'round',
           strokeLinejoin: 'round',
@@ -297,1740 +206,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    const ZH = {
-      'app.name': '飞书工作台',
-      'status.checking': '检查中…',
-      'status.ready': '已连接飞书',
-      'status.noTool': '未装连接工具',
-      'status.offline': '服务未连接',
-      'status.recheck': '重新检查',
-      'status.setup': '待完成连接',
-      'pick.title': '一句话，协同飞书与智能建表',
-      'pick.subtitle': '或者，从一个场景开始',
-      'pick.trust': '直连你的飞书账号，安全隐私仅自己可见',
-      'pick.own': '描述你的业务建表需求或飞书指令',
-      'pick.placeholder': '比如：我想记客户往来、查今天日程、查看待办任务、搜索项目群聊…',
-      'pick.submit': '发送执行',
-      'pick.shortcut': '⌘↵',
-      'recent.title': '最近创建',
-      'recent.delete': '删除',
-      'recent.confirmTitle': '移除「%s」？',
-      'recent.confirmBody': '只从「最近创建」里移除，飞书里的表不受影响。',
-      'recent.cancel': '取消',
-      'recent.remove': '移除',
-      'view.eyebrow': '已创建的表',
-      'view.noToken': '没从这个链接里认出表格，回飞书里打开吧。',
-      'view.back': '返回',
-      'view.error': '读不到这张表',
-      'view.empty': '这张表还没有数据',
-      'view.more': '还有更多数据，在飞书里查看完整表格',
-      'view.rows': '条记录',
-      'view.adjustTitle': '继续调整',
-      'view.adjustPlaceholder': '想改什么？一句话就行，例如：再加一列「负责人」',
-      'view.adjustEmpty': '这张表还没有数据。说一句「加一条记录：…」就能开始',
-      'view.adjustBtn': '应用修改',
-      'view.adjustBusy': '正在改…',
-      'view.adjustDone': '改好了',
-      'view.suggestLead': '试试',
-      'view.suggestField': '加一列',
-      'view.suggestOptions': '改选项',
-      'view.suggestView': '做看板',
-      'view.suggestRecord': '加条记录',
-      'view.confirmTitle': '确认删除？',
-      'view.confirmBody': '这些改动没法撤销，删掉的列、记录或选项恢复不了。',
-      'view.confirmYes': '确认删除',
-      'view.confirmNo': '先不删',
-      'view.openReal': '在右侧打开真表',
-      'view.openExternal': '在系统浏览器打开',
-      'view.opening': '正在打开…',
-      'view.noSession': '右侧栏挂在对话上：点左侧任意会话回到对话，再点一次这个按钮。',
-      'view.openFailed': '右侧浏览器没能打开这张表',
-      'view.reopenReal': '再打开一次',
-      'view.realTitle': '真实表格已在右侧打开',
-      'view.realBody': '右侧是飞书原生多维表格，可以直接编辑；也可以在下面说一句，改完立刻映射到真表。',
-      'view.realExternal': '已在系统浏览器打开',
-      'view.realBodyExternal': '系统浏览器里是真实的飞书表格；回到这里仍然可以用一句话改结构。',
-      'view.realIdle': '分屏多维表格未开启',
-      'view.realIdleBody': '点击右上角「分屏内嵌真表 ◫」即可开启：左侧为你正在操作的工作台与AI对话，右侧实时分屏内嵌飞书多维表格（首次需扫码登录）。',
-      'view.noHost': '当前宿主没有内置浏览器',
-      'view.noHostBody': '真表会用系统浏览器打开；回到这里仍然可以一句话调整结构。',
-      'view.structure': '字段结构',
-      'view.samplesShow': '看样本数据',
-      'view.samplesHide': '收起样本',
-      'view.samplesNote': '只读样本，完整数据看右侧真表',
-      'view.adjustHint': '一句话说清楚要改什么，改完直接落在真表上',
-      'busy.planning': '正在构思表结构…',
-      'busy.planningSub': '正在匹配列与示例数据，通常需要几秒钟',
-      'busy.building': '正在建表…',
-      'preview.title': '结构预览',
-      'preview.empty': '建好后从这里开始填写',
-      'preview.cols': '列',
-      'preview.rows': '条示例',
-      'preview.kanban': '看板视图',
-      'preview.detailsShow': '查看全部字段与选项说明',
-      'preview.detailsHide': '收起字段说明',
-      'preview.tweakPlaceholder': '想微调？比如：再加一列「来源」，或去掉「预计金额」',
-      'preview.tweakBtn': '调整',
-      'preview.build': '确认并建表',
-      'preview.back': '返回重选',
-      'done.title': '已建好',
-      'done.open': '在飞书中打开',
-      'done.copy': '复制链接',
-      'done.copied': '已复制',
-      'done.again': '再建一张表',
-      'done.continue': '继续调整',
-      'done.next': '接下来怎么用',
-      'done.step1': '打开表后直接把顶部的示例行改成你的第一条数据，不用先删。',
-      'done.step2': '点任意单元格即可输入，内容会自动保存。',
-      'done.step3': '表头最右边的「+」可加列，点列标题可修改选项。',
-      'done.step4': '需要协作时，点右上角「分享」邀请同事即可。',
-      'done.adjustHint': '建好之后想改，不用重建：点「继续调整」，一句话就能加列、改选项、做看板。',
-      'done.realOpened': '真表已在右侧打开，可以直接编辑；也能在这里继续用一句话改。',
-      'done.warnings': '有几处未完全建成',
-      'error.title': '没成功',
-      'error.retry': '再试一次',
-      'gate.step.tool': '安装工具',
-      'gate.step.app': '关联应用',
-      'gate.step.auth': '授权',
-      'gate.noTool.title': '先安装连接工具',
-      'gate.noTool.body': '复制下面这行命令，粘贴到终端里按回车执行。',
-      'gate.noTool.copy': '复制',
-      'gate.noTool.copied': '已复制',
-      'gate.noTool.done': '我装好了',
-      'gate.noTool.hint': '装完如果仍提示未找到，重启应用再试。',
-      'gate.noApp.title': '让工具认识你的飞书',
-      'gate.noApp.body': '点击下方按钮打开飞书页面，填个名字并确认默认权限即可（约 1 分钟）。',
-      'gate.noApp.cta': '打开飞书页面',
-      'gate.noApp.done': '我建好了',
-      'gate.noApp.reopen': '重新打开',
-      'gate.team.toggle': '打不开或无权限？使用同事的应用',
-      'gate.team.hide': '收起',
-      'gate.team.body': '把同事发来的这两项粘贴进来即可。',
-      'gate.team.appId': 'App ID（cli_ 开头）',
-      'gate.team.secret': 'App Secret',
-      'gate.team.save': '使用此应用',
-      'gate.noAuth.title': '最后一步：授权一次',
-      'gate.noAuth.body': '飞书仅请求多维表格相关权限，不会读取聊天记录或替你发消息。',
-      'gate.noAuth.cta': '去授权',
-      'gate.noAuth.done': '我授权好了',
-      'gate.noAuth.reopen': '重新打开',
-      'gate.noAuth.hint': '只需授权一次，过期时这里会提醒。',
-      'gate.waiting': '正在确认，已等待 ',
-      'gate.autoChecking': '已唤起浏览器，正在自动检测就绪状态（也可随时点击手动确认）',
-      'gate.pending': '飞书尚未返回确认，请确保浏览器中显示「授权成功」后再点一次。',
-      'gate.idle': '正在检查连接…',
-      'gate.retryBody': '连不上本地服务，可能是应用刚重启，点下方重新检查。',
-    }
-
-    const EN = {
-      'app.name': 'Lark Workbench',
-      'status.checking': 'Checking…',
-      'status.ready': 'Connected',
-      'status.noTool': 'CLI missing',
-      'status.offline': 'Offline',
-      'status.recheck': 'Check again',
-      'status.setup': 'Not connected',
-      'pick.title': 'One sentence, full Feishu orchestration',
-      'pick.subtitle': 'Or start from a scenario',
-      'pick.trust': 'Connected to your private Feishu space',
-      'pick.own': 'Describe your table or Lark instruction',
-      'pick.placeholder': 'e.g. client tracking base, today agenda, pending tasks, search group chats…',
-      'pick.submit': 'Send & Run',
-      'pick.shortcut': '⌘↵',
-      'recent.title': 'Recent',
-      'recent.delete': 'Delete',
-      'recent.confirmTitle': 'Remove “%s”?',
-      'recent.confirmBody': 'Only removes it from Recent. The Feishu Base is not touched.',
-      'recent.cancel': 'Cancel',
-      'recent.remove': 'Remove',
-      'view.eyebrow': 'Saved table',
-      'view.noToken': 'Could not find a table id in this link. Open it in Feishu instead.',
-      'view.back': 'Back',
-      'view.error': 'Could not load this table',
-      'view.empty': 'No rows yet',
-      'view.more': 'More rows live in Feishu',
-      'view.rows': 'rows',
-      'view.adjustTitle': 'Make a change',
-      'view.adjustPlaceholder': 'What should change? One sentence, e.g. add an "Owner" column',
-      'view.adjustEmpty': 'No rows yet. Try “add a record: …”',
-      'view.adjustBtn': 'Apply',
-      'view.adjustBusy': 'Editing…',
-      'view.adjustDone': 'Done',
-      'view.suggestLead': 'Try',
-      'view.suggestField': 'Add column',
-      'view.suggestOptions': 'Edit options',
-      'view.suggestView': 'Kanban',
-      'view.suggestRecord': 'Add row',
-      'view.confirmTitle': 'Delete this?',
-      'view.confirmBody': 'These changes cannot be undone.',
-      'view.confirmYes': 'Delete',
-      'view.confirmNo': 'Keep',
-      'view.openReal': 'Open the real table',
-      'view.openExternal': 'Open in system browser',
-      'view.opening': 'Opening…',
-      'view.noSession': 'The right column lives beside a conversation: open a session on the left, then press the button again.',
-      'view.openFailed': 'The docked browser could not open this table',
-      'view.reopenReal': 'Open again',
-      'view.realTitle': 'The real table is open on the right',
-      'view.realBody': 'That is the native Feishu Base — edit it directly, or say one sentence below and the change lands there.',
-      'view.realExternal': 'Opened in your system browser',
-      'view.realBodyExternal': 'The real Feishu Base is there; you can still reshape it from here in one sentence.',
-      'view.realIdle': 'The real table is not open yet',
-      'view.realIdleBody': 'Press “Open the real table”: the native Base docks on the right (one Feishu sign-in the first time). The “Lark Workbench” tab in the conversation header is where the two sit side by side.',
-      'view.noHost': 'This host has no built-in browser',
-      'view.noHostBody': 'The table opens in your system browser; you can still reshape it from here.',
-      'view.structure': 'Columns',
-      'view.samplesShow': 'Show sample rows',
-      'view.samplesHide': 'Hide sample rows',
-      'view.samplesNote': 'Read-only sample — the full data lives in the real table',
-      'view.adjustHint': 'Say what should change — it lands in the real table',
-      'busy.planning': 'Designing the table…',
-      'busy.planningSub': 'Generating columns and sample rows, usually takes a few seconds',
-      'busy.building': 'Creating Base…',
-      'preview.title': 'Table preview',
-      'preview.empty': 'Start filling here',
-      'preview.cols': 'columns',
-      'preview.rows': 'samples',
-      'preview.kanban': 'Kanban view',
-      'preview.detailsShow': 'Show column details & options',
-      'preview.detailsHide': 'Hide column details',
-      'preview.tweakPlaceholder': 'Need a tweak? e.g. add a "Source" column or remove "Amount"',
-      'preview.tweakBtn': 'Refine',
-      'preview.build': 'Create Base',
-      'preview.back': 'Back',
-      'done.title': 'Created',
-      'done.open': 'Open in Feishu',
-      'done.copy': 'Copy link',
-      'done.copied': 'Copied',
-      'done.again': 'Create another',
-      'done.continue': 'Keep editing',
-      'done.next': 'Quick guide',
-      'done.step1': 'Overwrite the top sample rows directly with your first real entry.',
-      'done.step2': 'Click any cell to type; every edit saves automatically.',
-      'done.step3': 'Use "+" at the right edge of the header to add columns, or click a header to edit options.',
-      'done.step4': 'Click Share in the top right whenever you want to invite teammates.',
-      'done.adjustHint': 'To change it later, click “Keep editing” — one sentence adds a column, changes options or makes a kanban.',
-      'done.realOpened': 'The real table is open on the right — edit it there, or keep reshaping it here in one sentence.',
-      'done.warnings': 'Some parts had warnings',
-      'error.title': 'Did not work',
-      'error.retry': 'Try again',
-      'gate.step.tool': 'Install CLI',
-      'gate.step.app': 'Connect App',
-      'gate.step.auth': 'Authorize',
-      'gate.noTool.title': 'Install the bridge tool first',
-      'gate.noTool.body': 'Copy the command below into your terminal and press Enter.',
-      'gate.noTool.copy': 'Copy',
-      'gate.noTool.copied': 'Copied',
-      'gate.noTool.done': 'I installed it',
-      'gate.noTool.hint': 'If it still says missing, restart the app and try again.',
-      'gate.noApp.title': 'Connect to your Feishu',
-      'gate.noApp.body': 'Open Feishu, name your app, and accept the default permissions (~1 min).',
-      'gate.noApp.cta': 'Open Feishu',
-      'gate.noApp.done': 'I created it',
-      'gate.noApp.reopen': 'Open again',
-      'gate.team.toggle': 'No permission? Use a teammate’s app',
-      'gate.team.hide': 'Hide',
-      'gate.team.body': 'Paste the App ID and App Secret from your teammate.',
-      'gate.team.appId': 'App ID (starts with cli_)',
-      'gate.team.secret': 'App Secret',
-      'gate.team.save': 'Use this app',
-      'gate.noAuth.title': 'One-time authorization',
-      'gate.noAuth.body': 'Feishu will only ask for table permissions — never chat access.',
-      'gate.noAuth.cta': 'Authorize',
-      'gate.noAuth.done': 'I authorized',
-      'gate.noAuth.reopen': 'Open again',
-      'gate.noAuth.hint': 'Only needed once until the token expires.',
-      'gate.waiting': 'Confirming… waited ',
-      'gate.autoChecking': 'Browser opened. Auto-detecting status (you can also click manually)',
-      'gate.pending': 'No confirmation yet. Make sure the browser says authorized, then click again.',
-      'gate.idle': 'Checking connection…',
-      'gate.retryBody': 'Local service did not respond — it may have just restarted.',
-    }
-
-    const KIND_HINT = {
-      text: '文本',
-      number: '数字',
-      select: '单选',
-      datetime: '日期',
-      user: '人员',
-      checkbox: '勾选',
-    }
-
-    const KIND_ICON = {
-      text: 'fieldText',
-      number: 'fieldNumber',
-      select: 'fieldSelect',
-      datetime: 'fieldDate',
-      user: 'fieldUser',
-      checkbox: 'fieldCheck',
-    }
-
-    const PILL_TONES = ['blue', 'slate', 'teal', 'amber', 'emerald', 'rose']
-
-    // ── Design system ──────────────────────────────────────────────────────
-    // Warm paper, ink type, one cobalt accent. Depth comes from tone and a
-    // single light source, never from nested borders. Display type carries the
-    // hierarchy; chrome, metadata and shortcuts stay deliberately quiet.
-
-    const CSS = `
-.lw{
-  --lw-bg:#F6F4EF;
-  --lw-bg-top:#FAF8F4;
-  --lw-surface:#FFFFFF;
-  --lw-surface-2:#FAF8F3;
-  --lw-ink:#191713;
-  --lw-ink-2:#5B554A;
-  --lw-ink-3:#7C7568;
-  --lw-line:rgba(25,23,19,.08);
-  --lw-line-2:rgba(25,23,19,.15);
-  --lw-accent:#3370FF;
-  --lw-accent-2:#245BDB;
-  --lw-accent-soft:rgba(51,112,255,.08);
-  --lw-solid:#1A1813;
-  --lw-solid-hover:#2E2A22;
-  --lw-solid-ink:#FBFAF7;
-  --lw-ok:#12795A;
-  --lw-warn:#9A5A0B;
-  --lw-danger:#AF2318;
-  --lw-e1:0 1px 2px rgba(24,20,14,.05);
-  --lw-e2:0 1px 2px rgba(24,20,14,.04), 0 12px 28px -18px rgba(24,20,14,.22);
-  --lw-e3:0 1px 2px rgba(24,20,14,.04), 0 8px 16px -12px rgba(24,20,14,.12), 0 28px 56px -32px rgba(24,20,14,.26);
-  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:20px;
-  --ease:cubic-bezier(.22,1,.36,1); --fast:180ms;
-  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
-
-  height:100%; overflow:auto; display:flex; justify-content:center;
-  padding:44px 44px 88px; box-sizing:border-box;
-  background:
-    radial-gradient(1100px 480px at 8% -18%, rgba(255,255,255,.75), transparent 66%),
-    linear-gradient(180deg,var(--lw-bg-top) 0%, var(--lw-bg) 380px);
-  color:var(--lw-ink);
-  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
-  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
-}
-.lw[data-theme="dark"]{
-  --lw-bg:#0B0A08;
-  --lw-bg-top:#121009;
-  --lw-surface:#1B1814;
-  --lw-surface-2:#24201A;
-  --lw-ink:#F4F1EA;
-  --lw-ink-2:#ABA398;
-  --lw-ink-3:#948C80;
-  --lw-line:rgba(255,255,255,.09);
-  --lw-line-2:rgba(255,255,255,.16);
-  --lw-accent:#93AAFF;
-  --lw-accent-2:#6E8CFF;
-  --lw-accent-soft:rgba(140,166,255,.12);
-  --lw-solid:#F4F1EA;
-  --lw-solid-hover:#FFFFFF;
-  --lw-solid-ink:#191713;
-  --lw-ok:#57D6A3;
-  --lw-warn:#F0B565;
-  --lw-danger:#FF9384;
-  --lw-e1:0 1px 2px rgba(0,0,0,.45);
-  --lw-e2:0 1px 2px rgba(0,0,0,.45), 0 14px 30px -18px rgba(0,0,0,.72);
-  --lw-e3:0 1px 2px rgba(0,0,0,.5), 0 10px 22px -14px rgba(0,0,0,.6), 0 32px 64px -36px rgba(0,0,0,.85);
-  background:linear-gradient(180deg,var(--lw-bg-top) 0%, var(--lw-bg) 380px);
-}
-.lw *{box-sizing:border-box}
-.lw ::selection{background:color-mix(in srgb,var(--lw-accent) 18%,transparent)}
-.lw-col{width:100%;max-width:800px;min-width:0;min-height:100%;display:flex;flex-direction:column;gap:26px}
-.lw-body{display:flex;flex-direction:column;gap:26px;width:100%;min-width:0;margin:auto 0;padding-bottom:14vh}
-
-/* ── Chrome ───────────────────────────────────────────────────────────── */
-.lw-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.lw-head-main{display:flex;align-items:center;gap:10px;min-width:0}
-.lw-mark{
-  width:26px;height:26px;border-radius:8px;flex:none;
-  background:linear-gradient(155deg,#3E68F5 0%,#2244CE 100%);
-  display:flex;align-items:center;justify-content:center;
-  box-shadow:0 1px 2px rgba(30,52,150,.3), inset 0 1px 0 rgba(255,255,255,.28);
-}
-.lw-head-copy{display:flex;flex-direction:column;gap:1px;min-width:0}
-.lw-name{font-size:13.5px;font-weight:600;letter-spacing:-.008em;color:var(--lw-ink);line-height:1.3}
-
-.lw-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}
-.lw-back{
-  font:inherit;font-size:12.5px;font-weight:540;color:var(--lw-ink-2);
-  background:transparent;border:0;padding:5px 9px 5px 6px;margin-left:-6px;border-radius:8px;
-  display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-  transition:background var(--fast) var(--ease),color var(--fast) var(--ease);
-}
-.lw-back:hover:not(:disabled){background:color-mix(in srgb,var(--lw-ink) 5%,transparent);color:var(--lw-ink)}
-.lw-back:disabled{opacity:.45;cursor:default}
-
-.lw-status{
-  display:inline-flex;align-items:center;gap:7px;flex:none;
-  font-size:11.5px;font-weight:500;line-height:1;color:color-mix(in srgb,var(--lw-ink) 58%,transparent);
-  font-variant-numeric:tabular-nums;
-  cursor:pointer;
-  padding:4px 9px;
-  border-radius:14px;
-  border:1px solid transparent;
-  background:transparent;
-  transition:all .15s ease;
-}
-.lw-status:hover{
-  background:var(--lw-surface-2);
-  border-color:var(--lw-line);
-  color:var(--lw-ink);
-}
-.lw-modal-overlay{
-  position:fixed;
-  top:0;left:0;right:0;bottom:0;
-  background:rgba(0,0,0,.45);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  z-index:99999;
-  backdrop-filter:blur(4px);
-  animation:lwFadeIn .15s ease-out;
-}
-.lw-modal-box{
-  background:var(--lw-surface);
-  border:1px solid var(--lw-line);
-  border-radius:18px;
-  width:92%;
-  max-width:440px;
-  padding:22px 24px;
-  box-shadow:0 14px 36px rgba(0,0,0,.18);
-  display:flex;
-  flex-direction:column;
-  gap:16px;
-  animation:lwFadeIn .2s ease-out;
-}
-.lw-modal-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-}
-.lw-modal-title{
-  font-size:15px;
-  font-weight:600;
-  color:var(--lw-ink);
-  display:flex;
-  align-items:center;
-  gap:8px;
-}
-.lw-modal-close{
-  background:none;
-  border:none;
-  color:var(--lw-ink-3);
-  font-size:16px;
-  cursor:pointer;
-  padding:4px 8px;
-  border-radius:6px;
-  transition:all .15s ease;
-}
-.lw-modal-close:hover{
-  background:var(--lw-surface-2);
-  color:var(--lw-ink);
-}
-.lw-account-card{
-  background:var(--lw-surface-2);
-  border:1px solid var(--lw-line-2);
-  border-radius:12px;
-  padding:12px 14px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-.lw-account-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  font-size:12.5px;
-}
-.lw-account-label{
-  color:var(--lw-ink-3);
-}
-.lw-account-val{
-  color:var(--lw-ink);
-  font-weight:500;
-}
-.lw-account-actions{
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-.lw-account-action-card{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  padding:12px 14px;
-  border:1px solid var(--lw-line);
-  border-radius:12px;
-  background:var(--lw-surface);
-}
-.lw-account-action-text{
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  min-width:0;
-}
-.lw-account-action-name{
-  font-size:13px;
-  font-weight:600;
-  color:var(--lw-ink);
-}
-.lw-account-action-desc{
-  font-size:11.5px;
-  color:var(--lw-ink-3);
-  line-height:1.4;
-}
-.lw-dot{width:5px;height:5px;border-radius:50%;background:var(--lw-ink-3);flex:none}
-.lw-dot.is-ok{background:var(--lw-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--lw-ok) 13%,transparent)}
-.lw-dot.is-bad{background:var(--lw-danger)}
-.lw-dot.is-busy{background:var(--lw-accent);animation:lw-pulse 1.4s var(--ease) infinite}
-@keyframes lw-pulse{0%,100%{opacity:.25}50%{opacity:1}}
-@keyframes lw-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-.lw-spin{animation:lw-spin .8s linear infinite}
-
-/* ── Hero ─────────────────────────────────────────────────────────────── */
-.lw-hero{display:flex;flex-direction:column;gap:14px;padding:32px 0 8px}
-.lw-hero-title{
-  margin:0;font-size:clamp(31px,3.4vw,44px);font-weight:600;line-height:1.2;
-  letter-spacing:-.028em;color:var(--lw-ink);text-wrap:balance;
-}
-
-/* ── Typography & surfaces ────────────────────────────────────────────── */
-.lw-pick{display:flex;flex-direction:column;gap:20px}
-.lw-own{display:flex;flex-direction:column;gap:12px}
-.lw-sect{display:flex;flex-direction:column;gap:5px}
-.lw-h{font-size:15px;font-weight:600;line-height:1.4;letter-spacing:-.012em;color:var(--lw-ink);margin:0}
-.lw-h-lg{font-size:21px;letter-spacing:-.02em;line-height:1.35}
-.lw-p{font-size:13px;line-height:1.7;color:var(--lw-ink-2);margin:0}
-.lw-meta{font-size:11.5px;line-height:1.6;color:var(--lw-ink-3);margin:0}
-.lw-card{
-  background:var(--lw-surface);border:1px solid var(--lw-line);border-radius:var(--r-xl);
-  padding:26px 30px 28px;display:flex;flex-direction:column;gap:20px;box-shadow:var(--lw-e2);
-}
-
-/* ── Controls ─────────────────────────────────────────────────────────── */
-.lw-btn{
-  font:inherit;font-size:12.5px;font-weight:560;line-height:1;height:36px;padding:0 16px;
-  border-radius:10px;border:1px solid var(--lw-line-2);background:var(--lw-surface);
-  color:var(--lw-ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
-  gap:6px;white-space:nowrap;flex:none;box-shadow:var(--lw-e1);
-  transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),
-    box-shadow var(--fast) var(--ease),transform 120ms var(--ease),color var(--fast) var(--ease);
-}
-.lw-btn:hover:not(:disabled){
-  background:var(--lw-surface-2);border-color:color-mix(in srgb,var(--lw-ink) 22%,transparent);
-}
-.lw-btn:active:not(:disabled){transform:translateY(1px)}
-.lw-btn:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--lw-accent) 22%,transparent)}
-.lw-btn.is-primary{
-  background:var(--lw-solid);border-color:var(--lw-solid);color:var(--lw-solid-ink);
-  box-shadow:0 1px 2px rgba(24,20,14,.22), 0 8px 20px -12px rgba(24,20,14,.5);
-}
-.lw-btn.is-primary:hover:not(:disabled){
-  background:var(--lw-solid-hover);border-color:var(--lw-solid-hover);
-  box-shadow:0 1px 2px rgba(24,20,14,.24), 0 10px 24px -12px rgba(24,20,14,.55);
-}
-.lw-btn:disabled{box-shadow:none;cursor:default}
-.lw-btn.is-primary:disabled{
-  background:color-mix(in srgb,var(--lw-ink) 7%,var(--lw-surface));
-  color:color-mix(in srgb,var(--lw-ink) 42%,transparent);border:1px solid transparent;box-shadow:none;
-}
-.lw-btn:not(.is-primary):disabled{opacity:.55}
-.lw-btn.is-ghost{background:transparent;border-color:transparent;box-shadow:none;color:var(--lw-ink-2);padding:0 10px;height:34px}
-.lw-btn.is-ghost:hover:not(:disabled){background:color-mix(in srgb,var(--lw-ink) 5%,transparent);color:var(--lw-ink);border-color:transparent}
-.lw-btn.is-link{background:none;border:0;box-shadow:none;height:auto;padding:0;font-size:12px;font-weight:540;
-  color:var(--lw-ink-2);text-decoration:none}
-.lw-btn.is-link:hover:not(:disabled){color:var(--lw-accent);background:none}
-.lw-btn.is-sm{height:32px;padding:0 13px;font-size:12px;border-radius:9px}
-.lw-btn.is-danger{
-  background:color-mix(in srgb,var(--lw-danger) 9%,var(--lw-surface));
-  border-color:color-mix(in srgb,var(--lw-danger) 28%,transparent);
-  color:var(--lw-danger);box-shadow:none;
-}
-.lw-btn.is-danger:hover:not(:disabled){
-  background:color-mix(in srgb,var(--lw-danger) 14%,var(--lw-surface));
-  border-color:color-mix(in srgb,var(--lw-danger) 40%,transparent);
-}
-.lw-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-
-.lw-input{
-  font:inherit;font-size:13px;line-height:1.5;width:100%;padding:10px 13px;
-  border-radius:10px;border:1px solid var(--lw-line-2);background:var(--lw-surface);
-  color:var(--lw-ink);outline:none;box-shadow:var(--lw-e1);
-  transition:border-color var(--fast) var(--ease),box-shadow var(--fast) var(--ease);
-}
-.lw-input::placeholder{color:var(--lw-ink-3)}
-.lw-input:focus{border-color:color-mix(in srgb,var(--lw-accent) 45%,transparent);
-  box-shadow:0 0 0 3px var(--lw-accent-soft),var(--lw-e1)}
-.lw-field{display:flex;flex-direction:column;gap:10px}
-
-/* ── Composer (the one focal surface) ─────────────────────────────────── */
-.lw-composer{
-  background:var(--lw-surface);border:1px solid var(--lw-line-2);border-radius:20px;
-  box-shadow:var(--lw-e3);overflow:hidden;
-  transition:border-color var(--fast) var(--ease),box-shadow 260ms var(--ease);
-}
-.lw-composer:focus-within{
-  border-color:color-mix(in srgb,var(--lw-ink) 35%,transparent);
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--lw-ink) 6%,transparent),var(--lw-e3);
-}
-.lw-composer-area{
-  font:inherit;font-size:14.5px;line-height:1.6;color:var(--lw-ink);
-  width:100%;min-height:56px;padding:14px 18px 4px;border:0;background:transparent;
-  outline:none;resize:none;display:block;box-sizing:border-box;
-}
-.lw-composer-area::placeholder{color:color-mix(in srgb,var(--lw-ink) 38%,transparent)}
-.lw-composer-bar{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:8px 12px 10px 18px;border-top:1px solid var(--lw-line);
-}
-.lw-trust{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--lw-ink-3)}
-.lw-composer-right{display:flex;align-items:center;gap:10px;margin-left:auto}
-.lw-kbd{
-  font-family:var(--mono);font-size:10px;color:var(--lw-ink-3);letter-spacing:.06em;
-  padding:3px 5px;border:1px solid var(--lw-line);border-radius:5px;background:var(--lw-surface-2);
-}
-
-/* ── Inline command block ─────────────────────────────────────────────── */
-.lw-cmd{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:10px 10px 10px 14px;border-radius:var(--r-md);
-  background:var(--lw-surface-2);border:1px solid var(--lw-line);
-}
-.lw-cmd code{
-  font-family:var(--mono);font-size:12px;
-  color:var(--lw-ink);user-select:all;overflow-x:auto;white-space:nowrap;
-}
-
-/* ── Stepper ──────────────────────────────────────────────────────────── */
-.lw-steps{display:flex;align-items:center;flex-wrap:wrap;row-gap:8px}
-.lw-step{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--lw-ink-3)}
-.lw-step-num{
-  width:20px;height:20px;border-radius:50%;border:1px solid var(--lw-line-2);
-  display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;flex:none;
-  background:transparent;color:var(--lw-ink-3);
-}
-.lw-step.is-done .lw-step-num{background:var(--lw-ok);border-color:transparent;color:#fff}
-.lw-step.is-done{color:var(--lw-ink-2)}
-.lw-step.is-current .lw-step-num{border-color:var(--lw-accent);color:var(--lw-accent);background:var(--lw-accent-soft)}
-.lw-step.is-current{color:var(--lw-ink);font-weight:600}
-.lw-step-bar{width:22px;height:1px;background:var(--lw-line-2);margin:0 9px;flex:none}
-
-/* ── Preview ──────────────────────────────────────────────────────────── */
-.lw-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.lw-preview-title{font-size:24px;font-weight:600;letter-spacing:-.026em;color:var(--lw-ink);margin:0;line-height:1.3}
-.lw-preview-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--lw-ink-3);margin-top:7px;font-variant-numeric:tabular-nums}
-.lw-preview-sep{opacity:.45}
-.lw-preview-scroll{flex:1 1 auto;overflow-y:auto;padding:24px 20px;min-height:0;width:100%;background:var(--lw-bg);display:flex;flex-direction:column;align-items:center}
-
-/* ── Real table + console stage ───────────────────────────────────────── */
-.lw.is-workspace{
-  padding:0 !important;
-  overflow:hidden !important;
-  display:flex !important;
-  flex-direction:column !important;
-  justify-content:flex-start !important;
-  width:100% !important;
-  height:100% !important;
-  background:var(--lw-bg);
-}
-.lw-workspace{
-  display:flex;
-  flex-direction:column;
-  width:100%;
-  height:100%;
-  min-height:0;
-  overflow:hidden;
-}
-.lw-ws-header{
-  height:48px;
-  flex:none;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 16px;
-  border-bottom:1px solid var(--lw-line);
-  background:var(--lw-surface);
-  position:sticky;
-  top:0;
-  z-index:100;
-}
-.lw-ws-header-left{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-width:0;
-}
-.lw-ws-sep{
-  width:1px;
-  height:14px;
-  background:var(--lw-line-2);
-  flex:none;
-}
-.lw-ws-title{
-  font-size:14px;
-  font-weight:600;
-  color:var(--lw-ink);
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  max-width:320px;
-}
-.lw-ws-header-right{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  flex:none;
-}
-.lw-ws-layout{
-  display:flex;
-  flex:1 1 auto;
-  width:100%;
-  height:calc(100% - 48px);
-  min-height:0;
-  overflow:hidden;
-}
-.lw-ws-left{
-  display:flex;
-  flex-direction:column;
-  height:100%;
-  min-height:0;
-  min-width:0;
-  overflow:hidden;
-  background:var(--lw-bg);
-  transition:width .15s ease;
-}
-.lw-ws-left.is-split{
-  flex:none;
-}
-.lw-resizer{
-  width:10px;
-  margin-left:-5px;
-  margin-right:-5px;
-  height:100%;
-  cursor:col-resize;
-  position:relative;
-  z-index:25;
-  flex:none;
-  background:transparent;
-  user-select:none;
-}
-.lw-resizer::after{
-  content:'';
-  position:absolute;
-  top:0;
-  bottom:0;
-  left:4px;
-  width:2px;
-  background:var(--lw-line);
-  transition:background .15s ease, width .15s ease, left .15s ease;
-}
-.lw-resizer:hover::after,
-.lw-resizer.is-active::after{
-  background:var(--lw-accent, #3370ff);
-  width:3px;
-  left:3px;
-}
-.lw-resize-overlay{
-  position:fixed;
-  top:0;
-  left:0;
-  right:0;
-  bottom:0;
-  z-index:99999;
-  cursor:col-resize;
-  user-select:none;
-}
-.lw-ws-left.is-full{
-  flex:1 1 auto;
-  width:100%;
-}
-.lw-ws-left.is-split .lw-chat-stream{
-  max-width:100%;
-  padding:16px 18px;
-}
-.lw-ws-right{
-  display:flex;
-  flex-direction:column;
-  flex:1 1 auto;
-  height:100%;
-  min-height:0;
-  min-width:0;
-  overflow:hidden;
-  background:#ffffff;
-  position:relative;
-}
-.lw-ws-body{
-  flex:1;
-  min-height:0;
-  position:relative;
-  background:#ffffff;
-  display:flex;
-  width:100%;
-}
-.lw-ws-webview{
-  width:100%;
-  height:100%;
-  border:none;
-  display:block;
-}
-.lw-chat-stream{
-  flex:1;
-  min-height:0;
-  overflow-y:auto;
-  display:flex;
-  flex-direction:column;
-  gap:16px;
-  padding:24px 20px;
-  max-width:760px;
-  width:100%;
-  margin:0 auto;
-}
-.lw-ws-left.is-split .lw-chat-stream{
-  max-width:100%;
-  padding:18px 16px;
-}
-.lw-hero-card{
-  background:var(--lw-surface);
-  border:1px solid var(--lw-line);
-  border-radius:16px;
-  padding:18px 20px;
-  box-shadow:0 4px 18px rgba(0,0,0,.03);
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-  margin-bottom:8px;
-  animation:lwFadeIn .2s ease-out;
-}
-.lw-hero-head{
-  display:flex;
-  align-items:center;
-  gap:12px;
-}
-.lw-hero-avatar{
-  width:36px;
-  height:36px;
-  border-radius:10px;
-  background:var(--lw-solid);
-  color:var(--lw-solid-ink);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  flex:none;
-  box-shadow:0 2px 6px rgba(24,20,14,.18);
-}
-.lw-hero-title-wrap{
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  min-width:0;
-  flex:1;
-}
-.lw-hero-title{
-  font-size:14.5px;
-  font-weight:600;
-  color:var(--lw-ink);
-  letter-spacing:-.01em;
-  white-space:nowrap;
-}
-.lw-hero-subtitle{
-  font-size:12px;
-  color:var(--lw-ink-3);
-  display:flex;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-  align-items:center;
-  gap:6px;
-}
-.lw-hero-subtitle::before{
-  content:'';
-  width:6px;
-  height:6px;
-  border-radius:50%;
-  background:var(--lw-ok);
-  display:inline-block;
-}
-.lw-hero-body{
-  font-size:13px;
-  line-height:1.6;
-  color:var(--lw-ink-2);
-}
-.lw-hero-hints-title{
-  font-size:12px;
-  font-weight:600;
-  color:var(--lw-ink-3);
-  margin-top:4px;
-}
-.lw-hero-hints{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-}
-.lw-hero-hint-pill{
-  border:1px solid var(--lw-line);
-  background:var(--lw-surface);
-  color:var(--lw-ink-2);
-  padding:5px 12px;
-  border-radius:9px;
-  font-size:12.5px;
-  font-weight:500;
-  cursor:pointer;
-  transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease);
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  box-shadow:0 1px 1px rgba(24,20,14,.02);
-}
-.lw-hero-hint-pill:hover{
-  background:var(--lw-surface-2);
-  border-color:color-mix(in srgb,var(--lw-ink) 18%,transparent);
-  color:var(--lw-ink);
-}
-.lw-msg{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  max-width:88%;
-  animation:lwFadeIn .18s ease-out;
-}
-.lw-msg-role{
-  font-size:11px;
-  font-weight:600;
-  color:var(--lw-ink-3);
-}
-.lw-msg-user{
-  align-self:flex-end;
-  align-items:flex-end;
-}
-.lw-msg-user .lw-msg-text{
-  background:var(--lw-solid);
-  color:var(--lw-solid-ink);
-  padding:10px 16px;
-  border-radius:18px 18px 4px 18px;
-  font-size:13.5px;
-  line-height:1.5;
-  box-shadow:0 1px 3px rgba(24,20,14,.12);
-}
-.lw-msg-ai{
-  align-self:flex-start;
-  align-items:flex-start;
-}
-.lw-msg-ai .lw-msg-text{
-  background:var(--lw-surface);
-  color:var(--lw-ink);
-  border:1px solid var(--lw-line);
-  padding:12px 16px;
-  border-radius:18px 18px 18px 4px;
-  font-size:13.5px;
-  line-height:1.6;
-  box-shadow:0 2px 10px rgba(0,0,0,.03);
-}
-.lw-msg-ai.is-busy .lw-msg-text{
-  color:var(--lw-ink-2);
-  border-style:dashed;
-}
-.lw-msg.is-error .lw-msg-text{
-  background:color-mix(in srgb,var(--lw-danger) 8%,var(--lw-surface));
-  border-color:color-mix(in srgb,var(--lw-danger) 30%,transparent);
-  color:var(--lw-danger);
-}
-.lw-msg.is-warn .lw-msg-text{
-  background:color-mix(in srgb,var(--lw-warn) 8%,var(--lw-surface));
-  border-color:color-mix(in srgb,var(--lw-warn) 30%,transparent);
-  color:var(--lw-warn);
-}
-.lw-thinking-toggle{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding:4px 9px;
-  border-radius:6px;
-  background:color-mix(in srgb, var(--lw-ink) 4%, transparent);
-  color:var(--lw-ink-3);
-  font-size:11.5px;
-  font-weight:500;
-  cursor:pointer;
-  user-select:none;
-  margin-bottom:8px;
-  border:1px solid color-mix(in srgb, var(--lw-ink) 8%, transparent);
-  transition:all .15s ease;
-}
-.lw-thinking-toggle:hover{
-  background:color-mix(in srgb, var(--lw-ink) 8%, transparent);
-  color:var(--lw-ink);
-}
-.lw-thinking-content{
-  padding:10px 14px;
-  margin-bottom:12px;
-  background:color-mix(in srgb, var(--lw-ink) 3%, transparent);
-  border-left:2px solid color-mix(in srgb, var(--lw-accent) 60%, transparent);
-  border-radius:4px;
-  font-size:12px;
-  color:var(--lw-ink-3);
-  line-height:1.65;
-  white-space:pre-wrap;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  animation:lwFadeIn .2s ease;
-}
-.lw-md-table-wrap{
-  overflow-x:auto;
-  margin:10px 0;
-  border:1px solid var(--lw-line);
-  border-radius:8px;
-  background:var(--lw-surface);
-  box-shadow:0 1px 4px rgba(0,0,0,.02);
-}
-.lw-md-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:13px;
-  text-align:left;
-}
-.lw-md-table thead{
-  background:color-mix(in srgb, var(--lw-accent) 8%, var(--lw-surface));
-  border-bottom:1px solid var(--lw-line);
-}
-.lw-md-table th{
-  padding:9px 14px;
-  font-weight:600;
-  color:var(--lw-ink);
-  border-right:1px solid var(--lw-line);
-  white-space:nowrap;
-}
-.lw-md-table th:last-child{
-  border-right:none;
-}
-.lw-md-table td{
-  padding:8px 14px;
-  color:var(--lw-ink);
-  border-right:1px solid var(--lw-line);
-  border-bottom:1px solid var(--lw-line);
-  line-height:1.5;
-}
-.lw-md-table td:last-child{
-  border-right:none;
-}
-.lw-md-table tbody tr:last-child td{
-  border-bottom:none;
-}
-.lw-md-table tbody tr:hover{
-  background:color-mix(in srgb, var(--lw-accent) 4%, transparent);
-}
-.lw-md-code{
-  background:color-mix(in srgb, var(--lw-ink) 5%, var(--lw-surface));
-  border:1px solid var(--lw-line);
-  border-radius:6px;
-  padding:10px 14px;
-  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-  font-size:12px;
-  line-height:1.5;
-  overflow-x:auto;
-  margin:8px 0;
-  color:var(--lw-ink);
-}
-.lw-inline-code{
-  background:color-mix(in srgb, var(--lw-ink) 6%, transparent);
-  border:1px solid color-mix(in srgb, var(--lw-ink) 12%, transparent);
-  border-radius:4px;
-  padding:1.5px 5px;
-  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-  font-size:12px;
-  color:var(--lw-ink);
-}
-.lw-md-ul{
-  margin:6px 0 10px 18px;
-  padding:0;
-  list-style-type:disc;
-}
-.lw-md-ol{
-  margin:6px 0 10px 18px;
-  padding:0;
-  list-style-type:decimal;
-}
-.lw-md-li{
-  margin:4px 0;
-  line-height:1.65;
-  color:var(--lw-ink);
-}
-.lw-md-li::marker{
-  color:var(--lw-accent);
-}
-@keyframes lwShimmer{
-  0%, 100%{ opacity: .55; transform: scale(.98); }
-  50%{ opacity: 1; transform: scale(1); }
-}
-.lw-thinking-shimmer{
-  animation: lwShimmer 1.8s ease-in-out infinite;
-  color: var(--lw-ink-2);
-  font-weight: 500;
-  font-size: 13px;
-}
-@keyframes lwSpinPulse{
-  0%{ transform: rotate(0deg); }
-  50%{ transform: rotate(180deg) scale(1.1); }
-  100%{ transform: rotate(360deg); }
-}
-.lw-thinking-spin{
-  animation: lwSpinPulse 2.5s ease-in-out infinite;
-}
-.lw-thinking-pill-busy{
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 88%;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 10px 14px;
-}
-.lw-thinking-header{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.lw-thinking-live-body{
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--lw-ink-3, #94a3b8);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 240px;
-  overflow-y: auto;
-  padding-left: 12px;
-  border-left: 2px solid rgba(99, 102, 241, 0.45);
-  margin-top: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-@keyframes lwFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-.lw-ws-dock{
-  flex:none;
-  border-top:1px solid var(--lw-line);
-  background:var(--lw-surface);
-  padding:10px 14px 12px;
-  box-shadow:0 -3px 12px rgba(0,0,0,.03);
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  z-index:10;
-}
-.lw-composer-wrap{
-  width:100%;
-  max-width:760px;
-  margin:0 auto;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-}
-.lw-ws-left.is-split .lw-composer-wrap{
-  max-width:100%;
-}
-.lw-composer-card{
-  display:flex;
-  flex-direction:column;
-  background:var(--lw-surface);
-  border:1px solid var(--lw-line-2);
-  border-radius:18px;
-  padding:10px 12px 8px 14px;
-  box-shadow:0 2px 10px rgba(0,0,0,.02);
-  transition:border-color .15s ease,box-shadow .15s ease;
-}
-.lw-composer-card:focus-within{
-  border-color:var(--lw-accent);
-  box-shadow:0 4px 16px color-mix(in srgb, var(--lw-accent) 14%, transparent);
-}
-.lw-composer-textarea{
-  width:100%;
-  border:none;
-  outline:none;
-  background:transparent;
-  font-size:13.5px;
-  color:var(--lw-ink);
-  line-height:1.5;
-  resize:none;
-  min-height:26px;
-  max-height:130px;
-  font-family:inherit;
-  padding:0;
-  margin:0;
-  box-sizing:border-box;
-}
-.lw-composer-textarea::placeholder{
-  color:var(--lw-ink-3);
-}
-.lw-composer-actions{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  margin-top:8px;
-  gap:8px;
-}
-.lw-composer-left{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  min-width:0;
-}
-.lw-composer-clear-btn{
-  background:none;
-  border:none;
-  color:var(--lw-ink-3);
-  cursor:pointer;
-  font-size:11.5px;
-  padding:2px 6px;
-  border-radius:6px;
-  transition:color .15s ease,background .15s ease;
-  white-space:nowrap;
-}
-.lw-composer-clear-btn:hover{
-  color:var(--lw-ink);
-  background:var(--lw-surface-2);
-}
-.lw-composer-right{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  flex:none;
-}
-.lw-model-picker{
-  position:relative;
-  display:inline-flex;
-  align-items:center;
-  background:var(--lw-surface-2);
-  border-radius:14px;
-  padding:0 22px 0 10px;
-  height:28px;
-  transition:all .15s ease;
-}
-.lw-model-picker:hover{
-  background:color-mix(in srgb, var(--lw-ink) 6%, var(--lw-surface-2));
-}
-.lw-model-picker select{
-  appearance:none;
-  -webkit-appearance:none;
-  background:transparent;
-  border:none;
-  font-size:12px;
-  font-weight:500;
-  color:var(--lw-ink-2);
-  padding:0;
-  margin:0;
-  cursor:pointer;
-  outline:none;
-  max-width:180px;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  line-height:28px;
-  height:28px;
-}
-.lw-model-picker-arrow{
-  position:absolute;
-  right:7px;
-  pointer-events:none;
-  color:var(--lw-ink-3);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-.lw-composer-send-circle{
-  width:28px;
-  height:28px;
-  border-radius:50%;
-  border:none;
-  background:var(--lw-accent);
-  color:#ffffff;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  flex:none;
-  transition:all .15s ease;
-}
-.lw-composer-send-circle:disabled{
-  background:#a4bdf6;
-  color:#ffffff;
-  opacity:0.65;
-  cursor:not-allowed;
-  transform:none;
-  box-shadow:none;
-}
-.lw-composer-send-circle:not(:disabled):hover{
-  transform:scale(1.06);
-  box-shadow:0 2px 8px color-mix(in srgb, var(--lw-accent) 35%, transparent);
-}
-.lw-composer-hint{
-  font-size:11px;
-  color:var(--lw-ink-3);
-  text-align:center;
-  padding-bottom:2px;
-}
-
-.lw-col.is-wide{max-width:1120px}
-.lw-body.is-stage{margin:0 0 auto;padding-bottom:0;gap:18px}
-.lw-stage{display:flex;flex-direction:column;gap:20px;width:100%;min-width:0}
-.lw-stage-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.lw-stage-title{min-width:0;display:flex;flex-direction:column;gap:2px}
-.lw-stage-title .lw-preview-title{margin-top:3px}
-
-.lw-real{
-  display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;
-  border:1px solid var(--lw-line);background:var(--lw-surface);
-  transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease);
-}
-.lw-real.is-live{
-  border-color:color-mix(in srgb,var(--lw-ok) 30%,transparent);
-  background:color-mix(in srgb,var(--lw-ok) 4%,var(--lw-surface));
-}
-.lw-real.is-quiet{background:var(--lw-surface-2)}
-.lw-real-dot{width:6px;height:6px;border-radius:50%;background:var(--lw-ink-3);flex:none}
-.lw-real.is-live .lw-real-dot{background:var(--lw-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--lw-ok) 14%,transparent)}
-.lw-real-copy{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
-.lw-real-title{font-size:12.5px;font-weight:600;color:var(--lw-ink);line-height:1.4}
-.lw-real-body{font-size:12px;line-height:1.6;color:var(--lw-ink-2)}
-.lw-real-note{font-size:12px;line-height:1.6;color:var(--lw-ok);margin-top:5px}
-
-.lw-structure{display:flex;flex-direction:column;gap:9px}
-.lw-structure-head{display:flex;align-items:baseline;gap:8px}
-.lw-sect-label{font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--lw-ink-3)}
-.lw-fields{display:flex;flex-wrap:wrap;gap:6px}
-.lw-field-chip{
-  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;
-  border-radius:8px;border:1px solid var(--lw-line);background:var(--lw-surface);
-  font-size:12px;line-height:1;color:var(--lw-ink);
-}
-.lw-field-ico{color:var(--lw-ink-3);flex:none}
-.lw-field-name{font-weight:560}
-.lw-field-kind{font-size:10.5px;color:var(--lw-ink-3)}
-
-.lw-fold{display:flex;flex-direction:column;gap:10px;min-width:0}
-.lw-fold-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.lw-fold-body{display:flex;flex-direction:column;gap:8px;min-width:0}
-
-/* The adjust bar docks to the bottom: the table is elsewhere, the words live here. */
-.lw-dock{
-  position:sticky;bottom:16px;z-index:3;display:flex;flex-direction:column;gap:12px;
-  margin-top:6px;padding:15px 17px 16px;border-radius:18px;
-  border:1px solid var(--lw-line-2);
-  background:color-mix(in srgb,var(--lw-surface) 88%,transparent);
-  -webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);
-  box-shadow:var(--lw-e3);
-}
-.lw-dock-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.lw-dock-hint{font-size:11.5px;color:var(--lw-ink-3)}
-.lw-dock .lw-tweak-row{padding-top:0;border-top:0}
-
-.lw-table-wrap{border-radius:14px;overflow-x:auto;background:var(--lw-surface);border:1px solid var(--lw-line);min-width:0;max-width:100%}
-.lw-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px}
-.lw-table th{
-  text-align:left;padding:11px 16px;background:var(--lw-surface-2);
-  border-bottom:1px solid var(--lw-line);vertical-align:middle;white-space:nowrap;
-  font-weight:600;font-size:11.5px;color:var(--lw-ink-2);letter-spacing:.01em;
-}
-.lw-th-inner{display:inline-flex;align-items:center;gap:6px}
-.lw-th-glyph{color:var(--lw-ink-3);opacity:.85}
-.lw-table td{
-  padding:13px 16px;border-bottom:1px solid var(--lw-line);
-  color:var(--lw-ink);white-space:nowrap;max-width:210px;overflow:hidden;text-overflow:ellipsis;
-}
-.lw-table tbody tr:last-child td{border-bottom:0}
-.lw-table tbody tr:hover td{background:color-mix(in srgb,var(--lw-surface-2) 65%,transparent)}
-.lw-table td.is-empty{color:var(--lw-ink-3);opacity:.5}
-.lw-table td.is-num{font-variant-numeric:tabular-nums;color:var(--lw-ink)}
-
-/* Warm, low-saturation option pills */
-.lw-pills{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
-.lw-pill{
-  display:inline-flex;align-items:center;height:21px;padding:0 7px;border-radius:5px;
-  font-size:11px;font-weight:540;line-height:1;white-space:nowrap;letter-spacing:.005em;
-}
-.lw-pill.tone-blue{background:#EDF0FE;color:#2B4FE0}
-.lw-pill.tone-slate{background:#F0EDE6;color:#575144}
-.lw-pill.tone-teal{background:#E7F3F0;color:#0E6E63}
-.lw-pill.tone-amber{background:#FAF0DD;color:#8A5A0E}
-.lw-pill.tone-emerald{background:#E8F3EC;color:#146B49}
-.lw-pill.tone-rose{background:#FAEAE8;color:#9E2B22}
-.lw[data-theme="dark"] .lw-pill.tone-blue{background:rgba(147,170,255,.14);color:#AFC2FF}
-.lw[data-theme="dark"] .lw-pill.tone-slate{background:rgba(244,241,234,.09);color:#C9C2B6}
-.lw[data-theme="dark"] .lw-pill.tone-teal{background:rgba(87,214,163,.12);color:#7FE3C1}
-.lw[data-theme="dark"] .lw-pill.tone-amber{background:rgba(240,181,101,.14);color:#F0C78C}
-.lw[data-theme="dark"] .lw-pill.tone-emerald{background:rgba(87,214,163,.12);color:#8BE3B9}
-.lw[data-theme="dark"] .lw-pill.tone-rose{background:rgba(255,147,132,.14);color:#FFB0A4}
-
-/* Collapsible column spec */
-.lw-details-toggle{
-  font:inherit;font-size:12px;font-weight:540;color:var(--lw-ink-3);
-  background:none;border:0;padding:2px 0;cursor:pointer;align-self:flex-start;
-  display:inline-flex;align-items:center;gap:6px;
-  transition:color var(--fast) var(--ease);
-}
-.lw-details-toggle:hover{color:var(--lw-ink)}
-.lw-details-chevron{transition:transform var(--fast) var(--ease)}
-.lw-details-chevron.is-open{transform:rotate(90deg)}
-
-.lw-legend{display:flex;flex-direction:column;border-top:1px solid var(--lw-line);padding-top:4px}
-.lw-legend-row{
-  display:flex;align-items:baseline;gap:12px;padding:9px 0;
-  border-bottom:1px solid var(--lw-line);font-size:12px;line-height:1.55;
-}
-.lw-legend-row:last-child{border-bottom:0}
-.lw-legend-key{flex:none;min-width:96px;font-weight:600;color:var(--lw-ink)}
-.lw-legend-kind{flex:none;min-width:34px;font-size:10.5px;color:var(--lw-ink-3)}
-.lw-legend-val{flex:1;color:var(--lw-ink-2);min-width:0}
-.lw-legend-opts{color:var(--lw-ink-3);font-size:11px;margin-left:6px}
-
-.lw-tweak-row{display:flex;gap:8px;align-items:center;padding-top:18px;border-top:1px solid var(--lw-line)}
-.lw-tweak-row .lw-input{flex:1;box-shadow:none}
-
-/* Adjusting a saved table: the same composer idea, applied after creation. */
-.lw-tweak{display:flex;flex-direction:column;gap:12px;padding-top:18px;border-top:1px solid var(--lw-line)}
-.lw-tweak .lw-tweak-row{padding-top:0;border-top:0}
-.lw-tweak-title{font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--lw-ink-3)}
-.lw-suggest{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.lw-suggest-lead{font-size:11.5px;color:var(--lw-ink-3);margin-right:1px}
-.lw-adjust-note{font-size:12.5px;line-height:1.7;color:var(--lw-ink-2);white-space:pre-wrap}
-.lw-adjust-note.is-warn{color:var(--lw-warn)}
-.lw-confirm-card{
-  display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:14px;
-  border:1px solid color-mix(in srgb,var(--lw-warn) 26%,transparent);
-  background:color-mix(in srgb,var(--lw-warn) 4%,var(--lw-surface));
-}
-.lw-confirm-list{margin:0;padding-left:18px;font-size:12.5px;line-height:1.8;color:var(--lw-ink-2)}
-
-/* ── Feedback ─────────────────────────────────────────────────────────── */
-.lw-banner{
-  display:flex;align-items:flex-start;gap:11px;padding:13px 15px;border-radius:14px;
-  border:1px solid color-mix(in srgb,var(--lw-danger) 22%,transparent);
-  background:color-mix(in srgb,var(--lw-danger) 4%,var(--lw-surface));
-}
-.lw-banner.is-warn{
-  border-color:color-mix(in srgb,var(--lw-warn) 24%,transparent);
-  background:color-mix(in srgb,var(--lw-warn) 4%,var(--lw-surface));
-}
-.lw-banner-icon{
-  flex:none;width:16px;height:16px;border-radius:50%;font-size:10px;font-weight:800;
-  line-height:16px;text-align:center;margin-top:2px;background:var(--lw-danger);color:#fff;
-}
-.lw-banner.is-warn .lw-banner-icon{background:var(--lw-warn);color:#FFF9F0}
-.lw-banner-body{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
-.lw-banner-action{flex:none;align-self:center;margin-left:6px}
-.lw-banner-title{font-size:12.5px;font-weight:600;color:var(--lw-ink)}
-.lw-banner-text{font-size:12px;line-height:1.65;color:var(--lw-ink-2);word-break:break-word}
-.lw-wait{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--lw-ink-2);font-variant-numeric:tabular-nums}
-
-/* ── Success ──────────────────────────────────────────────────────────── */
-.lw-done-head{display:flex;align-items:flex-start;gap:16px}
-.lw-check{
-  width:44px;height:44px;border-radius:14px;flex:none;display:flex;align-items:center;
-  justify-content:center;background:var(--lw-ok);color:#FFFFFF;
-  box-shadow:0 1px 2px rgba(12,60,44,.18), 0 10px 22px -12px color-mix(in srgb,var(--lw-ok) 70%,transparent);
-}
-.lw-done-copy{display:flex;flex-direction:column;gap:3px;min-width:0;padding-top:1px}
-.lw-done-eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--lw-ink-3);text-transform:none}
-.lw-done-title{font-size:23px;font-weight:600;letter-spacing:-.024em;color:var(--lw-ink);line-height:1.32;margin:0}
-.lw-url{
-  font-size:11.5px;line-height:1.5;color:var(--lw-ink-3);word-break:break-all;
-  text-decoration:none;display:inline-block;margin-top:4px;font-family:var(--mono);
-}
-.lw-url:hover{color:var(--lw-accent);text-decoration:underline;text-underline-offset:3px}
-.lw-next{display:flex;flex-direction:column;gap:11px;border-top:1px solid var(--lw-line);padding-top:20px}
-.lw-next-title{font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--lw-ink-3)}
-.lw-next-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:34px}
-.lw-next-card{
-  display:flex;gap:11px;align-items:flex-start;padding:12px 0 13px;
-  border-top:1px solid var(--lw-line);
-  font-size:12.5px;line-height:1.65;color:var(--lw-ink-2);
-}
-.lw-next-num{
-  flex:none;font-family:var(--mono);font-size:10.5px;font-weight:500;
-  color:var(--lw-ink-3);line-height:1.95;letter-spacing:.02em;font-variant-numeric:tabular-nums;
-}
-
-/* ── Loading ──────────────────────────────────────────────────────────── */
-.lw-plan-status{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;color:var(--lw-ink)}
-.lw-skel-table{border:1px solid var(--lw-line);border-radius:14px;overflow:hidden}
-.lw-skel-row{
-  display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:14px;
-  padding:14px 16px;border-bottom:1px solid var(--lw-line);
-}
-.lw-skel-row.is-head{background:var(--lw-surface-2)}
-.lw-skel-row:last-child{border-bottom:0}
-.lw-skel{
-  height:9px;border-radius:4px;
-  background:linear-gradient(90deg,color-mix(in srgb,var(--lw-ink) 6%,transparent) 25%,color-mix(in srgb,var(--lw-ink) 11%,transparent) 37%,color-mix(in srgb,var(--lw-ink) 6%,transparent) 63%);
-  background-size:400% 100%;animation:lw-shimmer 1.8s ease-in-out infinite;
-}
-@keyframes lw-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
-
-/* ── Scenario chips (a shortcut row, not a section) ───────────────────── */
-.lw-scenes{display:flex;flex-wrap:wrap;gap:8px}
-.lw-chip{
-  font:inherit;display:inline-flex;align-items:center;gap:7px;
-  height:30px;padding:0 11px;border-radius:9px;
-  border:1px solid var(--lw-line);background:var(--lw-surface);
-  color:var(--lw-ink-2);font-size:12.5px;font-weight:500;line-height:1;
-  cursor:pointer;white-space:nowrap;box-shadow:0 1px 1px rgba(24,20,14,.02);
-  transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),
-    color var(--fast) var(--ease),transform 120ms var(--ease);
-}
-.lw-chip:hover:not(:disabled){
-  background:var(--lw-surface-2);
-  border-color:color-mix(in srgb,var(--lw-ink) 18%,transparent);
-  color:var(--lw-ink);
-}
-.lw-chip:active:not(:disabled){transform:translateY(1px)}
-.lw-chip:focus-visible{outline:none;border-color:var(--lw-accent);box-shadow:0 0 0 3px var(--lw-accent-soft)}
-.lw-chip:disabled{opacity:.5;cursor:default}
-.lw-chip-ico{color:var(--lw-ink-3);transition:color var(--fast) var(--ease)}
-.lw-chip:hover:not(:disabled) .lw-chip-ico{color:var(--lw-accent)}
-
-/* ── Recent ───────────────────────────────────────────────────────────── */
-.lw-recent{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:22px}
-.lw-recent-label{font-size:11.5px;color:var(--lw-ink-3);flex:none;letter-spacing:.02em}
-.lw-recent-list{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-left:-7px}
-.lw-recent-item{
-  display:inline-flex;align-items:center;border-radius:7px;
-  transition:background var(--fast) var(--ease);
-}
-.lw-recent-item:hover{background:color-mix(in srgb,var(--lw-ink) 5%,transparent)}
-.lw-recent-open{
-  font:inherit;display:inline-flex;align-items:center;gap:6px;
-  padding:3px 2px 3px 7px;border:0;background:none;border-radius:7px;
-  color:var(--lw-ink-2);font-size:12.5px;font-weight:500;line-height:1.45;
-  cursor:pointer;max-width:250px;transition:color var(--fast) var(--ease);
-}
-.lw-recent-open:hover{color:var(--lw-ink)}
-.lw-recent-open:disabled{opacity:.5;cursor:default}
-.lw-recent-del{
-  width:18px;height:18px;margin:0 3px 0 1px;border:0;border-radius:5px;background:none;
-  color:var(--lw-ink-3);font-size:15px;line-height:1;cursor:pointer;flex:none;
-  opacity:.55;transition:opacity var(--fast) var(--ease),background var(--fast) var(--ease),color var(--fast) var(--ease);
-}
-.lw-recent-item:hover .lw-recent-del,
-.lw-recent-del:focus-visible{opacity:1}
-.lw-recent-del:hover{background:color-mix(in srgb,var(--lw-danger) 12%,transparent);color:var(--lw-danger)}
-.lw-recent-ico{color:var(--lw-ink-3);flex:none;opacity:.8}
-.lw-recent-name{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-.lw-recent-confirm:focus{outline:none}
-.lw-recent-confirm{
-  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
-  padding:10px 12px;border:1px solid var(--lw-line-2);border-radius:12px;
-  background:var(--lw-surface);box-shadow:var(--lw-e1);
-}
-.lw-confirm-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
-.lw-confirm-title{font-size:12.5px;font-weight:600;color:var(--lw-ink)}
-.lw-confirm-body{font-size:11.5px;line-height:1.5;color:var(--lw-ink-3)}
-.lw-confirm-actions{display:flex;gap:8px;flex:none}
-
-.lw-busy-inline{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--lw-ink-2);font-variant-numeric:tabular-nums}
-.lw-composer.is-busy{box-shadow:var(--lw-e2)}
-.lw-composer.is-busy .lw-composer-area{color:var(--lw-ink-2)}
-.lw-planning{
-  display:flex;flex-direction:column;gap:14px;padding:20px 22px 22px;
-  background:var(--lw-surface);border:1px solid var(--lw-line);border-radius:var(--r-lg);
-  box-shadow:var(--lw-e1);
-}
-
-@media (max-width:720px){
-  .lw{padding:26px 18px 64px}
-  .lw-kbd{display:none}
-  .lw-composer-bar{padding-left:18px}
-  .lw-trust{font-size:11px}
-  .lw-scenes{gap:6px}
-  .lw-chip{height:28px;padding:0 9px;font-size:12px}
-  .lw-next-grid{grid-template-columns:minmax(0,1fr)}
-  .lw-tweak-row{flex-direction:column;align-items:stretch}
-  .lw-card{padding:22px 20px 24px;border-radius:16px}
-  .lw-hero{padding-top:18px}
-}
-@media (prefers-reduced-motion:reduce){
-  .lw *,.lw *::before,.lw *::after{animation-duration:0s!important;transition-duration:0s!important}
-}
-
-/* ── Hide host conversation bottom composer when Workbench is active ── */
-body:has(.lw) [data-composer-seat],
-body:has(.lw) [data-conversation-region="composer"],
-body:has(.lw) [class*="composerSeat"],
-body:has(.lw) [class*="composerStack"] {
-  display: none !important;
-}
-body:has(.lw) [data-conversation-scroll] {
-  overflow-y: hidden !important;
-}
-body:has(.lw) [data-slot="conversation.session"],
-body:has(.lw) [class*="viewArea"] {
-  height: 100% !important;
-  flex: 1 1 100% !important;
-  min-height: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-`
-
-    // ── i18n ───────────────────────────────────────────────────────────────
-
-    function translator(props) {
-      if (typeof props.t === 'function') {
-        return (key) => {
-          const value = props.t(key)
-          return value === key ? (ZH[key] ?? key) : value
-        }
-      }
-      return (key) => ZH[key] ?? key
-    }
-
-    function humanize(message) {
-      const text = String(message ?? '').trim()
-      if (!text) return '没响应，再试一次就好。'
-      if (/找不到 lark-cli|没找到 lark-cli|lark-cli 不可用/i.test(text)) return '还没装连接飞书的小工具，装好之后再来。'
-      if (/device_code is invalid|device code.*invalid/i.test(text)) return '这个授权链接失效了，我给你发一个新的。'
-      if (/expired|过期/i.test(text) && /device|code|授权/i.test(text)) return '授权链接过期了，我重新发一个给你。'
-      if (/pending|audit|审核|审批|not approved/i.test(text)) return '授权已提交，还在等管理员审批，批完再点一次就好。'
-      if (/429|too many|rate limit|frequency|限流|频率/i.test(text)) return '操作太频繁了，等十几秒再试。'
-      if (/forbidden|permission|scope|403|权限/i.test(text)) return '飞书说权限不够，重新授权一次把权限给全就好。'
-      if (/auth|授权|登录|token .*(expired|invalid)|needs_refresh/i.test(text)) return '飞书那边要重新授权一下。'
-      if (/timeout|超时|aborted|ETIMEDOUT|想太久了/i.test(text)) return '飞书响应有点慢，再试一次。'
-      if (/ENOTFOUND|ECONNREFUSED|network|网络/i.test(text)) return '连不上飞书，检查下网络。'
-      if (/模型没有|无法解析|没能组成/.test(text)) return '我没太看懂要记什么。换个说法，或者点下面任意一个场景试试。'
-      if (/required flag|missing required|is required/i.test(text)) return '这张表的信息没读全，回飞书里打开看看吧。'
-      return text
-    }
-
-    function detectTheme() {
-      try {
-        const probe = getComputedStyle(document.documentElement)
-          .getPropertyValue('--dsw-alias-bg-base')
-          .trim()
-        if (probe) {
-          let r
-          let g
-          let b
-          const hex = probe.match(/^#([0-9a-f]{6})$/i)
-          if (hex) {
-            r = parseInt(hex[1].slice(0, 2), 16)
-            g = parseInt(hex[1].slice(2, 4), 16)
-            b = parseInt(hex[1].slice(4, 6), 16)
-          } else {
-            const rgb = probe.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i)
-            if (rgb) {
-              r = Number(rgb[1])
-              g = Number(rgb[2])
-              b = Number(rgb[3])
-            }
-          }
-          if (r !== undefined) return 0.299 * r + 0.587 * g + 0.114 * b < 128 ? 'dark' : 'light'
-        }
-      } catch {
-        // fall through to the media query
-      }
-      try {
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      } catch {
-        return 'light'
-      }
-    }
-
-    function useHostTheme() {
-      const [theme, setTheme] = useState(detectTheme)
-      useEffect(() => {
-        const observer = new MutationObserver(() => setTheme(detectTheme()))
-        observer.observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ['class', 'data-theme', 'style'],
-        })
-        return () => observer.disconnect()
-      }, [])
-      return theme
-    }
-
-    // ── Primitives ─────────────────────────────────────────────────────────
-
-    function Button({ variant = 'default', size, className = '', children, ...rest }) {
-      const modifier =
-        variant === 'primary' ? ' is-primary'
-          : variant === 'ghost' ? ' is-ghost'
-            : variant === 'link' ? ' is-link'
-              : variant === 'danger' ? ' is-danger'
-                : ''
-      const sizeMod = size === 'sm' ? ' is-sm' : ''
-      return h('button', { type: 'button', ...rest, className: `lw-btn${modifier}${sizeMod}${className ? ` ${className}` : ''}` }, children)
-    }
-
-    function Banner({ tone = 'error', title, children, action }) {
-      const warn = tone === 'warn'
-      return h(
-        'div',
-        { className: `lw-banner${warn ? ' is-warn' : ''}`, role: 'alert' },
-        h('span', { className: 'lw-banner-icon', 'aria-hidden': true }, '!'),
-        h(
-          'div',
-          { className: 'lw-banner-body' },
-          title ? h('div', { className: 'lw-banner-title' }, title) : null,
-          h('div', { className: 'lw-banner-text' }, children),
-        ),
-        action ? h('div', { className: 'lw-banner-action' }, action) : null,
-      )
-    }
-
-    function Steps({ labels, current }) {
-      return h(
-        'div',
-        { className: 'lw-steps', role: 'list' },
-        labels.map((label, index) =>
-          h(
-            React.Fragment,
-            { key: label },
-            index > 0 ? h('span', { className: 'lw-step-bar', 'aria-hidden': true }) : null,
-            h(
-              'span',
-              {
-                className: `lw-step${index < current ? ' is-done' : ''}${index === current ? ' is-current' : ''}`,
-                role: 'listitem',
-                'aria-current': index === current ? 'step' : undefined,
-              },
-              h('span', { className: 'lw-step-num' }, index < current ? '✓' : String(index + 1)),
-              h('span', null, label),
-            ),
-          ),
-        ),
-      )
-    }
-
-    function Heartbeat({ t, seconds }) {
-      return h(
-        'div',
-        { className: 'lw-wait', role: 'status', 'aria-live': 'polite' },
-        h('span', { className: 'lw-dot is-busy' }),
-        `${t('gate.waiting')}${seconds}s`,
-      )
-    }
-
-    function TableSkeleton() {
-      return h(
-        'div',
-        { className: 'lw-skel-table', 'aria-hidden': true },
-        h(
-          'div',
-          { className: 'lw-skel-row is-head' },
-          h('div', { className: 'lw-skel', style: { width: '65%' } }),
-          h('div', { className: 'lw-skel', style: { width: '52%' } }),
-          h('div', { className: 'lw-skel', style: { width: '58%' } }),
-          h('div', { className: 'lw-skel', style: { width: '48%' } }),
-        ),
-        [0, 1, 2].map((row) =>
-          h(
-            'div',
-            { className: 'lw-skel-row', key: row },
-            h('div', { className: 'lw-skel', style: { width: `${78 - row * 9}%` } }),
-            h('div', { className: 'lw-skel', style: { width: `${60 + row * 7}%` } }),
-            h('div', { className: 'lw-skel', style: { width: `${46 + row * 11}%` } }),
-            h('div', { className: 'lw-skel', style: { width: `${55 - row * 6}%` } }),
-          ),
-        ),
-      )
-    }
-
-    function Mark({ size = 18 }) {
+    function Mark({ size = 14 }) {
       return h(
         'svg',
         {
@@ -2077,46 +253,2586 @@ body:has(.lw) [class*="viewArea"] {
       )
     }
 
+    // ── Scenarios (4 primary visible + 4 on-demand) ────────────────────────
+
+    const SCENARIOS = [
+      {
+        id: 'crm',
+        type: 'base',
+        icon: 'table',
+        titleKey: 'scene.crm',
+        prompt: '我想记客户往来：公司、联系人、现在谈到哪一步、下次什么时候联系',
+        primary: true,
+      },
+      {
+        id: 'task',
+        type: 'base',
+        icon: 'checkSquare',
+        titleKey: 'scene.task',
+        prompt: '我想记工作任务：任务、负责人、做到哪一步了、截止时间',
+        primary: true,
+      },
+      {
+        id: 'collab-calendar',
+        type: 'collab',
+        icon: 'calendar',
+        titleKey: 'scene.calendar',
+        prompt: '查一下我今天的日程安排与会议',
+        primary: true,
+      },
+      {
+        id: 'collab-todo',
+        type: 'collab',
+        icon: 'checkSquare',
+        titleKey: 'scene.todo',
+        prompt: '列出我所有未完成的待办事项',
+        primary: true,
+      },
+      {
+        id: 'content',
+        type: 'base',
+        icon: 'layout',
+        titleKey: 'scene.content',
+        prompt: '我想排内容：选题、发在哪个平台、什么状态、什么时候发',
+        primary: false,
+      },
+      {
+        id: 'expense',
+        type: 'base',
+        icon: 'receipt',
+        titleKey: 'scene.expense',
+        prompt: '我想记报销：花在什么事上、金额、日期、报销到哪一步',
+        primary: false,
+      },
+      {
+        id: 'collab-chat',
+        type: 'collab',
+        icon: 'people',
+        titleKey: 'scene.chat',
+        prompt: '搜索我加入的飞书群聊',
+        primary: false,
+      },
+      {
+        id: 'collab-mail',
+        type: 'collab',
+        icon: 'mail',
+        titleKey: 'scene.mail',
+        prompt: '查一下我最近收到的重要邮件',
+        primary: false,
+      },
+    ]
+
+    // ── Complete Bilingual i18n Dictionaries (Zero Hardcoded UI Copy) ──────
+
+    const ZH = {
+      'app.name': '飞书工作台',
+      'status.checking': '检查中',
+      'status.ready': '已连接',
+      'status.offline': '未连接服务',
+      'status.recheck': '重新检查',
+      'status.setup': '待连接',
+      'status.manage': '连接与权限设置',
+
+      'pick.title': '想建什么表，或查什么事？',
+      'pick.placeholder': '想记什么事，或查日程、待办、群聊、邮件…',
+      'pick.own': '输入建表需求或飞书协同指令',
+      'pick.more': '更多',
+      'pick.less': '收起',
+      'pick.send': '发送 (↵)',
+      'pick.stop': '停止',
+
+      'scene.crm': '建客户表',
+      'scene.task': '建任务表',
+      'scene.calendar': '今日日程',
+      'scene.todo': '我的待办',
+      'scene.content': '建排期表',
+      'scene.expense': '建报销表',
+      'scene.chat': '搜索群聊',
+      'scene.mail': '近期邮件',
+
+      'recent.title': '最近',
+      'recent.delete': '从最近移除',
+      'recent.removed': '已移除「%s」',
+
+      'toast.undo': '撤销',
+      'toast.copied': '已复制链接',
+      'toast.copiedCmd': '已复制命令',
+      'toast.synced': '已刷新表格数据',
+      'toast.cleared': '已清空对话',
+      'toast.stopped': '已停止',
+      'toast.built': '表格已创建',
+      'toast.refined': '已更新方案',
+      'toast.planReady': '方案已就绪，点击右上角「确认建表」即可生成',
+
+      'model.label': '切换模型',
+      'model.loading': '加载模型…',
+
+      'busy.planning': '构思中…',
+      'busy.planningSub': '正在生成表结构与示例数据',
+      'busy.refining': '调整中…',
+      'busy.building': '创建中…',
+      'busy.thinking': '思考中…',
+
+      'preview.title': '结构预览',
+      'preview.draft': '预览草稿',
+      'preview.empty': '建好后可直接填写',
+      'preview.cols': '列',
+      'preview.rows': '条示例',
+      'preview.kanban': '含看板',
+      'preview.detailsShow': '字段说明',
+      'preview.detailsHide': '收起说明',
+      'preview.tweakPlaceholder': '想怎么改？如：加一列来源，或去掉金额…',
+      'preview.build': '确认建表',
+      'preview.back': '返回',
+      'preview.chipOwner': '+ 负责人',
+      'preview.chipPriority': '+ 优先级',
+      'preview.chipNotes': '+ 备注',
+      'preview.chipSamples': '补充示例',
+
+      'view.back': '返回',
+      'view.collabTitle': '飞书协同',
+      'view.sync': '刷新数据',
+      'view.synced': '已刷新',
+      'view.copy': '复制链接',
+      'view.copied': '已复制',
+      'view.tableShow': '分屏表格',
+      'view.tableHide': '收起表格',
+      'view.tabChat': '对话',
+      'view.tabTable': '表格',
+      'view.external': '外部打开',
+      'view.clear': '清空',
+      'view.clearTip': '清空当前对话',
+      'view.emptyTable': '说一句就能改表，或直接问表里的数据',
+      'view.emptyCollab': '随时查日程、待办、群聊、邮件与文档',
+      'view.tablePlaceholder': '加列、改状态、建看板，或直接提问…',
+      'view.collabPlaceholder': '查日程、待办、群聊或邮件…',
+      'view.userRole': '你',
+      'view.thinkingDone': '思考过程',
+      'view.retry': '重试',
+      'view.noToken': '无法识别表格链接，请从飞书打开',
+      'view.confirmTitle': '确认删除',
+      'view.confirmBody': '以下改动无法撤销：',
+      'view.confirmYes': '确认删除',
+      'view.confirmNo': '取消',
+      'view.resizeTip': '拖拽调整宽度，双击恢复默认',
+      'view.webviewLoading': '正在载入飞书多维表格…',
+      'view.webviewError': '表格载入失败',
+      'view.scopeNeed': '需要开通「%s」权限',
+      'view.scopeAuth': '立即授权并继续',
+      'view.scopeWaiting': '等待飞书确认…',
+      'view.scopeConsole': '开放平台',
+
+      'starter.analyze': '统计分析',
+      'starter.kanban': '创建看板',
+      'starter.form': '收集表单',
+      'starter.batch': '检查空缺项',
+      'starter.calendar': '今日日程',
+      'starter.todo': '未完成待办',
+      'starter.chat': '我的群聊',
+      'starter.mail': '近期邮件',
+
+      'error.title': '操作未完成',
+      'error.retry': '重试',
+
+      'gate.step.tool': '安装工具',
+      'gate.step.app': '关联应用',
+      'gate.step.auth': '授权',
+      'gate.noTool.title': '安装连接工具',
+      'gate.noTool.body': '在终端执行以下命令即可连接飞书',
+      'gate.noTool.copy': '复制',
+      'gate.noTool.copied': '已复制',
+      'gate.noTool.done': '已安装，继续',
+      'gate.noTool.hint': '若安装后仍未识别，重启应用即可',
+      'gate.noApp.title': '关联你的飞书',
+      'gate.noApp.body': '在飞书页面填个名称并确认默认权限（约 1 分钟）',
+      'gate.noApp.cta': '前往飞书创建',
+      'gate.noApp.done': '已完成，检测',
+      'gate.noApp.reopen': '重新打开',
+      'gate.team.toggle': '使用已有应用凭据',
+      'gate.team.hide': '收起',
+      'gate.team.appId': 'App ID（cli_ 开头）',
+      'gate.team.secret': 'App Secret',
+      'gate.team.save': '连接此应用',
+      'gate.noAuth.title': '授权登录飞书',
+      'gate.noAuth.body': '仅需一次性确认，数据直连你的个人飞书空间',
+      'gate.noAuth.cta': '去授权',
+      'gate.noAuth.done': '已授权，立即核验',
+      'gate.noAuth.reopen': '重新打开',
+      'gate.waiting': '正在确认',
+      'gate.autoChecking': '正在自动检测连接状态…',
+      'gate.pending': '尚未收到飞书确认，请在浏览器显示成功后重试',
+      'gate.retryBody': '本地服务暂无响应，请稍后重试',
+
+      'account.title': '飞书连接',
+      'account.user': '账号',
+      'account.app': '应用',
+      'account.cli': '工具',
+      'account.authed': '已授权',
+      'account.notLogin': '未登录',
+      'account.notConfigured': '未配置',
+      'account.cliReady': '已就绪',
+      'account.cliMissing': '不可用',
+      'account.scopesTitle': '已开通能力',
+      'account.console': '开放平台',
+      'account.scopeChecking': '核验中',
+      'account.scopeReady': '已开通',
+      'account.scopeOff': '未开通',
+      'account.allReady': '全域协同能力已就绪',
+      'account.grantAll': '补充授权',
+      'account.granting': '正在等待确认…',
+      'account.logout': '退出登录',
+      'account.unbind': '解绑应用',
+      'account.logoutTitle': '退出当前飞书账号？',
+      'account.logoutBody': '将清除「%s」的本地授权，可随时切换其他账号重新登录',
+      'account.logoutConfirm': '确认退出',
+      'account.unbindTitle': '解绑当前飞书应用？',
+      'account.unbindBody': '将清除应用凭据 (%s)，之后可重新绑定其他企业应用',
+      'account.unbindConfirm': '确认解绑',
+      'account.working': '处理中…',
+      'account.cancel': '取消',
+      'account.close': '关闭',
+      'scope.base': '多维表格',
+      'scope.calendar': '日历日程',
+      'scope.task': '任务待办',
+      'scope.im': '消息群聊',
+      'scope.mail': '飞书邮箱',
+      'scope.contact': '通讯录',
+
+      'kind.text': '文本',
+      'kind.number': '数字',
+      'kind.select': '单选',
+      'kind.datetime': '日期',
+      'kind.user': '人员',
+      'kind.checkbox': '勾选',
+    }
+
+    const EN = {
+      'app.name': 'Lark Workbench',
+      'status.checking': 'Checking',
+      'status.ready': 'Connected',
+      'status.offline': 'Offline',
+      'status.recheck': 'Retry',
+      'status.setup': 'Setup',
+      'status.manage': 'Connection & permissions',
+
+      'pick.title': 'What would you like to track or check?',
+      'pick.placeholder': 'Track clients or tasks, or ask for agenda, chats, mail…',
+      'pick.own': 'Describe what to track or ask Lark',
+      'pick.more': 'More',
+      'pick.less': 'Less',
+      'pick.send': 'Send (↵)',
+      'pick.stop': 'Stop',
+
+      'scene.crm': 'Client Base',
+      'scene.task': 'Task Base',
+      'scene.calendar': 'Today Agenda',
+      'scene.todo': 'My Tasks',
+      'scene.content': 'Content Base',
+      'scene.expense': 'Expense Base',
+      'scene.chat': 'Group Chats',
+      'scene.mail': 'Recent Mail',
+
+      'recent.title': 'Recent',
+      'recent.delete': 'Remove from recent',
+      'recent.removed': 'Removed “%s”',
+
+      'toast.undo': 'Undo',
+      'toast.copied': 'Link copied',
+      'toast.copiedCmd': 'Command copied',
+      'toast.synced': 'Table data refreshed',
+      'toast.cleared': 'Conversation cleared',
+      'toast.stopped': 'Stopped',
+      'toast.built': 'Base created',
+      'toast.refined': 'Blueprint updated',
+      'toast.planReady': 'Ready — click Create Base to build it',
+
+      'model.label': 'Switch model',
+      'model.loading': 'Loading…',
+
+      'busy.planning': 'Designing…',
+      'busy.planningSub': 'Structuring fields and sample rows',
+      'busy.refining': 'Refining…',
+      'busy.building': 'Creating…',
+      'busy.thinking': 'Thinking…',
+
+      'preview.title': 'Structure Preview',
+      'preview.draft': 'Draft preview',
+      'preview.empty': 'Ready for your first row',
+      'preview.cols': 'fields',
+      'preview.rows': 'samples',
+      'preview.kanban': 'Kanban',
+      'preview.detailsShow': 'Field specs',
+      'preview.detailsHide': 'Hide specs',
+      'preview.tweakPlaceholder': 'Refine structure… e.g. add a Source column or remove Amount',
+      'preview.build': 'Create Base',
+      'preview.back': 'Back',
+      'preview.chipOwner': '+ Owner',
+      'preview.chipPriority': '+ Priority',
+      'preview.chipNotes': '+ Notes',
+      'preview.chipSamples': 'More samples',
+
+      'view.back': 'Back',
+      'view.collabTitle': 'Lark Assistant',
+      'view.sync': 'Refresh',
+      'view.synced': 'Refreshed',
+      'view.copy': 'Copy link',
+      'view.copied': 'Copied',
+      'view.tableShow': 'Split Table',
+      'view.tableHide': 'Hide Table',
+      'view.tabChat': 'Chat',
+      'view.tabTable': 'Table',
+      'view.external': 'Open external',
+      'view.clear': 'Clear',
+      'view.clearTip': 'Clear conversation',
+      'view.emptyTable': 'Reshape this Base or ask questions in one sentence',
+      'view.emptyCollab': 'Check agenda, tasks, chats, mail, or docs',
+      'view.tablePlaceholder': 'Add a column, update rows, or ask about data…',
+      'view.collabPlaceholder': 'Ask about agenda, tasks, chats, or mail…',
+      'view.userRole': 'You',
+      'view.thinkingDone': 'Reasoning',
+      'view.retry': 'Retry',
+      'view.noToken': 'Could not read table token from link',
+      'view.confirmTitle': 'Confirm deletion',
+      'view.confirmBody': 'These changes cannot be undone:',
+      'view.confirmYes': 'Delete',
+      'view.confirmNo': 'Cancel',
+      'view.resizeTip': 'Drag to resize, double-click to reset',
+      'view.webviewLoading': 'Loading Feishu Base…',
+      'view.webviewError': 'Failed to load table',
+      'view.scopeNeed': 'Permission required: %s',
+      'view.scopeAuth': 'Authorize & continue',
+      'view.scopeWaiting': 'Waiting for Feishu…',
+      'view.scopeConsole': 'Console',
+
+      'starter.analyze': 'Analyze data',
+      'starter.kanban': 'Create Kanban',
+      'starter.form': 'Intake form',
+      'starter.batch': 'Check gaps',
+      'starter.calendar': 'Today agenda',
+      'starter.todo': 'Open tasks',
+      'starter.chat': 'Group chats',
+      'starter.mail': 'Recent mail',
+
+      'error.title': 'Something went wrong',
+      'error.retry': 'Retry',
+
+      'gate.step.tool': 'Install CLI',
+      'gate.step.app': 'Connect App',
+      'gate.step.auth': 'Authorize',
+      'gate.noTool.title': 'Install the bridge CLI',
+      'gate.noTool.body': 'Run this command in your terminal to connect Feishu.',
+      'gate.noTool.copy': 'Copy',
+      'gate.noTool.copied': 'Copied',
+      'gate.noTool.done': 'Installed, continue',
+      'gate.noTool.hint': 'If still undetected after install, restart the app.',
+      'gate.noApp.title': 'Connect your Feishu app',
+      'gate.noApp.body': 'Name your app and accept default permissions (~1 min).',
+      'gate.noApp.cta': 'Open Feishu',
+      'gate.noApp.done': 'Done, verify',
+      'gate.noApp.reopen': 'Open again',
+      'gate.team.toggle': 'Use existing app credentials',
+      'gate.team.hide': 'Hide',
+      'gate.team.appId': 'App ID (cli_…)',
+      'gate.team.secret': 'App Secret',
+      'gate.team.save': 'Connect app',
+      'gate.noAuth.title': 'Authorize Feishu',
+      'gate.noAuth.body': 'One-time confirmation. Data stays strictly in your Feishu space.',
+      'gate.noAuth.cta': 'Authorize',
+      'gate.noAuth.done': 'Authorized, verify',
+      'gate.noAuth.reopen': 'Open again',
+      'gate.waiting': 'Confirming',
+      'gate.autoChecking': 'Auto-detecting authorization…',
+      'gate.pending': 'Not confirmed yet. Finish authorization in the browser and retry.',
+      'gate.retryBody': 'Local service did not respond. Please retry.',
+
+      'account.title': 'Feishu Connection',
+      'account.user': 'Account',
+      'account.app': 'App',
+      'account.cli': 'CLI',
+      'account.authed': 'Authorized',
+      'account.notLogin': 'Signed out',
+      'account.notConfigured': 'Not set',
+      'account.cliReady': 'Ready',
+      'account.cliMissing': 'Unavailable',
+      'account.scopesTitle': 'Capabilities',
+      'account.console': 'Console',
+      'account.scopeChecking': 'Checking',
+      'account.scopeReady': 'Active',
+      'account.scopeOff': 'Inactive',
+      'account.allReady': 'All capabilities ready',
+      'account.grantAll': 'Grant permissions',
+      'account.granting': 'Waiting…',
+      'account.logout': 'Sign out',
+      'account.unbind': 'Unbind app',
+      'account.logoutTitle': 'Sign out of Feishu?',
+      'account.logoutBody': 'Clears the local token for “%s”. You can sign in with another account anytime.',
+      'account.logoutConfirm': 'Sign out',
+      'account.unbindTitle': 'Unbind this Feishu app?',
+      'account.unbindBody': 'Removes stored credentials (%s) so you can bind another enterprise app.',
+      'account.unbindConfirm': 'Unbind',
+      'account.working': 'Working…',
+      'account.cancel': 'Cancel',
+      'account.close': 'Close',
+      'scope.base': 'Base & Docs',
+      'scope.calendar': 'Calendar',
+      'scope.task': 'Tasks',
+      'scope.im': 'Chats',
+      'scope.mail': 'Mail',
+      'scope.contact': 'Contacts',
+
+      'kind.text': 'Text',
+      'kind.number': 'Number',
+      'kind.select': 'Select',
+      'kind.datetime': 'Date',
+      'kind.user': 'Person',
+      'kind.checkbox': 'Check',
+    }
+
+    const KIND_ICON = {
+      text: 'fieldText',
+      number: 'fieldNumber',
+      select: 'fieldSelect',
+      datetime: 'fieldDate',
+      user: 'fieldUser',
+      checkbox: 'fieldCheck',
+    }
+
+    const PILL_TONES = ['blue', 'slate', 'teal', 'amber', 'emerald', 'rose']
+
+    // ── Unified Design Tokens & Apple-Grade Motion Stylesheet ──────────────
+
+    const CSS = `
+.lw {
+  /* Semantic Color Tokens — harmonized with DSH host + Notion/Linear restraint */
+  --lw-bg: var(--dsw-alias-bg-base, #FFFFFF);
+  --lw-surface: var(--dsw-alias-bg-layer-1, #FFFFFF);
+  --lw-surface-2: var(--dsw-alias-bg-module-platform, #F6F7F8);
+  --lw-surface-3: rgba(15, 17, 21, 0.045);
+  --lw-ink: var(--dsw-alias-label-primary, #0F1115);
+  --lw-ink-2: var(--dsw-alias-label-secondary, #5B616C);
+  --lw-ink-3: var(--dsw-alias-label-tertiary, #8A909B);
+  --lw-line: var(--dsw-alias-border-l2, rgba(15, 17, 21, 0.08));
+  --lw-line-2: var(--dsw-alias-border-l3, rgba(15, 17, 21, 0.14));
+  --lw-accent: #3370FF;
+  --lw-accent-soft: rgba(51, 112, 255, 0.08);
+  --lw-solid: var(--dsw-alias-button-primary-fill, #111318);
+  --lw-solid-hover: var(--dsw-alias-button-primary-hover, #2A2E37);
+  --lw-solid-ink: var(--dsw-alias-label-primary-foreground, #FFFFFF);
+  --lw-ok: #16865A;
+  --lw-warn: #B2680B;
+  --lw-danger: #CC2B24;
+  --lw-mask: rgba(15, 17, 21, 0.34);
+
+  /* Elevation — single light source, whisper-quiet shadows */
+  --lw-e1: 0 1px 2px rgba(15, 17, 21, 0.04);
+  --lw-e2: 0 0 0 0.5px var(--lw-line-2), 0 4px 16px -4px rgba(15, 17, 21, 0.06);
+  --lw-e3: 0 0 0 0.5px var(--lw-line-2), 0 8px 28px -8px rgba(15, 17, 21, 0.1), 0 2px 6px rgba(15, 17, 21, 0.03);
+  --lw-e-modal: 0 0 0 0.5px var(--lw-line-2), 0 20px 56px -12px rgba(15, 17, 21, 0.18);
+
+  /* Radii — aligned with DSH scale */
+  --r-xs: var(--dsw-radius-xs, 4px);
+  --r-sm: var(--dsw-radius-sm, 8px);
+  --r-md: var(--dsw-radius-md, 12px);
+  --r-lg: var(--dsw-radius-lg, 16px);
+  --r-xl: var(--dsw-radius-xl, 20px);
+
+  /* Unified Motion Grammar — Apple/Linear calibrated */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-io: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --dur-press: 90ms;
+  --dur-micro: 150ms;
+  --dur-ui: 220ms;
+  --dur-view: 260ms;
+
+  --mono: var(--ds-font-family-code, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  justify-content: center;
+  padding: 28px 32px 64px;
+  box-sizing: border-box;
+  background: var(--lw-bg);
+  color: var(--lw-ink);
+  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.lw[data-theme="dark"] {
+  --lw-bg: var(--dsw-alias-bg-base, #151517);
+  --lw-surface: var(--dsw-alias-bg-layer-1, #1C1C1F);
+  --lw-surface-2: var(--dsw-alias-bg-layer-2, #232327);
+  --lw-surface-3: rgba(255, 255, 255, 0.06);
+  --lw-ink: var(--dsw-alias-label-primary, #F3F4F6);
+  --lw-ink-2: var(--dsw-alias-label-secondary, #A1A6B2);
+  --lw-ink-3: var(--dsw-alias-label-tertiary, #6F7582);
+  --lw-line: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.08));
+  --lw-line-2: var(--dsw-alias-border-l3, rgba(255, 255, 255, 0.14));
+  --lw-accent: #7AA7FF;
+  --lw-accent-soft: rgba(122, 167, 255, 0.14);
+  --lw-solid: var(--dsw-alias-button-primary-fill, #F3F4F6);
+  --lw-solid-hover: var(--dsw-alias-button-primary-hover, #FFFFFF);
+  --lw-solid-ink: var(--dsw-alias-label-primary-foreground, #111318);
+  --lw-ok: #4AD295;
+  --lw-warn: #F0B45A;
+  --lw-danger: #F47A74;
+  --lw-mask: rgba(0, 0, 0, 0.52);
+
+  --lw-e1: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --lw-e2: 0 0 0 0.5px var(--lw-line-2), 0 8px 24px -8px rgba(0, 0, 0, 0.48);
+  --lw-e3: 0 0 0 0.5px var(--lw-line-2), 0 14px 36px -10px rgba(0, 0, 0, 0.62);
+  --lw-e-modal: 0 0 0 0.5px var(--lw-line-2), 0 24px 64px -12px rgba(0, 0, 0, 0.72);
+}
+
+.lw *, .lw *::before, .lw *::after { box-sizing: border-box; }
+.lw ::selection { background: color-mix(in srgb, var(--lw-accent) 22%, transparent); }
+
+/* ── Keyframes (GPU-only: transform & opacity) ────────────────────────── */
+@keyframes lwStageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lwMsgUserIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes lwMsgAiIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lwPopIn {
+  from { opacity: 0; transform: scale(0.76); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes lwSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes lwPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@keyframes lwShimmerSweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+@keyframes lwTextBreath {
+  0%, 100% { opacity: 0.52; }
+  50% { opacity: 1; }
+}
+
+.lw-stage-in { animation: lwStageIn var(--dur-view) var(--ease-out) both; }
+.lw-spin { animation: lwSpin 760ms linear infinite; }
+.lw-pop-in { animation: lwPopIn 180ms var(--ease-spring) both; }
+
+/* ── Layout Shell ─────────────────────────────────────────────────────── */
+.lw-col {
+  width: 100%;
+  max-width: 680px;
+  min-width: 0;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.lw-body {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  margin: auto 0;
+  padding-bottom: 11vh;
+}
+
+/* ── Top Chrome (Whisper-Quiet) ───────────────────────────────────────── */
+.lw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+.lw-head-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lw-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex: none;
+  background: linear-gradient(155deg, #3E6BF5 0%, #244DD1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(36, 77, 209, 0.26), inset 0 0.5px 0 rgba(255, 255, 255, 0.32);
+}
+.lw-name {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--lw-ink-2);
+  white-space: nowrap;
+}
+
+.lw-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  corner-shape: round;
+  border: 0.5px solid transparent;
+  background: transparent;
+  color: var(--lw-ink-3);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io),
+    border-color var(--dur-micro) var(--ease-io), transform var(--dur-press) var(--ease-out);
+}
+.lw-status:active { transform: scale(0.97); }
+.lw-status:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--lw-accent) 40%, transparent); }
+
+.lw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--lw-ink-3);
+  flex: none;
+  transition: background var(--dur-micro) var(--ease-io);
+}
+.lw-dot.is-ok { background: var(--lw-ok); }
+.lw-dot.is-bad { background: var(--lw-danger); }
+.lw-dot.is-busy { background: var(--lw-accent); animation: lwPulse 1.4s var(--ease-io) infinite; }
+
+/* ── Home Stage (Radical Breathing Room) ──────────────────────────────── */
+.lw-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lw-hero-title {
+  margin: 0 0 4px;
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.025em;
+  color: var(--lw-ink);
+  text-wrap: balance;
+}
+
+/* ── Focal Composer ───────────────────────────────────────────────────── */
+.lw-composer {
+  position: relative;
+  background: var(--lw-surface);
+  border-radius: var(--r-xl);
+  box-shadow: var(--lw-e3);
+  transition: box-shadow var(--dur-ui) var(--ease-out);
+}
+.lw-composer:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lw-ink) 22%, transparent), 0 10px 30px -10px rgba(15, 17, 21, 0.12);
+}
+.lw[data-theme="dark"] .lw-composer:focus-within {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22), 0 14px 36px -10px rgba(0, 0, 0, 0.68);
+}
+.lw-composer-area {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--lw-ink);
+  width: 100%;
+  min-height: 48px;
+  max-height: 168px;
+  padding: 14px 16px 6px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  resize: none;
+  display: block;
+  overflow-y: auto;
+}
+.lw-composer-area::placeholder { color: var(--lw-ink-3); }
+.lw-composer.is-busy .lw-composer-area { color: var(--lw-ink-2); }
+
+.lw-composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 10px 12px;
+}
+.lw-composer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lw-composer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* Circular Send / Stop Action */
+.lw-send-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  corner-shape: round;
+  border: 0;
+  background: var(--lw-solid);
+  color: var(--lw-solid-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+  transition: background var(--dur-micro) var(--ease-io), transform var(--dur-press) var(--ease-out),
+    opacity var(--dur-micro) var(--ease-io);
+}
+.lw-send-btn:active:not(:disabled) { transform: scale(0.92); }
+.lw-send-btn:disabled {
+  background: var(--lw-surface-3);
+  color: var(--lw-ink-3);
+  cursor: default;
+}
+.lw-send-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--lw-accent) 45%, transparent); }
+.lw-send-btn.is-stop {
+  background: var(--lw-solid);
+  color: var(--lw-solid-ink);
+}
+
+/* ── Custom Model Picker Popover (No Raw Browser <select>) ────────────── */
+.lw-picker-wrap { position: relative; display: inline-flex; }
+.lw-picker-trigger {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lw-ink-2);
+  height: 28px;
+  max-width: 190px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--r-sm);
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io),
+    transform var(--dur-press) var(--ease-out);
+}
+.lw-picker-trigger:active:not(:disabled) { transform: scale(0.97); }
+.lw-picker-trigger:disabled { opacity: 0.5; cursor: default; }
+.lw-picker-trigger:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--lw-accent) 40%, transparent); }
+.lw-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lw-picker-chev {
+  color: var(--lw-ink-3);
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+.lw-picker-trigger[aria-expanded="true"] .lw-picker-chev { transform: rotate(180deg); }
+
+.lw-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--r-md);
+  background: var(--lw-surface);
+  box-shadow: var(--lw-e-modal);
+  z-index: 400;
+  transform-origin: bottom left;
+  opacity: 0;
+  transform: translateY(4px) scale(0.97);
+  transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-ui) var(--ease-out);
+}
+.lw-popover.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.lw-popover.is-closing {
+  opacity: 0;
+  transform: translateY(3px) scale(0.98);
+  transition: opacity 120ms var(--ease-exit), transform 120ms var(--ease-exit);
+}
+.lw-popover-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--lw-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io);
+}
+.lw-popover-item.is-selected {
+  font-weight: 500;
+  background: var(--lw-surface-3);
+}
+.lw-popover-item:focus-visible { outline: none; background: var(--lw-surface-3); }
+.lw-popover-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-popover-check { color: var(--lw-accent); flex: none; }
+
+/* ── Minimal Starter Chips & Animated Collapse ────────────────────────── */
+.lw-scenes-wrap { display: flex; flex-direction: column; gap: 8px; }
+.lw-scenes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.lw-chip {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--r-sm);
+  border: 0.5px solid var(--lw-line);
+  background: transparent;
+  color: var(--lw-ink-2);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-micro) var(--ease-io), border-color var(--dur-micro) var(--ease-io),
+    color var(--dur-micro) var(--ease-io), transform var(--dur-press) var(--ease-out);
+}
+.lw-chip:active:not(:disabled) { transform: scale(0.97); }
+.lw-chip:focus-visible { outline: none; border-color: var(--lw-accent); box-shadow: 0 0 0 2px var(--lw-accent-soft); }
+.lw-chip:disabled { opacity: 0.45; cursor: default; }
+.lw-chip-ico { color: var(--lw-ink-3); transition: color var(--dur-micro) var(--ease-io); }
+.lw-chip.is-muted { border-color: transparent; color: var(--lw-ink-3); padding: 0 8px; }
+
+/* Smooth Grid-Row Collapse (Interruptible, Zero Jitter, Non-Focusable When Closed) */
+.lw-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--dur-ui) var(--ease-out), opacity var(--dur-micro) var(--ease-out);
+}
+.lw-collapse.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.lw-collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+  visibility: hidden;
+  transition: visibility 0ms linear var(--dur-ui);
+}
+.lw-collapse.is-open .lw-collapse-inner {
+  visibility: visible;
+  transition-delay: 0ms;
+}
+
+/* ── Recent Strip (Ultra-Quiet, Instant Remove + Undo Toast) ──────────── */
+.lw-recent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.lw-recent-label {
+  font-size: 11.5px;
+  color: var(--lw-ink-3);
+  flex: none;
+  margin-right: 2px;
+}
+.lw-recent-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.lw-recent-item {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  transition: background var(--dur-micro) var(--ease-io);
+}
+.lw-recent-open {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 4px 0 7px;
+  border: 0;
+  background: none;
+  border-radius: var(--r-sm);
+  color: var(--lw-ink-2);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  max-width: 200px;
+  transition: color var(--dur-micro) var(--ease-io);
+}
+.lw-recent-open:disabled { opacity: 0.45; cursor: default; }
+.lw-recent-open:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--lw-accent-soft); }
+.lw-recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-recent-del {
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--lw-ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-micro) var(--ease-io), background var(--dur-micro) var(--ease-io),
+    color var(--dur-micro) var(--ease-io);
+}
+.lw-recent-del:focus-visible { opacity: 1; outline: none; box-shadow: 0 0 0 2px var(--lw-accent-soft); }
+@media (hover: none), (pointer: coarse) {
+  .lw-recent-del { opacity: 0.65; }
+}
+
+/* ── Controls (Unified DSH Geometry) ──────────────────────────────────── */
+.lw-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  border: 0.5px solid var(--lw-line-2);
+  background: var(--lw-surface);
+  color: var(--lw-ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: none;
+  transition: background var(--dur-micro) var(--ease-io), border-color var(--dur-micro) var(--ease-io),
+    color var(--dur-micro) var(--ease-io), transform var(--dur-press) var(--ease-out),
+    opacity var(--dur-micro) var(--ease-io);
+}
+.lw-btn:active:not(:disabled) { transform: scale(0.975); }
+.lw-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--lw-accent) 42%, transparent); }
+.lw-btn:disabled { opacity: 0.42; cursor: default; }
+
+.lw-btn.is-primary {
+  background: var(--lw-solid);
+  border-color: transparent;
+  color: var(--lw-solid-ink);
+}
+.lw-btn.is-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--lw-ink-2);
+  padding: 0 9px;
+}
+.lw-btn.is-ghost.is-active {
+  background: var(--lw-surface-3);
+  color: var(--lw-ink);
+}
+.lw-btn.is-link {
+  background: none;
+  border: 0;
+  height: auto;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--lw-ink-3);
+}
+.lw-btn.is-sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: var(--r-sm);
+}
+.lw-btn.is-icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--r-sm);
+}
+.lw-btn.is-danger {
+  background: color-mix(in srgb, var(--lw-danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--lw-danger) 28%, transparent);
+  color: var(--lw-danger);
+}
+.lw-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.lw-input {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  border: 0.5px solid var(--lw-line-2);
+  background: var(--lw-surface);
+  color: var(--lw-ink);
+  outline: none;
+  transition: border-color var(--dur-micro) var(--ease-io), box-shadow var(--dur-micro) var(--ease-io);
+}
+.lw-input::placeholder { color: var(--lw-ink-3); }
+.lw-input:focus {
+  border-color: color-mix(in srgb, var(--lw-accent) 60%, transparent);
+  box-shadow: 0 0 0 3px var(--lw-accent-soft);
+}
+
+/* ── Card, Banners & Skeletons ────────────────────────────────────────── */
+.lw-card {
+  background: var(--lw-surface);
+  border: 0.5px solid var(--lw-line);
+  border-radius: var(--r-xl);
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lw-sect { display: flex; flex-direction: column; gap: 4px; }
+.lw-h { font-size: 15px; font-weight: 600; line-height: 1.4; letter-spacing: -0.015em; color: var(--lw-ink); margin: 0; }
+.lw-h-lg { font-size: 19px; letter-spacing: -0.02em; }
+.lw-p { font-size: 13px; line-height: 1.65; color: var(--lw-ink-2); margin: 0; }
+.lw-meta { font-size: 12px; line-height: 1.5; color: var(--lw-ink-3); margin: 0; }
+
+.lw-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: var(--r-md);
+  border: 0.5px solid color-mix(in srgb, var(--lw-danger) 26%, transparent);
+  background: color-mix(in srgb, var(--lw-danger) 5%, var(--lw-surface));
+  animation: lwStageIn var(--dur-ui) var(--ease-out) both;
+}
+.lw-banner.is-warn {
+  border-color: color-mix(in srgb, var(--lw-warn) 28%, transparent);
+  background: color-mix(in srgb, var(--lw-warn) 5%, var(--lw-surface));
+}
+.lw-banner-ico { color: var(--lw-danger); margin-top: 2px; flex: none; }
+.lw-banner.is-warn .lw-banner-ico { color: var(--lw-warn); }
+.lw-banner-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.lw-banner-title { font-size: 12.5px; font-weight: 500; color: var(--lw-ink); }
+.lw-banner-text { font-size: 12px; line-height: 1.55; color: var(--lw-ink-2); word-break: break-word; }
+.lw-banner-action { flex: none; align-self: center; }
+
+/* GPU-Composited Shimmer Skeleton */
+.lw-planning {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: lwStageIn var(--dur-ui) var(--ease-out) both;
+}
+.lw-skel-table {
+  border: 0.5px solid var(--lw-line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--lw-surface);
+}
+.lw-skel-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  gap: 14px;
+  padding: 13px 16px;
+  border-bottom: 0.5px solid var(--lw-line);
+}
+.lw-skel-row.is-head { background: var(--lw-surface-2); }
+.lw-skel-row:last-child { border-bottom: 0; }
+.lw-skel {
+  position: relative;
+  height: 9px;
+  border-radius: var(--r-xs);
+  background: var(--lw-surface-3);
+  overflow: hidden;
+}
+.lw-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--lw-ink) 8%, transparent), transparent);
+  animation: lwShimmerSweep 1.5s var(--ease-io) infinite;
+  will-change: transform;
+}
+
+/* ── Connection Gate ──────────────────────────────────────────────────── */
+.lw-steps { display: flex; align-items: center; flex-wrap: wrap; row-gap: 8px; }
+.lw-step { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--lw-ink-3); }
+.lw-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  corner-shape: round;
+  border: 0.5px solid var(--lw-line-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+  color: var(--lw-ink-3);
+  transition: background var(--dur-ui) var(--ease-out), border-color var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out);
+}
+.lw-step.is-done .lw-step-num { background: var(--lw-ok); border-color: transparent; color: #FFFFFF; }
+.lw-step.is-done { color: var(--lw-ink-2); }
+.lw-step.is-current .lw-step-num { border-color: var(--lw-accent); color: var(--lw-accent); background: var(--lw-accent-soft); }
+.lw-step.is-current { color: var(--lw-ink); font-weight: 500; }
+.lw-step-bar { width: 20px; height: 0.5px; background: var(--lw-line-2); margin: 0 8px; flex: none; }
+
+.lw-cmd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 8px 8px 13px;
+  border-radius: var(--r-md);
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+}
+.lw-cmd code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--lw-ink);
+  user-select: all;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.lw-url {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--lw-ink-3);
+  word-break: break-all;
+  text-decoration: none;
+  transition: color var(--dur-micro) var(--ease-io);
+}
+.lw-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--lw-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lw-field { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Workspace & Preview Full-Bleed Shell ─────────────────────────────── */
+.lw.is-workspace {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+.lw-workspace {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.lw-ws-header {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 0.5px solid var(--lw-line);
+  background: var(--lw-bg);
+  z-index: 20;
+}
+.lw-ws-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.lw-ws-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.lw-back {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--lw-ink-2);
+  background: transparent;
+  border: 0;
+  height: 28px;
+  padding: 0 8px 0 5px;
+  margin-left: -4px;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  flex: none;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io),
+    transform var(--dur-press) var(--ease-out);
+}
+.lw-back:active:not(:disabled) { transform: scale(0.96); }
+.lw-back:disabled { opacity: 0.42; cursor: default; }
+.lw-back:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--lw-accent-soft); }
+
+.lw-ws-sep {
+  width: 0.5px;
+  height: 14px;
+  background: var(--lw-line-2);
+  flex: none;
+}
+.lw-ws-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--lw-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Segmented Switch (Compact Viewport: Chat | Table) */
+.lw-seg {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  gap: 2px;
+}
+.lw-seg-btn {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lw-ink-3);
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io);
+}
+.lw-seg-btn.is-active {
+  background: var(--lw-surface);
+  color: var(--lw-ink);
+  box-shadow: var(--lw-e1);
+}
+
+/* ── Preview Blueprint Stage ──────────────────────────────────────────── */
+.lw-preview-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 28px 24px 32px;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.lw-preview-inner {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lw-preview-head {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.lw-preview-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--lw-ink);
+  margin: 0;
+  line-height: 1.3;
+}
+.lw-preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--lw-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lw-preview-sep { opacity: 0.45; }
+
+.lw-table-wrap {
+  position: relative;
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  background: var(--lw-surface);
+  border: 0.5px solid var(--lw-line);
+  min-width: 0;
+  max-width: 100%;
+  transition: opacity var(--dur-ui) var(--ease-out);
+}
+.lw-table-wrap.is-refining {
+  opacity: 0.62;
+  pointer-events: none;
+}
+.lw-table-wrap.is-refining::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--lw-accent), transparent);
+  animation: lwShimmerSweep 1.2s var(--ease-io) infinite;
+  z-index: 2;
+  will-change: transform;
+}
+@keyframes lwColFlash {
+  0% { background: color-mix(in srgb, var(--lw-accent) 16%, transparent); }
+  100% { background: transparent; }
+}
+@keyframes lwNudgePulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lw-accent) 45%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.lw-btn.is-nudge {
+  animation: lwNudgePulse 750ms var(--ease-out) 2;
+}
+.lw-table th.is-changed,
+.lw-table td.is-changed {
+  animation: lwColFlash 1600ms var(--ease-out) forwards;
+}
+.lw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 480px;
+}
+.lw-table th {
+  text-align: left;
+  padding: 10px 14px;
+  background: var(--lw-surface-2);
+  border-bottom: 0.5px solid var(--lw-line);
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--lw-ink-2);
+}
+.lw-th-inner { display: inline-flex; align-items: center; gap: 6px; }
+.lw-th-glyph { color: var(--lw-ink-3); }
+.lw-table td {
+  padding: 11px 14px;
+  border-bottom: 0.5px solid var(--lw-line);
+  color: var(--lw-ink);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lw-table tbody tr:last-child td { border-bottom: 0; }
+.lw-table td.is-empty { color: var(--lw-ink-3); opacity: 0.55; }
+.lw-table td.is-num { font-variant-numeric: tabular-nums; }
+
+/* Restrained Low-Saturation Option Pills */
+.lw-pills { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.lw-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.lw-pill.tone-blue { background: #EDF2FF; color: #2D53D6; }
+.lw-pill.tone-slate { background: #F1F2F4; color: #525864; }
+.lw-pill.tone-teal { background: #E7F5F2; color: #0F6F63; }
+.lw-pill.tone-amber { background: #FBF1DF; color: #8C5A0D; }
+.lw-pill.tone-emerald { background: #E9F5EE; color: #166D49; }
+.lw-pill.tone-rose { background: #FCECEB; color: #A62B24; }
+.lw[data-theme="dark"] .lw-pill.tone-blue { background: rgba(122, 167, 255, 0.16); color: #A5C4FF; }
+.lw[data-theme="dark"] .lw-pill.tone-slate { background: rgba(255, 255, 255, 0.08); color: #C5CAD4; }
+.lw[data-theme="dark"] .lw-pill.tone-teal { background: rgba(74, 210, 149, 0.14); color: #7EE5C5; }
+.lw[data-theme="dark"] .lw-pill.tone-amber { background: rgba(240, 180, 90, 0.15); color: #F2C98A; }
+.lw[data-theme="dark"] .lw-pill.tone-emerald { background: rgba(74, 210, 149, 0.14); color: #86E3B7; }
+.lw[data-theme="dark"] .lw-pill.tone-rose { background: rgba(244, 122, 116, 0.15); color: #F9ABA6; }
+
+.lw-details-toggle {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lw-ink-3);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color var(--dur-micro) var(--ease-io);
+}
+.lw-details-chevron { transition: transform var(--dur-ui) var(--ease-out); }
+.lw-details-chevron.is-open { transform: rotate(90deg); }
+
+.lw-legend {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--lw-line);
+  margin-top: 6px;
+}
+.lw-legend-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 0.5px solid var(--lw-line);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.lw-legend-row:last-child { border-bottom: 0; }
+.lw-legend-key { flex: none; min-width: 92px; font-weight: 500; color: var(--lw-ink); }
+.lw-legend-kind { flex: none; min-width: 34px; font-size: 11px; color: var(--lw-ink-3); }
+.lw-legend-val { flex: 1; color: var(--lw-ink-2); min-width: 0; }
+.lw-legend-opts { color: var(--lw-ink-3); font-size: 11px; margin-left: 6px; }
+
+/* ── Split Workspace & Resizer ────────────────────────────────────────── */
+.lw-ws-layout {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.lw-ws-left {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--lw-bg);
+}
+.lw-ws-left.is-full { flex: 1 1 auto; width: 100%; }
+.lw-ws-left.is-split { flex: none; }
+.lw-ws-left.is-easing { transition: width var(--dur-view) var(--ease-out); }
+
+.lw-resizer {
+  width: 10px;
+  margin: 0 -5px;
+  height: 100%;
+  cursor: col-resize;
+  position: relative;
+  z-index: 25;
+  flex: none;
+  background: transparent;
+  user-select: none;
+  touch-action: none;
+}
+.lw-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4.75px;
+  width: 0.5px;
+  background: var(--lw-line);
+  transition: background var(--dur-micro) var(--ease-io), width var(--dur-micro) var(--ease-io), left var(--dur-micro) var(--ease-io);
+}
+.lw-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3.5px;
+  width: 3px;
+  height: 28px;
+  border-radius: 9999px;
+  corner-shape: round;
+  background: var(--lw-ink-3);
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.8);
+  transition: opacity var(--dur-micro) var(--ease-io), transform var(--dur-ui) var(--ease-out), background var(--dur-micro) var(--ease-io);
+}
+.lw-resizer.is-active::before { background: var(--lw-accent); width: 1.5px; left: 4.25px; }
+.lw-resizer.is-active::after { opacity: 1; transform: translateY(-50%) scaleY(1); background: var(--lw-accent); }
+
+.lw-ws-right {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--lw-bg);
+  position: relative;
+}
+.lw-ws-right.is-hidden { display: none; }
+.lw-ws-left.is-hidden { display: none; }
+
+/* Webview Loading Veil (Eliminates Dark-Mode White Flash) */
+.lw-wv-wrap {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--lw-bg);
+}
+.lw-wv-mount {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.lw-wv-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--lw-bg);
+  color: var(--lw-ink-3);
+  font-size: 12.5px;
+  z-index: 4;
+  transition: opacity var(--dur-ui) var(--ease-out);
+  pointer-events: none;
+}
+.lw-wv-veil.is-ready { opacity: 0; }
+.lw-wv-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--lw-bg);
+  z-index: 5;
+  text-align: center;
+}
+
+/* ── Chat Stream (Weightless Empty State + Clean Bubbles) ─────────────── */
+.lw-chat-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 20px 16px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.lw-ws-left.is-split .lw-chat-stream {
+  max-width: 100%;
+  padding: 16px 16px 12px;
+}
+
+.lw-empty-stage {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  padding: 24px 12px 40px;
+  max-width: 440px;
+  animation: lwStageIn var(--dur-view) var(--ease-out) both;
+}
+.lw-empty-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  color: var(--lw-ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lw-empty-copy {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--lw-ink-2);
+  margin: 0;
+  line-height: 1.5;
+}
+.lw-empty-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lw-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.lw-msg-user {
+  align-self: flex-end;
+  align-items: flex-end;
+  max-width: 84%;
+  animation: lwMsgUserIn var(--dur-ui) var(--ease-out) both;
+}
+.lw-msg-user .lw-msg-text {
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  color: var(--lw-ink);
+  padding: 9px 14px;
+  border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg);
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lw-msg-ai {
+  align-self: flex-start;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 100%;
+  animation: lwMsgAiIn var(--dur-ui) var(--ease-out) both;
+}
+.lw-msg-ai .lw-msg-text {
+  color: var(--lw-ink);
+  font-size: 13.5px;
+  line-height: 1.65;
+  width: 100%;
+  min-width: 0;
+}
+.lw-msg.is-error .lw-msg-text {
+  padding: 10px 13px;
+  border-radius: var(--r-md);
+  border: 0.5px solid color-mix(in srgb, var(--lw-danger) 26%, transparent);
+  background: color-mix(in srgb, var(--lw-danger) 5%, var(--lw-surface));
+  color: var(--lw-danger);
+}
+.lw-msg.is-warn .lw-msg-text {
+  padding: 10px 13px;
+  border-radius: var(--r-md);
+  border: 0.5px solid color-mix(in srgb, var(--lw-warn) 26%, transparent);
+  background: color-mix(in srgb, var(--lw-warn) 5%, var(--lw-surface));
+  color: var(--lw-warn);
+}
+.lw-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Thinking State & Disclosure (Calm, Restrained, Zero Spinning Lightbulb) */
+.lw-thinking-live {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+.lw-thinking-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--lw-ink-3);
+}
+.lw-thinking-label {
+  animation: lwTextBreath 1.8s var(--ease-io) infinite;
+}
+.lw-thinking-toggle {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  color: var(--lw-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-io);
+}
+.lw-thinking-content {
+  padding: 8px 12px;
+  margin: 4px 0 8px;
+  border-left: 1.5px solid var(--lw-line-2);
+  font-size: 12px;
+  color: var(--lw-ink-3);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Scope Authorization Card */
+.lw-scope-card {
+  padding: 13px 15px;
+  border-radius: var(--r-md);
+  border: 0.5px solid color-mix(in srgb, var(--lw-accent) 26%, transparent);
+  background: color-mix(in srgb, var(--lw-accent) 4%, var(--lw-surface));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lw-scope-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lw-ink);
+}
+
+/* Markdown Typography */
+.lw-md-p { margin: 4px 0; line-height: 1.65; }
+.lw-md-h { font-weight: 600; color: var(--lw-ink); margin: 10px 0 4px; line-height: 1.4; }
+.lw-md-h1 { font-size: 15px; }
+.lw-md-h2 { font-size: 14px; }
+.lw-md-h3 { font-size: 13.5px; }
+.lw-md-ul, .lw-md-ol { margin: 6px 0 8px 18px; padding: 0; }
+.lw-md-li { margin: 3px 0; line-height: 1.6; }
+.lw-md-quote {
+  margin: 6px 0;
+  padding: 2px 12px;
+  border-left: 2px solid var(--lw-line-2);
+  color: var(--lw-ink-2);
+}
+.lw-md-code {
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+  margin: 8px 0;
+  color: var(--lw-ink);
+}
+.lw-inline-code {
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--lw-ink);
+}
+.lw-md-link {
+  color: var(--dsw-alias-link, var(--lw-accent));
+  font-weight: 500;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+.lw-md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 0.5px solid var(--lw-line);
+  border-radius: var(--r-sm);
+  background: var(--lw-surface);
+}
+.lw-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  text-align: left;
+}
+.lw-md-table th {
+  padding: 8px 12px;
+  font-weight: 500;
+  color: var(--lw-ink-2);
+  background: var(--lw-surface-2);
+  border-bottom: 0.5px solid var(--lw-line);
+  white-space: nowrap;
+}
+.lw-md-table td {
+  padding: 8px 12px;
+  color: var(--lw-ink);
+  border-bottom: 0.5px solid var(--lw-line);
+  line-height: 1.5;
+}
+.lw-md-table tbody tr:last-child td { border-bottom: 0; }
+
+/* ── Docked Composer Area (Preview & Workspace) ───────────────────────── */
+.lw-ws-dock {
+  flex: none;
+  padding: 8px 16px 14px;
+  background: var(--lw-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
+}
+.lw-composer-wrap {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lw-ws-left.is-split .lw-composer-wrap { max-width: 100%; }
+
+/* Destructive Confirmation Guard */
+.lw-confirm-card {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  border: 0.5px solid color-mix(in srgb, var(--lw-danger) 28%, transparent);
+  background: color-mix(in srgb, var(--lw-danger) 4%, var(--lw-surface));
+  animation: lwStageIn var(--dur-ui) var(--ease-out) both;
+}
+.lw-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lw-ink);
+}
+.lw-confirm-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--lw-ink-2);
+}
+
+/* ── Account Modal (Animated Enter + Exit, DSH Scrim Discipline) ──────── */
+.lw-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--lw-mask);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity var(--dur-ui) var(--ease-io);
+}
+.lw-modal-overlay.is-open { opacity: 1; }
+.lw-modal-overlay.is-closing { opacity: 0; transition-duration: 150ms; }
+
+.lw-modal-box {
+  background: var(--lw-surface);
+  border-radius: var(--r-xl);
+  width: 100%;
+  max-width: 400px;
+  padding: 20px 22px;
+  box-shadow: var(--lw-e-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity var(--dur-ui) var(--ease-out), transform var(--dur-view) var(--ease-out);
+}
+.lw-modal-overlay.is-open .lw-modal-box {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.lw-modal-overlay.is-closing .lw-modal-box {
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+  transition: opacity 140ms var(--ease-exit), transform 140ms var(--ease-exit);
+}
+.lw-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lw-modal-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--lw-ink);
+}
+.lw-modal-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  border: 0;
+  background: transparent;
+  color: var(--lw-ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io);
+}
+.lw-modal-close:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--lw-accent-soft); }
+
+.lw-kv-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-md);
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  padding: 4px 12px;
+}
+.lw-kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 12.5px;
+  border-bottom: 0.5px solid var(--lw-line);
+}
+.lw-kv-row:last-child { border-bottom: 0; }
+.lw-kv-key { color: var(--lw-ink-3); }
+.lw-kv-val {
+  color: var(--lw-ink);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lw-mono { font-family: var(--mono); font-size: 11.5px; }
+
+.lw-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.lw-scope-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  font-size: 12px;
+  color: var(--lw-ink);
+}
+.lw-scope-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-scope-state { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; flex: none; }
+.lw-scope-state.is-ready { color: var(--lw-ok); }
+.lw-scope-state.is-off { color: var(--lw-ink-3); }
+
+.lw-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--lw-line);
+}
+.lw-modal-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--lw-danger) 5%, var(--lw-surface));
+  border: 0.5px solid color-mix(in srgb, var(--lw-danger) 24%, transparent);
+  animation: lwStageIn var(--dur-micro) var(--ease-out) both;
+}
+
+/* ── Non-Blocking Floating Toast Stack (Top-Center, Never Covers Composer) */
+.lw-toast-host {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+}
+.lw-toast {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  background: var(--dsw-alias-toast-bg, #1D1F24);
+  color: var(--dsw-alias-toast-label, #F5F6F8);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(-8px) scale(0.96);
+  transition: opacity var(--dur-ui) var(--ease-out), transform var(--dur-ui) var(--ease-out);
+}
+.lw-toast.is-open { opacity: 1; transform: translateY(0) scale(1); }
+.lw-toast.is-closing { opacity: 0; transform: translateY(-5px) scale(0.97); transition-duration: 140ms; }
+.lw-toast-undo {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-toast-action, #8BB4FF);
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: var(--r-xs);
+}
+.lw-toast-undo:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(139, 180, 255, 0.45); }
+
+/* ── Hover Rules (Strictly Gated for Hover-Capable Pointers) ──────────── */
+@media (hover: hover) {
+  .lw-status:hover { background: var(--lw-surface-3); color: var(--lw-ink); }
+  .lw-back:hover:not(:disabled) { background: var(--lw-surface-3); color: var(--lw-ink); }
+  .lw-btn:hover:not(:disabled) { background: var(--lw-surface-2); border-color: color-mix(in srgb, var(--lw-ink) 20%, transparent); }
+  .lw-btn.is-primary:hover:not(:disabled) { background: var(--lw-solid-hover); border-color: transparent; }
+  .lw-btn.is-ghost:hover:not(:disabled) { background: var(--lw-surface-3); color: var(--lw-ink); border-color: transparent; }
+  .lw-btn.is-link:hover:not(:disabled) { color: var(--lw-ink); background: none; }
+  .lw-btn.is-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--lw-danger) 15%, transparent); }
+  .lw-send-btn:hover:not(:disabled) { background: var(--lw-solid-hover); }
+  .lw-picker-trigger:hover:not(:disabled) { background: var(--lw-surface-3); color: var(--lw-ink); }
+  .lw-popover-item:hover { background: var(--lw-surface-3); }
+  .lw-chip:hover:not(:disabled) { background: var(--lw-surface-2); border-color: var(--lw-line-2); color: var(--lw-ink); }
+  .lw-chip:hover:not(:disabled) .lw-chip-ico { color: var(--lw-ink); }
+  .lw-chip.is-muted:hover:not(:disabled) { border-color: transparent; background: var(--lw-surface-3); }
+  .lw-recent-item:hover { background: var(--lw-surface-3); }
+  .lw-recent-item:hover .lw-recent-open { color: var(--lw-ink); }
+  .lw-recent-item:hover .lw-recent-del { opacity: 0.72; }
+  .lw-recent-del:hover { opacity: 1 !important; color: var(--lw-danger); background: color-mix(in srgb, var(--lw-danger) 12%, transparent); }
+  .lw-details-toggle:hover, .lw-thinking-toggle:hover { color: var(--lw-ink); }
+  .lw-modal-close:hover { background: var(--lw-surface-3); color: var(--lw-ink); }
+  .lw-url:hover { color: var(--lw-accent); text-decoration: underline; text-underline-offset: 3px; }
+  .lw-md-link:hover { text-decoration: underline dotted; }
+  .lw-table tbody tr:hover td, .lw-md-table tbody tr:hover td { background: var(--lw-surface-2); }
+  .lw-resizer:hover::before { background: var(--lw-line-2); width: 1px; left: 4.5px; }
+  .lw-resizer:hover::after { opacity: 0.7; transform: translateY(-50%) scaleY(1); }
+  .lw-toast-undo:hover { background: rgba(255, 255, 255, 0.1); }
+}
+
+/* ── Container-Aware & Viewport Responsiveness ────────────────────────── */
+.lw.is-compact { padding: 20px 18px 48px; }
+.lw.is-compact .lw-hide-compact { display: none; }
+.lw.is-compact .lw-ws-header { padding: 0 10px; }
+.lw.is-compact .lw-ws-dock { padding: 6px 10px 10px; }
+.lw.is-compact .lw-preview-scroll { padding: 18px 14px 24px; }
+.lw.is-compact .lw-card { padding: 18px; border-radius: var(--r-lg); }
+
+.lw.is-narrow .lw-hero-title { font-size: 22px; }
+.lw.is-narrow .lw-scope-grid { grid-template-columns: 1fr; }
+.lw.is-narrow .lw-picker-trigger { max-width: 132px; }
+
+@media (max-width: 640px) {
+  .lw { padding: 18px 16px 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lw *, .lw *::before, .lw *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Hide host conversation bottom composer when Workbench is active ── */
+body:has(.lw) [data-composer-seat],
+body:has(.lw) [data-conversation-region="composer"],
+body:has(.lw) [class*="composerSeat"],
+body:has(.lw) [class*="composerStack"] {
+  display: none !important;
+}
+body:has(.lw) [data-conversation-scroll] {
+  overflow-y: hidden !important;
+}
+body:has(.lw) [data-slot="conversation.session"],
+body:has(.lw) [class*="viewArea"] {
+  height: 100% !important;
+  flex: 1 1 100% !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+`
+
+    // ── Utilities & Hooks ──────────────────────────────────────────────────
+
+    function ensureStyles() {
+      if (typeof document === 'undefined') return () => {}
+      styleRefCount += 1
+      let el = document.getElementById(STYLE_ID)
+      if (!el) {
+        el = document.createElement('style')
+        el.id = STYLE_ID
+        el.textContent = CSS
+        document.head.appendChild(el)
+      }
+      return () => {
+        styleRefCount = Math.max(0, styleRefCount - 1)
+        if (styleRefCount === 0) {
+          const cur = document.getElementById(STYLE_ID)
+          if (cur && cur.parentNode) cur.parentNode.removeChild(cur)
+        }
+      }
+    }
+
+    function translator(props) {
+      if (typeof props.t === 'function') {
+        return (key) => {
+          const value = props.t(key)
+          return value === key ? (ZH[key] ?? key) : value
+        }
+      }
+      return (key) => ZH[key] ?? key
+    }
+
+    function humanize(message) {
+      const text = String(message ?? '').trim()
+      if (!text) return '暂无响应，请重试'
+      if (/找不到 lark-cli|没找到 lark-cli|lark-cli 不可用/i.test(text)) return '尚未安装飞书连接工具'
+      if (/device_code is invalid|device code.*invalid/i.test(text)) return '授权链接已失效，请重新获取'
+      if (/expired|过期/i.test(text) && /device|code|授权/i.test(text)) return '授权链接已过期，请重新获取'
+      if (/pending|audit|审核|审批|not approved/i.test(text)) return '授权正在等待管理员审批，通过后重试'
+      if (/429|too many|rate limit|frequency|限流|频率/i.test(text)) return '请求过于频繁，请稍后再试'
+      if (/forbidden|permission|scope|403|权限/i.test(text)) return '飞书权限不足，请在连接设置中补充授权'
+      if (/auth|授权|登录|token .*(expired|invalid)|needs_refresh/i.test(text)) return '飞书登录已过期，请重新授权'
+      if (/timeout|超时|aborted|ETIMEDOUT|想太久了/i.test(text)) return '飞书响应超时，请重试'
+      if (/ENOTFOUND|ECONNREFUSED|network|网络/i.test(text)) return '网络连接异常，请检查网络'
+      if (/模型没有|无法解析|没能组成/.test(text)) return '未能理解需求，换个说法或点击下方场景试试'
+      if (/required flag|missing required|is required/i.test(text)) return '表格信息不完整，建议在飞书中查看'
+      return text
+    }
+
+    function parseLuminance(color) {
+      if (!color) return null
+      const hex = color.match(/^#([0-9a-f]{6})$/i)
+      if (hex) {
+        const r = parseInt(hex[1].slice(0, 2), 16)
+        const g = parseInt(hex[1].slice(2, 4), 16)
+        const b = parseInt(hex[1].slice(4, 6), 16)
+        return 0.299 * r + 0.587 * g + 0.114 * b
+      }
+      const rgb = color.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i)
+      if (rgb) {
+        return 0.299 * Number(rgb[1]) + 0.587 * Number(rgb[2]) + 0.114 * Number(rgb[3])
+      }
+      return null
+    }
+
+    function detectTheme() {
+      try {
+        if (document.body && document.body.hasAttribute('data-ds-dark-theme')) return 'dark'
+        if (document.body && document.body.classList.contains('dark')) return 'dark'
+        const roots = [document.body, document.documentElement].filter(Boolean)
+        for (const node of roots) {
+          const probe = getComputedStyle(node).getPropertyValue('--dsw-alias-bg-base').trim()
+          const lum = parseLuminance(probe)
+          if (lum !== null) return lum < 128 ? 'dark' : 'light'
+        }
+      } catch {}
+      try {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      } catch {
+        return 'light'
+      }
+    }
+
+    function useHostTheme() {
+      const [theme, setTheme] = useState(detectTheme)
+      useEffect(() => {
+        const sync = () => setTheme(detectTheme())
+        const observer = new MutationObserver(sync)
+        if (document.documentElement) {
+          observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] })
+        }
+        if (document.body) {
+          observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-ds-dark-theme', 'data-theme', 'style'] })
+        }
+        const mq = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
+        if (mq && typeof mq.addEventListener === 'function') mq.addEventListener('change', sync)
+        return () => {
+          observer.disconnect()
+          if (mq && typeof mq.removeEventListener === 'function') mq.removeEventListener('change', sync)
+        }
+      }, [])
+      return theme
+    }
+
+    /** Two-phase mount/exit animation hook so overlays animate both in AND out. */
+    function useAnimatedPresence(open, exitMs = 160) {
+      const [mounted, setMounted] = useState(Boolean(open))
+      const [phase, setPhase] = useState(open ? 'open' : 'closed')
+
+      useEffect(() => {
+        if (open) {
+          setMounted(true)
+          let raf2 = 0
+          const raf1 = requestAnimationFrame(() => {
+            raf2 = requestAnimationFrame(() => setPhase('open'))
+          })
+          return () => {
+            cancelAnimationFrame(raf1)
+            cancelAnimationFrame(raf2)
+          }
+        }
+        setPhase('closing')
+        const timer = setTimeout(() => {
+          setMounted(false)
+          setPhase('closed')
+        }, exitMs)
+        return () => clearTimeout(timer)
+      }, [open, exitMs])
+
+      return { mounted, phase }
+    }
+
+    function useContainerSize(ref) {
+      const [width, setWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1024))
+      useEffect(() => {
+        const el = ref.current
+        if (!el) return undefined
+        const update = () => {
+          const w = el.clientWidth
+          if (w > 0) setWidth(w)
+        }
+        update()
+        if (typeof ResizeObserver !== 'undefined') {
+          const ro = new ResizeObserver(update)
+          ro.observe(el)
+          return () => ro.disconnect()
+        }
+        window.addEventListener('resize', update)
+        return () => window.removeEventListener('resize', update)
+      }, [ref])
+      return width
+    }
+
+    // ── Primitives ─────────────────────────────────────────────────────────
+
+    function Button({ variant = 'default', size, iconOnly = false, active = false, className = '', children, ...rest }) {
+      const mod =
+        variant === 'primary' ? ' is-primary'
+          : variant === 'ghost' ? ' is-ghost'
+            : variant === 'link' ? ' is-link'
+              : variant === 'danger' ? ' is-danger'
+                : ''
+      const sizeMod = size === 'sm' ? ' is-sm' : ''
+      const iconMod = iconOnly ? ' is-icon' : ''
+      const activeMod = active ? ' is-active' : ''
+      return h(
+        'button',
+        { type: 'button', ...rest, className: `lw-btn${mod}${sizeMod}${iconMod}${activeMod}${className ? ` ${className}` : ''}` },
+        children,
+      )
+    }
+
+    function AnimatedCollapse({ open, children }) {
+      return h(
+        'div',
+        { className: `lw-collapse${open ? ' is-open' : ''}`, 'aria-hidden': !open },
+        h('div', { className: 'lw-collapse-inner' }, children),
+      )
+    }
+
+    function Banner({ tone = 'error', title, children, action }) {
+      const warn = tone === 'warn'
+      return h(
+        'div',
+        { className: `lw-banner${warn ? ' is-warn' : ''}`, role: 'alert' },
+        h(Icon, { name: 'alertCircle', size: 15, className: 'lw-banner-ico' }),
+        h(
+          'div',
+          { className: 'lw-banner-body' },
+          title ? h('div', { className: 'lw-banner-title' }, title) : null,
+          h('div', { className: 'lw-banner-text' }, children),
+        ),
+        action ? h('div', { className: 'lw-banner-action' }, action) : null,
+      )
+    }
+
+    function Steps({ labels, current }) {
+      return h(
+        'div',
+        { className: 'lw-steps', role: 'list' },
+        labels.map((label, index) =>
+          h(
+            React.Fragment,
+            { key: label },
+            index > 0 ? h('span', { className: 'lw-step-bar', 'aria-hidden': true }) : null,
+            h(
+              'span',
+              {
+                className: `lw-step${index < current ? ' is-done' : ''}${index === current ? ' is-current' : ''}`,
+                role: 'listitem',
+                'aria-current': index === current ? 'step' : undefined,
+              },
+              h(
+                'span',
+                { className: 'lw-step-num' },
+                index < current ? h(Icon, { name: 'check', size: 11, strokeWidth: 2.4, className: 'lw-pop-in' }) : String(index + 1),
+              ),
+              h('span', null, label),
+            ),
+          ),
+        ),
+      )
+    }
+
+    function TableSkeleton() {
+      return h(
+        'div',
+        { className: 'lw-skel-table', 'aria-hidden': true },
+        h(
+          'div',
+          { className: 'lw-skel-row is-head' },
+          h('div', { className: 'lw-skel', style: { width: '62%' } }),
+          h('div', { className: 'lw-skel', style: { width: '48%' } }),
+          h('div', { className: 'lw-skel', style: { width: '54%' } }),
+          h('div', { className: 'lw-skel', style: { width: '44%' } }),
+        ),
+        [0, 1, 2].map((row) =>
+          h(
+            'div',
+            { className: 'lw-skel-row', key: row },
+            h('div', { className: 'lw-skel', style: { width: `${76 - row * 10}%` } }),
+            h('div', { className: 'lw-skel', style: { width: `${56 + row * 8}%` } }),
+            h('div', { className: 'lw-skel', style: { width: `${44 + row * 10}%` } }),
+            h('div', { className: 'lw-skel', style: { width: `${52 - row * 6}%` } }),
+          ),
+        ),
+      )
+    }
+
+    function ToastStack({ toast, onDismiss, t }) {
+      const { mounted, phase } = useAnimatedPresence(Boolean(toast), 150)
+      const [shown, setShown] = useState(toast)
+      useEffect(() => {
+        if (toast) setShown(toast)
+      }, [toast])
+
+      if (!mounted || !shown) return null
+      return h(
+        'div',
+        { className: 'lw-toast-host', role: 'status', 'aria-live': 'polite' },
+        h(
+          'div',
+          {
+            className: `lw-toast${phase === 'open' ? ' is-open' : phase === 'closing' ? ' is-closing' : ''}`,
+          },
+          h('span', null, shown.message),
+          shown.onUndo
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'lw-toast-undo',
+                  onClick: () => {
+                    shown.onUndo()
+                    onDismiss()
+                  },
+                },
+                shown.undoLabel || t('toast.undo'),
+              )
+            : null,
+        ),
+      )
+    }
+
+    function ModelPicker({ models, selectedModel, modelKey, onSelect, disabled, t }) {
+      const [open, setOpen] = useState(false)
+      const wrapRef = useRef(null)
+      const { mounted, phase } = useAnimatedPresence(open, 130)
+
+      useEffect(() => {
+        if (!open) return undefined
+        const onPointerDown = (e) => {
+          if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+        }
+        const onKeyDown = (e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            setOpen(false)
+          }
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        document.addEventListener('keydown', onKeyDown)
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown)
+          document.removeEventListener('keydown', onKeyDown)
+        }
+      }, [open])
+
+      const activeKey = modelKey(selectedModel)
+      const label = selectedModel ? selectedModel.name : (models && models.length > 0 ? models[0].name : t('model.loading'))
+
+      return h(
+        'div',
+        { className: 'lw-picker-wrap', ref: wrapRef },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'lw-picker-trigger',
+            disabled: Boolean(disabled) || !models || models.length === 0,
+            'aria-haspopup': 'listbox',
+            'aria-expanded': open,
+            'aria-label': t('model.label'),
+            title: t('model.label'),
+            onClick: () => setOpen((v) => !v),
+          },
+          h('span', { className: 'lw-picker-label' }, label),
+          h(Icon, { name: 'chevronDown', size: 12, className: 'lw-picker-chev' }),
+        ),
+        mounted
+          ? h(
+              'div',
+              {
+                className: `lw-popover${phase === 'open' ? ' is-open' : phase === 'closing' ? ' is-closing' : ''}`,
+                role: 'listbox',
+                'aria-label': t('model.label'),
+              },
+              (models || []).map((m) => {
+                const k = modelKey(m)
+                const isSelected = k === activeKey
+                return h(
+                  'button',
+                  {
+                    key: k,
+                    type: 'button',
+                    role: 'option',
+                    'aria-selected': isSelected,
+                    className: `lw-popover-item${isSelected ? ' is-selected' : ''}`,
+                    onClick: () => {
+                      onSelect(k)
+                      setOpen(false)
+                    },
+                  },
+                  h('span', { className: 'lw-popover-name' }, m.name + (m.kind ? ` ${m.kind}` : '')),
+                  isSelected ? h(Icon, { name: 'check', size: 13, className: 'lw-popover-check' }) : null,
+                )
+              }),
+            )
+          : null,
+      )
+    }
+
     function UnifiedComposer({
       value = '',
       onChange = () => {},
       onSubmit = () => {},
+      onStop = null,
       placeholder = '',
       busy = false,
-      busyText = '处理中…',
-      buttonText = '发送',
       disabled = false,
       models = [],
       selectedModel = null,
       modelKey = (m) => (m ? `${m.provider || ''}:${m.id || ''}` : ''),
       changeModel = () => {},
-      trustText = '直连你的飞书账号，安全隐私仅自己可见',
-      minHeight = 60,
+      minHeight = 48,
       id = 'lw-composer-input',
-      ariaLabel = '输入框',
+      ariaLabel = '',
       inputRef = null,
+      t,
     }) {
+      const innerRef = useRef(null)
+      const areaRef = inputRef || innerRef
+
+      useEffect(() => {
+        const el = areaRef.current
+        if (!el) return
+        el.style.height = 'auto'
+        const next = Math.min(Math.max(el.scrollHeight, minHeight), 168)
+        el.style.height = `${next}px`
+      }, [value, minHeight, areaRef])
+
+      const canSend = !busy && !disabled && value.trim().length > 0
+
       return h(
         'div',
         { className: `lw-composer${busy ? ' is-busy' : ''}` },
         h('textarea', {
           id,
-          ref: inputRef,
+          ref: areaRef,
           className: 'lw-composer-area',
           style: { minHeight: `${minHeight}px` },
+          rows: 1,
           value,
           placeholder,
-          'aria-label': ariaLabel,
+          'aria-label': ariaLabel || placeholder,
           'aria-busy': busy ? 'true' : undefined,
           readOnly: Boolean(busy),
           spellCheck: false,
           onChange: (event) => onChange(event.target.value),
           onKeyDown: (event) => {
+            // Never misfire during CJK IME composition
+            if (event.isComposing || (event.nativeEvent && event.nativeEvent.isComposing) || event.keyCode === 229) {
+              return
+            }
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey || !event.shiftKey)) {
               event.preventDefault()
-              if (value.trim().length >= 1 && !busy && !disabled) {
-                onSubmit(value)
-              }
+              if (canSend) onSubmit(value)
             }
           },
         }),
@@ -2124,220 +2840,86 @@ body:has(.lw) [class*="viewArea"] {
           'div',
           { className: 'lw-composer-bar' },
           h(
-            'span',
-            { className: 'lw-trust' },
-            h(Icon, { name: 'lock', size: 12 }),
-            h('span', null, trustText),
+            'div',
+            { className: 'lw-composer-left' },
+            h(ModelPicker, {
+              models,
+              selectedModel,
+              modelKey,
+              onSelect: changeModel,
+              disabled: Boolean(busy),
+              t,
+            }),
           ),
           h(
             'div',
-            { className: 'lw-composer-right', style: { display: 'flex', alignItems: 'center', gap: 8 } },
-            h(
-              'div',
-              { className: 'lw-model-picker', title: '切换当前使用的 AI 模型' },
-              h(
-                'select',
-                {
-                  value: modelKey(selectedModel),
-                  onChange: (e) => changeModel(e.target.value),
-                  disabled: Boolean(busy),
-                },
-                !models || models.length === 0
-                  ? [h('option', { key: 'empty', value: '' }, '加载模型中…')]
-                  : models.map((m) =>
-                      h(
-                        'option',
-                        { key: modelKey(m), value: modelKey(m) },
-                        m.name + (m.kind ? ` ${m.kind}` : ''),
-                      ),
-                    ),
-              ),
-              h(
-                'span',
-                { className: 'lw-model-picker-arrow' },
-                h(Icon, { name: 'chevronDown', size: 12 }),
-              ),
-            ),
-            busy
+            { className: 'lw-composer-right' },
+            busy && onStop
               ? h(
-                  'span',
-                  { className: 'lw-busy-inline', role: 'status' },
-                  h('span', { className: 'lw-dot is-busy' }),
-                  busyText,
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lw-send-btn is-stop',
+                    title: t('pick.stop'),
+                    'aria-label': t('pick.stop'),
+                    onClick: onStop,
+                  },
+                  h(Icon, { name: 'stop', size: 12 }),
                 )
               : h(
-                  Button,
+                  'button',
                   {
-                    key: 'submit-btn',
-                    variant: 'primary',
-                    size: 'sm',
-                    disabled: Boolean(busy) || disabled || !value.trim(),
+                    type: 'button',
+                    className: 'lw-send-btn',
+                    disabled: !canSend,
+                    title: t('pick.send'),
+                    'aria-label': t('pick.send'),
                     onClick: () => {
-                      if (value.trim() && !busy && !disabled) onSubmit(value)
+                      if (canSend) onSubmit(value)
                     },
                   },
-                  buttonText,
+                  busy
+                    ? h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' })
+                    : h(Icon, { name: 'arrowUp', size: 15, strokeWidth: 2 }),
                 ),
           ),
         ),
       )
     }
 
-    // ── Host browser ───────────────────────────────────────────────────────
-    // "Connected to Feishu" is an API grant; it carries no web session. Feishu
-    // also refuses to be framed, so the real Base belongs in the host's own
-    // browser tab: a real page with its own login, docked next to the session.
-    //
-    // The right Sidebar is Session-scoped: the host reserves the "conversation"
-    // main panel as the only Session-bound surface. This panel is a global one,
-    // so the column has nothing to attach a tab to until a conversation is on
-    // screen. The hand-off therefore brings the conversation forward first and
-    // opens the tab once the column reports a mounted Session. It never opens
-    // an external window by itself.
+    // ── Host Browser Helper (Preserves Sidebar Tab Cleanup) ────────────────
 
     function hostBrowser(ctx) {
       const read = (name) => {
         try {
           return typeof ctx.get === 'function' ? ctx.get(name) : undefined
-        } catch (failure) {
-          return undefined
-        }
-      }
-      const hasBrowserTab = () => {
-        const registry = read('sidebarRightTabs')
-        if (!registry || typeof registry.get !== 'function') return false
-        try {
-          return registry.get('browser') !== undefined
-        } catch (failure) {
-          return false
-        }
-      }
-      const column = () => {
-        const right = read('sidebarRight')
-        return right && typeof right.openTab === 'function' ? right : undefined
-      }
-      const mountedSession = (right) => {
-        try {
-          return right.mounted && typeof right.mounted.getSnapshot === 'function'
-            ? right.mounted.getSnapshot()
-            : undefined
-        } catch (failure) {
+        } catch {
           return undefined
         }
       }
       return {
-        available() {
-          return Boolean(column() && hasBrowserTab())
-        },
-        /**
-         * Dock the Base in the host's browser tab.
-         * @param url - the Base URL.
-         * @param options.navigate - bring the conversation forward when no
-         *   Session is on screen (an explicit click may; an automatic hand-off
-         *   must not yank the user out of the panel).
-         * @returns a promise of what actually happened; never opens externally.
-         */
-        open(url, options = {}) {
-          const navigate = options.navigate !== false
-          return new Promise((resolve) => {
-            if (!url) {
-              resolve({ mode: 'unavailable' })
-              return
-            }
-            const right = column()
-            if (!right || !hasBrowserTab()) {
-              resolve({ mode: 'unavailable' })
-              return
-            }
-            const switchToWorkbenchTab = (sessionId) => {
-              if (sessionId) {
-                try {
-                  const key = `dsh.conversation.${sessionId}`
-                  const existing = JSON.parse(localStorage.getItem(key) || '{}')
-                  existing.view = 'lark-workbench'
-                  localStorage.setItem(key, JSON.stringify(existing))
-                } catch (e) {}
-                try {
-                  const uiConv = read('uiConversation')
-                  if (uiConv && typeof uiConv.binding === 'function') {
-                    uiConv.binding(sessionId).activate('lark-workbench')
-                  }
-                } catch (e) {}
-              }
-              const clickDomTab = () => {
-                const tabs = document.querySelectorAll('[role="tab"]')
-                for (const tab of tabs) {
-                  if (tab.textContent && tab.textContent.includes('飞书工作台')) {
-                    tab.click()
-                    return true
-                  }
-                }
-                return false
-              }
-              if (!clickDomTab()) {
-                setTimeout(clickDomTab, 60)
-                setTimeout(clickDomTab, 180)
-                setTimeout(clickDomTab, 400)
-              }
-            }
-
-            const attempt = (sessionId) => {
-              try {
-                switchToWorkbenchTab(sessionId)
-                right.openTab('browser', { params: { url } })
-                resolve({ mode: 'sidebar' })
-              } catch (failure) {
-                resolve({ mode: 'error', message: String((failure && failure.message) || failure) })
-              }
-            }
-
-            const currentSession = mountedSession(right)
-            if (currentSession !== undefined) {
-              attempt(currentSession)
-              return
-            }
-            if (!navigate) {
-              resolve({ mode: 'no-session' })
-              return
-            }
-            try {
-              const layout = read('layout')
-              if (layout && typeof layout.selectPanel === 'function') layout.selectPanel(null)
-            } catch (failure) {}
-            let tries = 0
-            const timer = setInterval(() => {
-              tries += 1
-              const sid = mountedSession(right)
-              if (sid !== undefined) {
-                clearInterval(timer)
-                attempt(sid)
-                return
-              }
-              if (tries >= 30) {
-                clearInterval(timer)
-                resolve({ mode: 'no-session' })
-              }
-            }, 100)
-          })
-        },
         closeSidebarBrowserTabs(sessionId) {
           try {
-            const right = column()
+            const right = read('sidebarRight')
             if (!right || typeof right.closeIn !== 'function') return
-            const tabs = right.openTabs && typeof right.openTabs.getSnapshot === 'function'
-              ? right.openTabs.getSnapshot()
-              : []
+            const tabs =
+              right.openTabs && typeof right.openTabs.getSnapshot === 'function'
+                ? right.openTabs.getSnapshot()
+                : []
             for (const tab of tabs) {
-              if ((!sessionId || tab.sessionId === sessionId) && (tab.kind === 'browser' || (tab.tabId && String(tab.tabId).includes('browser')))) {
+              if (
+                (!sessionId || tab.sessionId === sessionId) &&
+                (tab.kind === 'browser' || (tab.tabId && String(tab.tabId).includes('browser')))
+              ) {
                 right.closeIn(tab.sessionId, tab.tabId)
               }
             }
-          } catch (e) {}
+          } catch {}
         },
       }
     }
 
-    // ── Preview ────────────────────────────────────────────────────────────
+    // ── Preview Table & Field Legend ───────────────────────────────────────
 
     const cellText = (value) => {
       if (value == null) return ''
@@ -2356,91 +2938,18 @@ body:has(.lw) [class*="viewArea"] {
       return match ? match[1] : ''
     }
 
-    function liveCell(row, name, index) {
-      if (Array.isArray(row)) return row[index]
-      if (!row || typeof row !== 'object') return undefined
-      const bag = row.fields && typeof row.fields === 'object' ? row.fields : row
-      return bag[name]
-    }
-
-    function LiveTable({ fields, rows, emptyLabel }) {
-      const names = (fields || []).map((field) => field && field.name).filter(Boolean)
-      const columns = names.length > 0
-        ? names
-        : Array.from(new Set((rows || []).flatMap((row) => (row && typeof row === 'object' && !Array.isArray(row)
-            ? Object.keys(row.fields && typeof row.fields === 'object' ? row.fields : row)
-            : []))))
-      // Knowing the column type lets the read-only sample show the same option
-      // pills the Base does, instead of flattening every select into plain text.
-      const byName = new Map((fields || []).filter((field) => field && field.name).map((field) => [field.name, field]))
-      return h(
-        'div',
-        { className: 'lw-table-wrap' },
-        h(
-          'table',
-          { className: 'lw-table' },
-          h('thead', null, h('tr', null, columns.map((name) => h('th', { key: name, scope: 'col' }, name)))),
-          h(
-            'tbody',
-            null,
-            (rows || []).length > 0
-              ? rows.map((row, rowIndex) =>
-                  h(
-                    'tr',
-                    { key: rowIndex },
-                    columns.map((name, columnIndex) => {
-                      const value = liveCell(row, name, columnIndex)
-                      const field = byName.get(name)
-                      if (field && field.type === 'select' && value != null) {
-                        const picked = (Array.isArray(value) ? value : [value]).map(cellText).filter(Boolean)
-                        if (picked.length > 0) {
-                          return h(
-                            'td',
-                            { key: name },
-                            h(
-                              'span',
-                              { className: 'lw-pills' },
-                              picked.map((val, optIndex) =>
-                                h(
-                                  'span',
-                                  { key: `${val}-${optIndex}`, className: `lw-pill tone-${pillToneFor(field, val)}` },
-                                  val,
-                                ),
-                              ),
-                            ),
-                          )
-                        }
-                      }
-                      const text = cellText(value)
-                      return h(
-                        'td',
-                        {
-                          key: name,
-                          className: `${text ? '' : 'is-empty'}${typeof value === 'number' ? ' is-num' : ''}`.trim(),
-                        },
-                        text || '—',
-                      )
-                    }),
-                  ),
-                )
-              : h('tr', null, h('td', { colSpan: columns.length || 1, className: 'is-empty' }, emptyLabel)),
-          ),
-        ),
-      )
-    }
-
     function pillToneFor(field, optionName) {
       const options = Array.isArray(field.options) ? field.options : []
       const idx = options.findIndex((o) => o && o.name === optionName)
       return PILL_TONES[(idx >= 0 ? idx : 0) % PILL_TONES.length]
     }
 
-    function PreviewTable({ table, t }) {
-      const columns = table.fields
+    function PreviewTable({ table, t, refining = false, changedSet = null }) {
+      const columns = table.fields || []
       const rows = (table.records ?? []).slice(0, 4)
       return h(
         'div',
-        { className: 'lw-table-wrap' },
+        { className: `lw-table-wrap${refining ? ' is-refining' : ''}` },
         h(
           'table',
           { className: 'lw-table' },
@@ -2450,28 +2959,24 @@ body:has(.lw) [class*="viewArea"] {
             h(
               'tr',
               null,
-              columns.map((field) =>
-                h(
+              columns.map((field) => {
+                const changed = Boolean(changedSet && changedSet.has(field.name))
+                return h(
                   'th',
                   {
                     key: field.name,
                     scope: 'col',
-                    title: field.description || KIND_HINT[field.type] || '',
+                    className: changed ? 'is-changed' : undefined,
+                    title: field.description || t(`kind.${field.type}`) || '',
                   },
                   h(
                     'span',
                     { className: 'lw-th-inner' },
-                    h(Icon, {
-                      name: KIND_ICON[field.type] ?? 'fieldText',
-                      size: 12,
-                      strokeWidth: 1.6,
-                      className: 'lw-th-glyph',
-                    }),
+                    h(Icon, { name: KIND_ICON[field.type] ?? 'fieldText', size: 12, className: 'lw-th-glyph' }),
                     h('span', null, field.name),
-
                   ),
-                ),
-              ),
+                )
+              }),
             ),
           ),
           h(
@@ -2483,65 +2988,59 @@ body:has(.lw) [class*="viewArea"] {
                     'tr',
                     { key: index },
                     columns.map((field) => {
+                      const changed = Boolean(changedSet && changedSet.has(field.name))
                       const raw = record[field.name]
                       if (field.type === 'select' && raw != null) {
-                        const list = Array.isArray(raw) ? raw : [String(raw)]
-                        const nonEmpty = list.filter(Boolean)
-                        if (nonEmpty.length > 0) {
+                        const list = (Array.isArray(raw) ? raw : [String(raw)]).filter(Boolean)
+                        if (list.length > 0) {
                           return h(
                             'td',
-                            { key: field.name },
+                            { key: field.name, className: changed ? 'is-changed' : undefined },
                             h(
                               'span',
                               { className: 'lw-pills' },
-                              nonEmpty.map((val, optIndex) =>
-                                h(
-                                  'span',
-                                  {
-                                    key: `${val}-${optIndex}`,
-                                    className: `lw-pill tone-${pillToneFor(field, val)}`,
-                                  },
-                                  val,
-                                ),
+                              list.map((val, optIndex) =>
+                                h('span', { key: `${val}-${optIndex}`, className: `lw-pill tone-${pillToneFor(field, val)}` }, val),
                               ),
                             ),
                           )
                         }
                       }
-                      const value = cellText(raw)
+                      const isNum = field.type === 'number' && typeof raw === 'number' && Number.isFinite(raw)
+                      const value = isNum ? raw.toLocaleString() : cellText(raw)
                       return h(
                         'td',
                         {
                           key: field.name,
-                          className: `${value ? '' : 'is-empty'}${field.type === 'number' ? ' is-num' : ''}`.trim(),
+                          className: `${value ? '' : 'is-empty'}${field.type === 'number' ? ' is-num' : ''}${changed ? ' is-changed' : ''}`.trim(),
                         },
                         value || '—',
                       )
                     }),
                   ),
                 )
-              : h('tr', null, h('td', { colSpan: columns.length, className: 'is-empty' }, t('preview.empty'))),
+              : h('tr', null, h('td', { colSpan: columns.length || 1, className: 'is-empty' }, t('preview.empty'))),
           ),
         ),
       )
     }
 
-    function Legend({ table }) {
+    function Legend({ table, t }) {
       return h(
         'div',
         { className: 'lw-legend' },
-        table.fields.map((field) =>
+        (table.fields || []).map((field) =>
           h(
             'div',
             { className: 'lw-legend-row', key: field.name },
             h('span', { className: 'lw-legend-key' }, field.name),
-            h('span', { className: 'lw-legend-kind' }, KIND_HINT[field.type] ?? ''),
+            h('span', { className: 'lw-legend-kind' }, t(`kind.${field.type}`) || ''),
             h(
               'span',
               { className: 'lw-legend-val' },
               field.description || '',
               field.type === 'select' && Array.isArray(field.options) && field.options.length > 0
-                ? h('span', { className: 'lw-legend-opts' }, `（${field.options.map((o) => o.name).join(' / ')}）`)
+                ? h('span', { className: 'lw-legend-opts' }, `(${field.options.map((o) => o.name).join(' / ')})`)
                 : null,
             ),
           ),
@@ -2549,7 +3048,7 @@ body:has(.lw) [class*="viewArea"] {
       )
     }
 
-    // ── Recent ─────────────────────────────────────────────────────────────
+    // ── Recent Storage & Strip ─────────────────────────────────────────────
 
     function readRecent() {
       try {
@@ -2572,68 +3071,17 @@ body:has(.lw) [class*="viewArea"] {
     }
 
     function Recent({ items, t, onOpen, onForget, disabled }) {
-      const [pending, setPending] = useState(null)
-      const panelRef = useRef(null)
-
-      useEffect(() => {
-        if (pending && panelRef.current) panelRef.current.focus()
-      }, [pending])
-
-      if (items.length === 0) return null
-
-      if (pending) {
-        return h(
-          'div',
-          {
-            className: 'lw-recent lw-recent-confirm',
-            role: 'alertdialog',
-            tabIndex: -1,
-            ref: panelRef,
-            'aria-label': t('recent.confirmTitle').replace('%s', pending.name),
-            onKeyDown: (event) => {
-              if (event.key === 'Escape') {
-                event.stopPropagation()
-                setPending(null)
-              }
-            },
-          },
-          h(
-            'div',
-            { className: 'lw-confirm-copy' },
-            h('div', { className: 'lw-confirm-title' }, t('recent.confirmTitle').replace('%s', pending.name)),
-            h('div', { className: 'lw-confirm-body' }, `${t('recent.confirmBody')}`),
-          ),
-          h(
-            'div',
-            { className: 'lw-confirm-actions' },
-            h('button', {
-              type: 'button',
-              className: 'lw-btn is-sm',
-              onClick: () => setPending(null),
-            }, t('recent.cancel')),
-            h('button', {
-              type: 'button',
-              className: 'lw-btn is-sm is-danger',
-              onClick: () => {
-                onForget(pending)
-                setPending(null)
-              },
-            }, t('recent.remove')),
-          ),
-        )
-      }
-
+      if (!items || items.length === 0) return null
       const visible = items.slice(0, 3)
       return h(
         'div',
         { className: 'lw-recent' },
-        h('div', { className: 'lw-recent-label' }, t('recent.title')),
+        h('span', { className: 'lw-recent-label' }, t('recent.title')),
         h(
           'div',
           { className: 'lw-recent-list' },
-          visible.flatMap((item, index) => {
-            const date = item.at ? new Date(item.at).toLocaleDateString('zh-CN') : ''
-            const row = h(
+          visible.map((item) =>
+            h(
               'div',
               { key: item.url, className: 'lw-recent-item' },
               h(
@@ -2642,32 +3090,35 @@ body:has(.lw) [class*="viewArea"] {
                   type: 'button',
                   className: 'lw-recent-open',
                   disabled: Boolean(disabled),
-                  title: date ? `${item.name} · ${date}` : item.name,
+                  title: item.name,
                   onClick: () => onOpen(item),
                 },
-                h(Icon, { name: 'table', size: 12, className: 'lw-recent-ico' }),
+                h(Icon, { name: 'table', size: 12, style: { color: 'var(--lw-ink-3)' } }),
                 h('span', { className: 'lw-recent-name' }, item.name),
               ),
-              h('button', {
-                type: 'button',
-                className: 'lw-recent-del',
-                'aria-label': `${t('recent.delete')} ${item.name}`,
-                title: t('recent.delete'),
-                onClick: () => setPending(item),
-              }, '×'),
-            )
-            return [row]
-          }),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'lw-recent-del',
+                  'aria-label': `${t('recent.delete')} ${item.name}`,
+                  title: t('recent.delete'),
+                  onClick: () => onForget(item),
+                },
+                h(Icon, { name: 'close', size: 11, strokeWidth: 1.8 }),
+              ),
+            ),
+          ),
         ),
       )
     }
 
-    // ── Connection gate ────────────────────────────────────────────────────
+    // ── Connection Gate (Progressive Disclosure: 1 Clear Step at a Time) ───
 
-    function ConnectGate({ health, t, onRecheck }) {
-      const stage = (health.stage === 'ready' && (!health.auth || !health.auth.userReady)) ? 'no-auth' : health.stage
+    function ConnectGate({ health, t, onRecheck, onToast }) {
+      const stage = health.stage === 'ready' && (!health.auth || !health.auth.userReady) ? 'no-auth' : health.stage
       const current = stage === 'no-cli' ? 0 : stage === 'no-app' ? 1 : 2
-      const [busy, setBusy] = useState(false)
+      const [busyAction, setBusyAction] = useState(null)
       const [waited, setWaited] = useState(0)
       const [error, setError] = useState(null)
       const [link, setLink] = useState(null)
@@ -2677,6 +3128,8 @@ body:has(.lw) [class*="viewArea"] {
       const [teamId, setTeamId] = useState('')
       const [teamSecret, setTeamSecret] = useState('')
       const [autoChecking, setAutoChecking] = useState(false)
+
+      const busy = Boolean(busyAction)
 
       useEffect(() => {
         if (!busy) {
@@ -2688,47 +3141,30 @@ body:has(.lw) [class*="viewArea"] {
         return () => clearInterval(timer)
       }, [busy])
 
-      // 自动静默探活：Step 2 应用配置与 Step 3 用户授权自动感知并平滑推进下一步
+      // Silent background readiness detection for Step 2 & Step 3
       useEffect(() => {
         let active = true
         let timer = null
 
         const pollLoop = async () => {
           if (!active) return
-
           if (stage === 'no-app' && link) {
             try {
               const poll = await authFetch(`${API}/connect/app/poll`).then((r) => r.json()).catch(() => null)
-              if (active && poll && poll.done) {
-                onRecheck()
-                return
-              }
+              if (active && poll && poll.done) { onRecheck(); return }
               const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
-              if (active && st && st.app && st.app.ready) {
-                onRecheck()
-                return
-              }
+              if (active && st && st.app && st.app.ready) { onRecheck(); return }
             } catch {}
           }
-
           if (stage === 'no-auth' && (link || deviceCode)) {
             try {
               const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
-              if (active && st && st.stage === 'ready' && st.auth && st.auth.userReady) {
-                onRecheck()
-                return
-              }
+              if (active && st && st.stage === 'ready' && st.auth && st.auth.userReady) { onRecheck(); return }
               const loginState = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-              if (active && loginState && loginState.done && loginState.ok) {
-                onRecheck()
-                return
-              }
+              if (active && loginState && loginState.done && loginState.ok) { onRecheck(); return }
             } catch {}
           }
-
-          if (active) {
-            timer = setTimeout(pollLoop, 1200)
-          }
+          if (active) timer = setTimeout(pollLoop, 1200)
         }
 
         if ((stage === 'no-app' && link) || (stage === 'no-auth' && (link || deviceCode))) {
@@ -2737,7 +3173,6 @@ body:has(.lw) [class*="viewArea"] {
         } else {
           setAutoChecking(false)
         }
-
         return () => {
           active = false
           if (timer) clearTimeout(timer)
@@ -2761,13 +3196,14 @@ body:has(.lw) [class*="viewArea"] {
         if (clipboard && clipboard.writeText) {
           clipboard.writeText(command).then(() => {
             setCopied(true)
+            onToast && onToast({ message: t('toast.copiedCmd') })
             setTimeout(() => setCopied(false), 1600)
           }).catch(() => {})
         }
-      }, [health.installCommand])
+      }, [health.installCommand, onToast, t])
 
       const openApp = useCallback(async () => {
-        setBusy(true)
+        setBusyAction('start')
         setError(null)
         try {
           const payload = await post('/connect/app/start')
@@ -2775,17 +3211,17 @@ body:has(.lw) [class*="viewArea"] {
             setLink(payload.url)
             window.open(payload.url, '_blank', 'noopener')
           } else {
-            setError(humanize(payload.message) || '页面没打开，再点一次试试')
+            setError(humanize(payload.message))
           }
         } catch (failure) {
-          setError(String(failure))
+          setError(humanize(String(failure)))
         } finally {
-          setBusy(false)
+          setBusyAction(null)
         }
       }, [post])
 
       const startAuth = useCallback(async () => {
-        setBusy(true)
+        setBusyAction('start')
         setError(null)
         try {
           const payload = await post('/connect/login/start')
@@ -2794,17 +3230,17 @@ body:has(.lw) [class*="viewArea"] {
             setDeviceCode(payload.deviceCode)
             window.open(payload.url, '_blank', 'noopener')
           } else {
-            setError(humanize(payload.message) || '没能拿到授权链接，再点一次')
+            setError(humanize(payload.message))
           }
         } catch (failure) {
-          setError(String(failure))
+          setError(humanize(String(failure)))
         } finally {
-          setBusy(false)
+          setBusyAction(null)
         }
       }, [post])
 
       const finishAuth = useCallback(async () => {
-        setBusy(true)
+        setBusyAction('finish')
         setError(null)
         try {
           const curState = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
@@ -2813,10 +3249,7 @@ body:has(.lw) [class*="viewArea"] {
             return
           }
           const payload = await post('/connect/login/finish', { deviceCode })
-          if (payload.ok) {
-            onRecheck()
-            return
-          }
+          if (payload.ok) { onRecheck(); return }
           const afterState = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
           if (afterState && afterState.stage === 'ready' && afterState.auth && afterState.auth.userReady) {
             onRecheck()
@@ -2833,14 +3266,10 @@ body:has(.lw) [class*="viewArea"] {
             const deadline = Date.now() + 20000
             let poll = 0
             while (Date.now() < deadline) {
-              const waitMs = poll < 4 ? 400 : 1200
-              await new Promise((resolve) => setTimeout(resolve, waitMs))
+              await new Promise((resolve) => setTimeout(resolve, poll < 4 ? 400 : 1200))
               poll++
               const state = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-              if (state && state.ok) {
-                onRecheck()
-                return
-              }
+              if (state && state.ok) { onRecheck(); return }
               if (state && state.done && !state.ok) {
                 setError(humanize(state.message || t('gate.pending')))
                 return
@@ -2849,16 +3278,16 @@ body:has(.lw) [class*="viewArea"] {
             setError(t('gate.pending'))
             return
           }
-          setError(humanize(text || '授权还没完成'))
+          setError(humanize(text))
         } catch (failure) {
-          setError(String(failure))
+          setError(humanize(String(failure)))
         } finally {
-          setBusy(false)
+          setBusyAction(null)
         }
       }, [deviceCode, onRecheck, post, startAuth, t])
 
       const saveTeam = useCallback(async () => {
-        setBusy(true)
+        setBusyAction('team')
         setError(null)
         try {
           const payload = await post('/connect/app/manual', { appId: teamId, appSecret: teamSecret })
@@ -2866,50 +3295,78 @@ body:has(.lw) [class*="viewArea"] {
             setTeamSecret('')
             onRecheck()
           } else {
-            setError(humanize(payload.message || '没保存成功，检查两个值有没有复制全'))
+            setError(humanize(payload.message))
           }
         } catch (failure) {
-          setError(String(failure))
+          setError(humanize(String(failure)))
         } finally {
-          setBusy(false)
+          setBusyAction(null)
         }
       }, [teamId, teamSecret, onRecheck, post])
 
       const title = stage === 'no-cli' ? t('gate.noTool.title') : stage === 'no-app' ? t('gate.noApp.title') : t('gate.noAuth.title')
       const bodyText = stage === 'no-cli' ? t('gate.noTool.body') : stage === 'no-app' ? t('gate.noApp.body') : t('gate.noAuth.body')
 
+      // Progressive actions: show ONLY what is actionable right now
       const actions = []
       if (stage === 'no-cli') {
         actions.push(h(Button, { key: 'check', variant: 'primary', onClick: onRecheck }, t('gate.noTool.done')))
       } else if (stage === 'no-app') {
-        actions.push(h(Button, { key: 'open', variant: 'primary', disabled: busy, onClick: openApp }, busy ? `${t('gate.waiting')}…` : t('gate.noApp.cta')))
-        actions.push(h(Button, { key: 'done', disabled: busy, onClick: onRecheck }, t('gate.noApp.done')))
-        if (link) actions.push(h(Button, { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') }, t('gate.noApp.reopen')))
+        if (!link) {
+          actions.push(
+            h(
+              Button,
+              { key: 'open', variant: 'primary', disabled: busy, onClick: openApp },
+              busyAction === 'start' ? h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }) : null,
+              busyAction === 'start' ? `${t('gate.waiting')}…` : t('gate.noApp.cta'),
+            ),
+          )
+        } else {
+          actions.push(h(Button, { key: 'done', variant: 'primary', disabled: busy, onClick: onRecheck }, t('gate.noApp.done')))
+          actions.push(
+            h(
+              Button,
+              { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') },
+              t('gate.noApp.reopen'),
+              h(Icon, { name: 'arrowUpRight', size: 13 }),
+            ),
+          )
+        }
       } else {
-        actions.push(
-          h(
-            Button,
-            { key: 'auth', variant: 'primary', disabled: busy, onClick: startAuth },
-            busy
-              ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } }, h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }), '正在确认…')
-              : t('gate.noAuth.cta'),
-          ),
-        )
-        actions.push(
-          h(
-            Button,
-            { key: 'finish', disabled: busy || !deviceCode, onClick: finishAuth },
-            busy
-              ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } }, h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }), '正在确认…')
-              : t('gate.noAuth.done'),
-          ),
-        )
-        if (link) actions.push(h(Button, { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') }, t('gate.noAuth.reopen')))
+        if (!deviceCode) {
+          actions.push(
+            h(
+              Button,
+              { key: 'auth', variant: 'primary', disabled: busy, onClick: startAuth },
+              busyAction === 'start' ? h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }) : null,
+              busyAction === 'start' ? `${t('gate.waiting')}…` : t('gate.noAuth.cta'),
+            ),
+          )
+        } else {
+          actions.push(
+            h(
+              Button,
+              { key: 'finish', variant: 'primary', disabled: busy, onClick: finishAuth },
+              busyAction === 'finish' ? h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }) : null,
+              busyAction === 'finish' ? `${t('gate.waiting')} ${waited > 0 ? `${waited}s` : '…'}` : t('gate.noAuth.done'),
+            ),
+          )
+          if (link) {
+            actions.push(
+              h(
+                Button,
+                { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') },
+                t('gate.noAuth.reopen'),
+                h(Icon, { name: 'arrowUpRight', size: 13 }),
+              ),
+            )
+          }
+        }
       }
 
       return h(
         'section',
-        { className: 'lw-card', 'aria-labelledby': 'lw-gate-title' },
+        { className: 'lw-card lw-stage-in', 'aria-labelledby': 'lw-gate-title' },
         h(Steps, { labels: [t('gate.step.tool'), t('gate.step.app'), t('gate.step.auth')], current }),
         h(
           'div',
@@ -2922,91 +3379,113 @@ body:has(.lw) [class*="viewArea"] {
               'div',
               { className: 'lw-cmd' },
               h('code', null, health.installCommand || 'npm i -g @larksuite/cli'),
-              h(Button, { size: 'sm', onClick: copyInstall }, copied ? t('gate.noTool.copied') : t('gate.noTool.copy')),
+              h(
+                Button,
+                { size: 'sm', onClick: copyInstall },
+                h(Icon, { name: copied ? 'check' : 'copy', size: 12, className: copied ? 'lw-pop-in' : undefined, style: copied ? { color: 'var(--lw-ok)' } : undefined }),
+                copied ? t('gate.noTool.copied') : t('gate.noTool.copy'),
+              ),
             )
           : null,
-        link ? h('a', { className: 'lw-url', href: link, target: '_blank', rel: 'noreferrer' }, link) : null,
         h('div', { className: 'lw-actions' }, actions),
         autoChecking
           ? h(
               'div',
-              {
-                style: {
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 12,
-                  color: 'var(--lw-ink-3)',
-                  marginTop: 4,
-                  padding: '4px 2px',
-                },
-              },
-              h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }),
+              { className: 'lw-wait', role: 'status', 'aria-live': 'polite' },
+              h('span', { className: 'lw-dot is-busy' }),
               t('gate.autoChecking'),
             )
           : null,
-        busy ? h(Heartbeat, { t, seconds: waited }) : null,
         error
           ? h(Banner, {
               tone: 'error',
               title: t('error.title'),
               children: error,
-              action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (stage === 'no-auth' ? finishAuth() : onRecheck()) }, t('error.retry')),
+              action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (stage === 'no-auth' && deviceCode ? finishAuth() : onRecheck()) }, t('error.retry')),
             })
           : null,
         stage === 'no-app'
           ? h(
               'div',
-              { className: 'lw-field', style: { borderTop: '1px solid var(--lw-line)', paddingTop: 14 } },
-              h(Button, { variant: 'link', onClick: () => setShowTeam((value) => !value), 'aria-expanded': showTeam }, showTeam ? t('gate.team.hide') : t('gate.team.toggle')),
-              showTeam
-                ? h(
+              { className: 'lw-field', style: { borderTop: '0.5px solid var(--lw-line)', paddingTop: 12 } },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'lw-details-toggle',
+                  'aria-expanded': showTeam,
+                  onClick: () => setShowTeam((v) => !v),
+                },
+                h(Icon, { name: 'chevronRight', size: 12, className: `lw-details-chevron${showTeam ? ' is-open' : ''}` }),
+                showTeam ? t('gate.team.hide') : t('gate.team.toggle'),
+              ),
+              h(
+                AnimatedCollapse,
+                { open: showTeam },
+                h(
+                  'div',
+                  { className: 'lw-field', style: { paddingTop: 8 } },
+                  h('input', {
+                    className: 'lw-input',
+                    type: 'text',
+                    autoComplete: 'off',
+                    spellCheck: false,
+                    placeholder: t('gate.team.appId'),
+                    value: teamId,
+                    onChange: (e) => setTeamId(e.currentTarget.value),
+                  }),
+                  h('input', {
+                    className: 'lw-input',
+                    type: 'password',
+                    autoComplete: 'off',
+                    placeholder: t('gate.team.secret'),
+                    value: teamSecret,
+                    onChange: (e) => setTeamSecret(e.currentTarget.value),
+                  }),
+                  h(
                     'div',
-                    { className: 'lw-field' },
-                    h('p', { className: 'lw-p' }, t('gate.team.body')),
-                    h('input', {
-                      className: 'lw-input', type: 'text', autoComplete: 'off', spellCheck: false,
-                      placeholder: t('gate.team.appId'), value: teamId,
-                      onChange: (event) => setTeamId(event.currentTarget.value),
-                    }),
-                    h('input', {
-                      className: 'lw-input', type: 'password', autoComplete: 'off',
-                      placeholder: t('gate.team.secret'), value: teamSecret,
-                      onChange: (event) => setTeamSecret(event.currentTarget.value),
-                    }),
-                    h('div', { className: 'lw-actions' },
-                      h(Button, { disabled: busy || !teamId.trim() || !teamSecret.trim(), onClick: saveTeam }, t('gate.team.save'))),
-                  )
-                : null,
+                    { className: 'lw-actions' },
+                    h(Button, { size: 'sm', variant: 'primary', disabled: busy || !teamId.trim() || !teamSecret.trim(), onClick: saveTeam }, t('gate.team.save')),
+                  ),
+                ),
+              ),
             )
           : null,
         stage === 'no-cli' ? h('p', { className: 'lw-meta' }, t('gate.noTool.hint')) : null,
-        stage === 'no-auth' ? h('p', { className: 'lw-meta' }, t('gate.noAuth.hint')) : null,
       )
     }
 
-    // ── Native Webview (Direct In-Panel Browser) ──────────────────────────
-    function NativeWebview({ url }) {
+    // ── Native Webview (Theme-Aware Loading Veil + Proper Lease Cleanup) ───
+
+    function NativeWebview({ url, t }) {
       const containerRef = useRef(null)
       const webviewInstanceRef = useRef(null)
       const leaseRef = useRef(null)
       const loadedUrlRef = useRef('')
       const [loading, setLoading] = useState(true)
       const [error, setError] = useState(null)
+      const [retryTick, setRetryTick] = useState(0)
+
+      // Release Electron browser lease cleanly on unmount
+      useEffect(() => {
+        return () => {
+          const lease = leaseRef.current
+          leaseRef.current = null
+          const desktop = typeof window !== 'undefined' && window.dshDesktop && window.dshDesktop.browser
+          if (lease && desktop && typeof desktop.release === 'function') {
+            desktop.release(lease).catch(() => {})
+          }
+        }
+      }, [])
 
       useEffect(() => {
         const container = containerRef.current
-        if (!container || !url) return
-
-        // 核心防抖：如果已经加载过完全相同的 URL，绝不重复销毁与重建 webview！
-        if (webviewInstanceRef.current && loadedUrlRef.current === url) {
-          return
-        }
+        if (!container || !url) return undefined
+        if (webviewInstanceRef.current && loadedUrlRef.current === url && retryTick === 0) return undefined
 
         let disposed = false
 
         async function initWebview() {
-          // 如果 webview 已经存在，只是 URL 改变，直接进行页面导航，无需重建 DOM 节点
           if (webviewInstanceRef.current) {
             loadedUrlRef.current = url
             setLoading(true)
@@ -3017,7 +3496,7 @@ body:has(.lw) [class*="viewArea"] {
               } else {
                 webviewInstanceRef.current.src = url
               }
-            } catch (err) {
+            } catch {
               webviewInstanceRef.current.src = url
             }
             return
@@ -3031,9 +3510,9 @@ body:has(.lw) [class*="viewArea"] {
           if (!desktop || typeof desktop.acquire !== 'function') {
             const iframe = document.createElement('iframe')
             iframe.src = url
-            iframe.style.cssText = 'width:100%;height:100%;border:none;flex:1;'
+            iframe.style.cssText = 'width:100%;height:100%;border:none;flex:1;background:transparent;'
             iframe.onload = () => { if (!disposed) setLoading(false) }
-            iframe.onerror = (e) => { if (!disposed) setError('iframe 加载异常') }
+            iframe.onerror = () => { if (!disposed) { setLoading(false); setError(t('view.webviewError')) } }
             container.innerHTML = ''
             container.appendChild(iframe)
             webviewInstanceRef.current = iframe
@@ -3064,11 +3543,17 @@ body:has(.lw) [class*="viewArea"] {
                 webview.loadURL(url)
               }
             })
-
+            webview.addEventListener('did-finish-load', () => {
+              if (!disposed && loaded) setLoading(false)
+            })
+            webview.addEventListener('did-stop-loading', () => {
+              if (!disposed && loaded) setLoading(false)
+            })
             webview.addEventListener('did-fail-load', (e) => {
               if (disposed) return
-              if (e.errorCode !== -3) { // 忽略中止错误
-                setError(`加载失败: ${e.errorDescription || e.errorCode}`)
+              if (e.errorCode !== -3) {
+                setLoading(false)
+                setError(e.errorDescription || String(e.errorCode))
               }
             })
 
@@ -3083,61 +3568,79 @@ body:has(.lw) [class*="viewArea"] {
             container.appendChild(webview)
             webviewInstanceRef.current = webview
           } catch (err) {
-            console.error('NativeWebview error:', err)
             if (!disposed) {
+              setLoading(false)
               setError(String((err && err.message) || err))
             }
           }
         }
 
         initWebview()
-
-        return () => {
-          disposed = true
-        }
-      }, [url])
+        return () => { disposed = true }
+      }, [url, retryTick, t])
 
       return h(
         'div',
-        {
-          style: {
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            flex: '1 1 auto',
-            minWidth: 0,
-            minHeight: 0,
-            position: 'relative',
-            background: '#ffffff',
-          },
-        },
+        { className: 'lw-wv-wrap' },
+        h('div', { ref: containerRef, className: 'lw-wv-mount' }),
+        !error
+          ? h(
+              'div',
+              { className: `lw-wv-veil${loading ? '' : ' is-ready'}`, 'aria-hidden': !loading },
+              h(Icon, { name: 'refresh', size: 16, className: loading ? 'lw-spin' : undefined }),
+              h('span', null, t('view.webviewLoading')),
+            )
+          : null,
         error
           ? h(
               'div',
-              {
-                style: {
-                  padding: '16px',
-                  color: 'var(--lw-bad)',
-                  fontSize: '13px',
-                  background: 'var(--lw-surface)',
-                },
-              },
-              `飞书多维表格加载异常：${error}`,
+              { className: 'lw-wv-error' },
+              h(Icon, { name: 'alertCircle', size: 20, style: { color: 'var(--lw-danger)' } }),
+              h('div', { className: 'lw-p' }, `${t('view.webviewError')} (${error})`),
+              h(
+                'div',
+                { className: 'lw-actions' },
+                h(Button, { size: 'sm', onClick: () => setRetryTick((n) => n + 1) }, t('error.retry')),
+                h(
+                  Button,
+                  { size: 'sm', variant: 'ghost', onClick: () => window.open(url, '_blank', 'noopener') },
+                  t('view.external'),
+                  h(Icon, { name: 'arrowUpRight', size: 12 }),
+                ),
+              ),
             )
           : null,
-        h('div', {
-          ref: containerRef,
-          style: {
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            flex: '1 1 auto',
-            minWidth: 0,
-            minHeight: 0,
-          },
-        }),
       )
+    }
+
+    // ── Upgraded Markdown Renderer (Tables, Code, Links, Quotes, Bold/Italic)
+
+    function renderInlineText(text, keyPrefix) {
+      // Match markdown links [label](https://...), bold **...**, italic *...*
+      const tokenRe = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|\*([^*\n]+)\*/g
+      const out = []
+      let last = 0
+      let m
+      let k = 0
+      while ((m = tokenRe.exec(text)) !== null) {
+        if (m.index > last) out.push(text.slice(last, m.index))
+        if (m[1] && m[2]) {
+          out.push(
+            h(
+              'a',
+              { key: `${keyPrefix}-a-${k++}`, href: m[2], target: '_blank', rel: 'noopener noreferrer', className: 'lw-md-link' },
+              m[1],
+            ),
+          )
+        } else if (m[3]) {
+          out.push(h('strong', { key: `${keyPrefix}-b-${k++}`, style: { fontWeight: 600 } }, m[3]))
+        } else if (m[4]) {
+          out.push(h('em', { key: `${keyPrefix}-i-${k++}` }, m[4]))
+        }
+        last = m.index + m[0].length
+      }
+      if (last < text.length) out.push(text.slice(last))
+      return out
     }
 
     function renderInlineMarkdown(text) {
@@ -3147,37 +3650,17 @@ body:has(.lw) [class*="viewArea"] {
       let lastIndex = 0
       let match
       let key = 0
-
       while ((match = codeRegex.exec(text)) !== null) {
         if (match.index > lastIndex) {
-          parts.push(renderTextFormatting(text.slice(lastIndex, match.index), key++))
+          parts.push(renderInlineText(text.slice(lastIndex, match.index), key++))
         }
         parts.push(h('code', { key: `c-${key++}`, className: 'lw-inline-code' }, match[1]))
         lastIndex = match.index + match[0].length
       }
       if (lastIndex < text.length) {
-        parts.push(renderTextFormatting(text.slice(lastIndex), key++))
+        parts.push(renderInlineText(text.slice(lastIndex), key++))
       }
       return parts
-    }
-
-    function renderTextFormatting(text, keyPrefix) {
-      const boldRegex = /\*\*([^*]+)\*\*/g
-      const elements = []
-      let lastIdx = 0
-      let m
-      let k = 0
-      while ((m = boldRegex.exec(text)) !== null) {
-        if (m.index > lastIdx) {
-          elements.push(text.slice(lastIdx, m.index))
-        }
-        elements.push(h('strong', { key: `${keyPrefix}-b-${k++}`, style: { fontWeight: 600 } }, m[1]))
-        lastIdx = m.index + m[0].length
-      }
-      if (lastIdx < text.length) {
-        elements.push(text.slice(lastIdx))
-      }
-      return elements
     }
 
     function renderMarkdownContent(rawText) {
@@ -3188,40 +3671,41 @@ body:has(.lw) [class*="viewArea"] {
 
       while (i < lines.length) {
         const line = lines[i]
+        const trimmed = line.trim()
 
-        // 1. Markdown Table detection
-        if (line.trim().startsWith('|') && i + 1 < lines.length && /^\s*\|?[\s-:]+\|[\s-:]*\|?/.test(lines[i + 1])) {
+        // 1. Markdown Table
+        if (trimmed.startsWith('|') && i + 1 < lines.length && /^\s*\|?[\s-:]+\|[\s-:]*\|?/.test(lines[i + 1])) {
           const tableLines = []
           while (i < lines.length && lines[i].trim().startsWith('|')) {
             tableLines.push(lines[i].trim())
             i++
           }
           if (tableLines.length >= 2) {
-            const rawHeader = tableLines[0].split('|').map((s) => s.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1)
-            const rawRows = tableLines.slice(2).map((rowLine) => {
-              return rowLine.split('|').map((s) => s.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1)
-            })
-
+            const parseCells = (row) => row.replace(/^\|/, '').replace(/\|$/, '').split('|').map((s) => s.trim())
+            const rawHeader = parseCells(tableLines[0])
+            const rawRows = tableLines.slice(2).map(parseCells)
             blocks.push(
-              h('div', { key: `tbl-${blocks.length}`, className: 'lw-md-table-wrap' }, [
-                h('table', { className: 'lw-md-table' }, [
-                  h('thead', null, [
-                    h('tr', null, rawHeader.map((th, thIdx) => h('th', { key: thIdx }, renderInlineMarkdown(th)))),
-                  ]),
-                  h('tbody', null, rawRows.map((tr, trIdx) => h(
-                    'tr',
-                    { key: trIdx },
-                    tr.map((td, tdIdx) => h('td', { key: tdIdx }, renderInlineMarkdown(td))),
-                  ))),
-                ]),
-              ]),
+              h(
+                'div',
+                { key: `tbl-${blocks.length}`, className: 'lw-md-table-wrap' },
+                h(
+                  'table',
+                  { className: 'lw-md-table' },
+                  h('thead', null, h('tr', null, rawHeader.map((th, thIdx) => h('th', { key: thIdx }, renderInlineMarkdown(th))))),
+                  h(
+                    'tbody',
+                    null,
+                    rawRows.map((tr, trIdx) => h('tr', { key: trIdx }, tr.map((td, tdIdx) => h('td', { key: tdIdx }, renderInlineMarkdown(td))))),
+                  ),
+                ),
+              ),
             )
             continue
           }
         }
 
-        // 2. Code Block
-        if (line.trim().startsWith('```')) {
+        // 2. Fenced Code Block
+        if (trimmed.startsWith('```')) {
           const codeLines = []
           i++
           while (i < lines.length && !lines[i].trim().startsWith('```')) {
@@ -3229,63 +3713,70 @@ body:has(.lw) [class*="viewArea"] {
             i++
           }
           i++
-          blocks.push(
-            h('pre', { key: `code-${blocks.length}`, className: 'lw-md-code' }, codeLines.join('\n')),
-          )
+          blocks.push(h('pre', { key: `code-${blocks.length}`, className: 'lw-md-code' }, codeLines.join('\n')))
           continue
         }
 
-        // 3. Unordered List (- or *)
-        if (/^[-*]\s+/.test(line.trim())) {
-          const listItems = []
-          while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
-            listItems.push(lines[i].trim().replace(/^[-*]\s+/, ''))
+        // 3. Blockquote
+        if (trimmed.startsWith('> ')) {
+          const qLines = []
+          while (i < lines.length && lines[i].trim().startsWith('> ')) {
+            qLines.push(lines[i].trim().slice(2))
             i++
           }
           blocks.push(
-            h('ul', { key: `ul-${blocks.length}`, className: 'lw-md-ul' },
-              listItems.map((itemText, idx) =>
-                h('li', { key: idx, className: 'lw-md-li' }, renderInlineMarkdown(itemText))
-              )
-            )
+            h(
+              'blockquote',
+              { key: `q-${blocks.length}`, className: 'lw-md-quote' },
+              qLines.map((ql, idx) => h('div', { key: idx }, renderInlineMarkdown(ql))),
+            ),
           )
           continue
         }
 
-        // 4. Ordered List (1. 2.)
-        if (/^\d+\.\s+/.test(line.trim())) {
-          const listItems = []
+        // 4. Unordered List
+        if (/^[-*·]\s+/.test(trimmed)) {
+          const items = []
+          while (i < lines.length && /^[-*·]\s+/.test(lines[i].trim())) {
+            items.push(lines[i].trim().replace(/^[-*·]\s+/, ''))
+            i++
+          }
+          blocks.push(
+            h('ul', { key: `ul-${blocks.length}`, className: 'lw-md-ul' }, items.map((itemText, idx) => h('li', { key: idx, className: 'lw-md-li' }, renderInlineMarkdown(itemText)))),
+          )
+          continue
+        }
+
+        // 5. Ordered List
+        if (/^\d+\.\s+/.test(trimmed)) {
+          const items = []
           while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
-            listItems.push(lines[i].trim().replace(/^\d+\.\s+/, ''))
+            items.push(lines[i].trim().replace(/^\d+\.\s+/, ''))
             i++
           }
           blocks.push(
-            h('ol', { key: `ol-${blocks.length}`, className: 'lw-md-ol' },
-              listItems.map((itemText, idx) =>
-                h('li', { key: idx, className: 'lw-md-li' }, renderInlineMarkdown(itemText))
-              )
-            )
+            h('ol', { key: `ol-${blocks.length}`, className: 'lw-md-ol' }, items.map((itemText, idx) => h('li', { key: idx, className: 'lw-md-li' }, renderInlineMarkdown(itemText)))),
           )
           continue
         }
 
-        // 5. Headings (# ## ###)
-        const hMatch = line.trim().match(/^(#{1,4})\s+(.*)$/)
+        // 6. Headings
+        const hMatch = trimmed.match(/^(#{1,4})\s+(.*)$/)
         if (hMatch) {
           const level = hMatch[1].length
-          const hText = hMatch[2]
           i++
           blocks.push(
-            h(`h${level === 1 ? 3 : (level === 2 ? 4 : 5)}`, {
-              key: `h-${blocks.length}`,
-              style: { fontWeight: 600, margin: '8px 0 4px', fontSize: level === 1 ? '15px' : (level === 2 ? '14px' : '13px'), color: 'var(--lw-ink)' },
-            }, renderInlineMarkdown(hText)),
+            h(
+              `h${level === 1 ? 3 : level === 2 ? 4 : 5}`,
+              { key: `h-${blocks.length}`, className: `lw-md-h ${level === 1 ? 'lw-md-h1' : level === 2 ? 'lw-md-h2' : 'lw-md-h3'}` },
+              renderInlineMarkdown(hMatch[2]),
+            ),
           )
           continue
         }
 
-        // 6. Regular Paragraph
-        if (line.trim() !== '') {
+        // 7. Paragraph
+        if (trimmed !== '') {
           const pLines = [line]
           i++
           while (
@@ -3293,7 +3784,8 @@ body:has(.lw) [class*="viewArea"] {
             lines[i].trim() !== '' &&
             !lines[i].trim().startsWith('|') &&
             !lines[i].trim().startsWith('```') &&
-            !/^[-*]\s+/.test(lines[i].trim()) &&
+            !lines[i].trim().startsWith('> ') &&
+            !/^[-*·]\s+/.test(lines[i].trim()) &&
             !/^\d+\.\s+/.test(lines[i].trim()) &&
             !/^(#{1,4})\s+/.test(lines[i].trim())
           ) {
@@ -3303,7 +3795,7 @@ body:has(.lw) [class*="viewArea"] {
           blocks.push(
             h(
               'div',
-              { key: `p-${blocks.length}`, style: { margin: '5px 0', lineHeight: 1.6 } },
+              { key: `p-${blocks.length}`, className: 'lw-md-p' },
               pLines.map((pl, plIdx) => h('div', { key: plIdx }, renderInlineMarkdown(pl))),
             ),
           )
@@ -3316,7 +3808,7 @@ body:has(.lw) [class*="viewArea"] {
       return blocks
     }
 
-    function AssistantBubble({ msg, modelName }) {
+    function AssistantBubble({ msg, onRetry, t }) {
       const [thinkingOpen, setThinkingOpen] = useState(false)
 
       let reasoning = msg.reasoning || ''
@@ -3324,7 +3816,7 @@ body:has(.lw) [class*="viewArea"] {
 
       const thinkMatch = cleanText.match(/<think>([\s\S]*?)<\/think>/i)
       if (thinkMatch) {
-        reasoning = (reasoning ? reasoning + '\n' : '') + thinkMatch[1].trim()
+        reasoning = (reasoning ? `${reasoning}\n` : '') + thinkMatch[1].trim()
         cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
       }
 
@@ -3340,94 +3832,288 @@ body:has(.lw) [class*="viewArea"] {
 
       return h(
         'div',
-        {
-          className: `lw-msg lw-msg-ai${msg.error ? ' is-error' : msg.warn ? ' is-warn' : ''}`,
-          style: { marginBottom: 14, maxWidth: '96%' },
-        },
-        h('div', { className: 'lw-msg-role' }, modelName),
+        { className: `lw-msg lw-msg-ai${msg.error ? ' is-error' : msg.warn ? ' is-warn' : ''}` },
         h(
           'div',
           { className: 'lw-msg-text' },
-          [
-            reasoning
-              ? h('div', { key: 'reasoning-block', style: { marginBottom: 6 } }, [
-                  h(
-                    'div',
-                    {
-                      className: 'lw-thinking-toggle',
-                      onClick: () => setThinkingOpen(!thinkingOpen),
-                      title: '点击展开/折叠思考过程',
-                    },
-                    [
-                      h(
-                        'svg',
-                        {
-                          width: 13,
-                          height: 13,
-                          viewBox: '0 0 24 24',
-                          fill: 'none',
-                          stroke: 'currentColor',
-                          strokeWidth: 2,
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                        },
-                        [
-                          h('path', { d: 'M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z' }),
-                          h('path', { d: 'M9 21h6' }),
-                        ],
-                      ),
-                      h('span', null, '已深度思考'),
-                      h(
-                        'svg',
-                        {
-                          width: 11,
-                          height: 11,
-                          viewBox: '0 0 24 24',
-                          fill: 'none',
-                          stroke: 'currentColor',
-                          strokeWidth: 2,
-                          style: { transform: thinkingOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' },
-                        },
-                        h('polyline', { points: '9 18 15 12 9 6' }),
-                      ),
-                    ],
-                  ),
-                  thinkingOpen
-                    ? h('div', { className: 'lw-thinking-content' }, reasoning)
-                    : null,
-                ])
-              : null,
-            h('div', { key: 'body-content' }, renderMarkdownContent(cleanText)),
-          ],
+          reasoning
+            ? h(
+                'div',
+                { style: { marginBottom: 4 } },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lw-thinking-toggle',
+                    'aria-expanded': thinkingOpen,
+                    onClick: () => setThinkingOpen((v) => !v),
+                  },
+                  h(Icon, { name: 'chevronRight', size: 12, className: `lw-details-chevron${thinkingOpen ? ' is-open' : ''}` }),
+                  h('span', null, t('view.thinkingDone')),
+                ),
+                h(AnimatedCollapse, { open: thinkingOpen }, h('div', { className: 'lw-thinking-content' }, reasoning)),
+              )
+            : null,
+          h('div', null, renderMarkdownContent(cleanText)),
+          msg.error && onRetry
+            ? h(
+                'div',
+                { className: 'lw-msg-actions' },
+                h(
+                  Button,
+                  { size: 'sm', variant: 'ghost', onClick: onRetry },
+                  h(Icon, { name: 'refresh', size: 12 }),
+                  t('view.retry'),
+                ),
+              )
+            : null,
         ),
       )
     }
 
-    // ── Panel ──────────────────────────────────────────────────────────────
+    // ── Account & Permissions Modal ────────────────────────────────────────
+
+    function AccountModal({ open, onClose, health, connected, scopesInfo, syncingAuth, busyAccount, onGrantAll, onLogout, onUnbind, t }) {
+      const { mounted, phase } = useAnimatedPresence(open, 160)
+      const [confirmMode, setConfirmMode] = useState(null)
+      const boxRef = useRef(null)
+      const prevFocusRef = useRef(null)
+
+      useEffect(() => {
+        if (!open) {
+          setConfirmMode(null)
+          if (prevFocusRef.current && typeof prevFocusRef.current.focus === 'function') {
+            prevFocusRef.current.focus()
+            prevFocusRef.current = null
+          }
+          return undefined
+        }
+        prevFocusRef.current = document.activeElement
+        requestAnimationFrame(() => {
+          if (boxRef.current) boxRef.current.focus()
+        })
+        const onKeyDown = (e) => {
+          if (e.key === 'Escape' && !busyAccount) {
+            e.stopPropagation()
+            if (confirmMode) setConfirmMode(null)
+            else onClose()
+          }
+        }
+        document.addEventListener('keydown', onKeyDown)
+        return () => document.removeEventListener('keydown', onKeyDown)
+      }, [open, busyAccount, confirmMode, onClose])
+
+      if (!mounted) return null
+
+      const domainList = [
+        { key: 'base', icon: 'table', ready: scopesInfo?.domains?.base?.ready ?? true },
+        { key: 'calendar', icon: 'calendar', ready: scopesInfo?.domains?.calendar?.ready ?? false },
+        { key: 'task', icon: 'checkSquare', ready: scopesInfo?.domains?.task?.ready ?? false },
+        { key: 'im', icon: 'people', ready: scopesInfo?.domains?.im?.ready ?? false },
+        { key: 'mail', icon: 'mail', ready: scopesInfo?.domains?.mail?.ready ?? false },
+        { key: 'contact', icon: 'user', ready: scopesInfo?.domains?.contact?.ready ?? false },
+      ]
+      const allReady = Boolean(scopesInfo && domainList.every((d) => d.ready))
+
+      return h(
+        'div',
+        {
+          className: `lw-modal-overlay${phase === 'open' ? ' is-open' : phase === 'closing' ? ' is-closing' : ''}`,
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': t('account.title'),
+          onClick: () => { if (!busyAccount) onClose() },
+        },
+        h(
+          'div',
+          {
+            ref: boxRef,
+            tabIndex: -1,
+            className: 'lw-modal-box',
+            style: { outline: 'none' },
+            onClick: (e) => e.stopPropagation(),
+          },
+          h(
+            'div',
+            { className: 'lw-modal-head' },
+            h('span', { className: 'lw-modal-title' }, t('account.title')),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'lw-modal-close',
+                'aria-label': t('account.close'),
+                title: t('account.close'),
+                onClick: () => { if (!busyAccount) onClose() },
+              },
+              h(Icon, { name: 'close', size: 15 }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'lw-kv-list' },
+            h(
+              'div',
+              { className: 'lw-kv-row' },
+              h('span', { className: 'lw-kv-key' }, t('account.user')),
+              h(
+                'span',
+                { className: 'lw-kv-val' },
+                h('span', { className: `lw-dot ${connected ? 'is-ok' : 'is-bad'}` }),
+                health?.auth?.userName || (connected ? t('account.authed') : t('account.notLogin')),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'lw-kv-row' },
+              h('span', { className: 'lw-kv-key' }, t('account.app')),
+              h('span', { className: 'lw-kv-val lw-mono' }, health?.app?.appId || t('account.notConfigured')),
+            ),
+            h(
+              'div',
+              { className: 'lw-kv-row' },
+              h('span', { className: 'lw-kv-key' }, t('account.cli')),
+              h('span', { className: 'lw-kv-val' }, health?.cli?.available ? t('account.cliReady') : t('account.cliMissing')),
+            ),
+          ),
+          h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
+              h('span', { className: 'lw-meta', style: { fontWeight: 500, color: 'var(--lw-ink-2)' } }, t('account.scopesTitle')),
+              scopesInfo?.consoleUrl
+                ? h(
+                    'a',
+                    {
+                      href: scopesInfo.consoleUrl,
+                      target: '_blank',
+                      rel: 'noopener noreferrer',
+                      className: 'lw-md-link',
+                      style: { fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 3 },
+                    },
+                    t('account.console'),
+                    h(Icon, { name: 'arrowUpRight', size: 11 }),
+                  )
+                : null,
+            ),
+            h(
+              'div',
+              { className: 'lw-scope-grid' },
+              domainList.map((item) =>
+                h(
+                  'div',
+                  { key: item.key, className: 'lw-scope-pill' },
+                  h(
+                    'span',
+                    { className: 'lw-scope-name' },
+                    h(Icon, { name: item.icon, size: 13, style: { color: 'var(--lw-ink-3)' } }),
+                    t(`scope.${item.key}`),
+                  ),
+                  h(
+                    'span',
+                    { className: `lw-scope-state ${item.ready ? 'is-ready' : 'is-off'}` },
+                    h('span', { className: `lw-dot ${item.ready ? 'is-ok' : !scopesInfo ? 'is-busy' : ''}` }),
+                    item.ready ? t('account.scopeReady') : !scopesInfo ? t('account.scopeChecking') : t('account.scopeOff'),
+                  ),
+                ),
+              ),
+            ),
+            !allReady && scopesInfo
+              ? h(
+                  Button,
+                  { size: 'sm', variant: 'primary', disabled: busyAccount || syncingAuth, onClick: onGrantAll, style: { width: '100%' } },
+                  syncingAuth ? h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }) : null,
+                  syncingAuth ? t('account.granting') : t('account.grantAll'),
+                )
+              : null,
+          ),
+          confirmMode
+            ? h(
+                'div',
+                { className: 'lw-modal-confirm', role: 'alertdialog' },
+                h('div', { className: 'lw-confirm-head' }, confirmMode === 'logout' ? t('account.logoutTitle') : t('account.unbindTitle')),
+                h(
+                  'div',
+                  { className: 'lw-meta' },
+                  confirmMode === 'logout'
+                    ? t('account.logoutBody').replace('%s', health?.auth?.userName || t('account.authed'))
+                    : t('account.unbindBody').replace('%s', health?.app?.appId || ''),
+                ),
+                h(
+                  'div',
+                  { className: 'lw-actions', style: { justifyContent: 'flex-end' } },
+                  h(Button, { size: 'sm', variant: 'ghost', disabled: busyAccount, onClick: () => setConfirmMode(null) }, t('account.cancel')),
+                  h(
+                    Button,
+                    {
+                      size: 'sm',
+                      variant: 'danger',
+                      disabled: busyAccount,
+                      onClick: confirmMode === 'logout' ? onLogout : onUnbind,
+                    },
+                    busyAccount ? t('account.working') : confirmMode === 'logout' ? t('account.logoutConfirm') : t('account.unbindConfirm'),
+                  ),
+                ),
+              )
+            : h(
+                'div',
+                { className: 'lw-modal-footer' },
+                h(
+                  Button,
+                  { size: 'sm', variant: 'ghost', disabled: busyAccount || !connected, onClick: () => setConfirmMode('logout') },
+                  t('account.logout'),
+                ),
+                h(
+                  Button,
+                  { size: 'sm', variant: 'danger', disabled: busyAccount || !health?.app?.appId, onClick: () => setConfirmMode('unbind') },
+                  t('account.unbind'),
+                ),
+              ),
+        ),
+      )
+    }
+
+    // ── Main Workbench Component ───────────────────────────────────────────
 
     function Workbench(props) {
       if (props) {
         const resolved = resolveDshSessionId(props, props.ctx)
         if (resolved) currentDshSessionId = resolved
       }
+
+      useEffect(() => ensureStyles(), [])
+
+      const rootRef = useRef(null)
+      const layoutRef = useRef(null)
+      const containerWidth = useContainerSize(rootRef)
+      const isCompact = containerWidth < 720
+      const isNarrow = containerWidth < 480
+
       const t = useMemo(() => translator(props), [props.t])
       const theme = useHostTheme()
+
       const [stage, setStage] = useState('pick')
       const [sentence, setSentence] = useState('')
+      const [showMoreScenes, setShowMoreScenes] = useState(false)
       const [tweakText, setTweakText] = useState('')
       const [adjustText, setAdjustText] = useState('')
-      const [adjustNote, setAdjustNote] = useState(null)
-      const [adjustWarn, setAdjustWarn] = useState(false)
       const [adjustError, setAdjustError] = useState(null)
       const [liveReasoning, setLiveReasoning] = useState('')
       const [confirmPlan, setConfirmPlan] = useState(null)
       const [history, setHistory] = useState([])
       const [syncingAuth, setSyncingAuth] = useState(false)
+      const [syncingTable, setSyncingTable] = useState(false)
+      const [syncedTick, setSyncedTick] = useState(false)
+      const [compactPane, setCompactPane] = useState('chat') // 'chat' | 'table' on compact containers
+
       const authAbortRef = useRef(null)
+      const activeRequestAbortRef = useRef(null)
+
       const [tableOpen, setTableOpen] = useState(() => {
         try {
-          const v = window.localStorage.getItem('dsh-lark-table-open')
-          if (v === 'false') return false
+          if (window.localStorage.getItem('dsh-lark-table-open') === 'false') return false
         } catch {}
         return true
       })
@@ -3435,83 +4121,92 @@ body:has(.lw) [class*="viewArea"] {
         try { window.localStorage.setItem('dsh-lark-table-open', String(nextOpen)) } catch {}
         setTableOpen(nextOpen)
       }, [])
+
       const [splitWidth, setSplitWidth] = useState(() => {
         try {
           const v = parseInt(window.localStorage.getItem('dsh-lark-split-width'), 10)
-          if (!isNaN(v) && v >= 300 && v <= 1400) return v
+          if (!isNaN(v) && v >= 280 && v <= 1200) return v
         } catch {}
-        return 460
+        return 420
       })
       const [isResizing, setIsResizing] = useState(false)
+      const [isEasingSplit, setIsEasingSplit] = useState(false)
       const splitWidthRef = useRef(splitWidth)
       splitWidthRef.current = splitWidth
 
+      // Direct 0ms Pointer-Tracked Split Resizer (Container-Clamped)
       const startResize = useCallback((e) => {
         e.preventDefault()
+        const target = e.currentTarget
+        if (target && typeof target.setPointerCapture === 'function') {
+          try { target.setPointerCapture(e.pointerId) } catch {}
+        }
         setIsResizing(true)
+        setIsEasingSplit(false)
         const startX = e.clientX
         const initialWidth = splitWidthRef.current
+        const totalW = (layoutRef.current && layoutRef.current.clientWidth) || window.innerWidth || 1000
+        const minW = 280
+        const maxW = Math.max(minW, totalW - 300)
 
-        const onMouseMove = (moveEvent) => {
-          const deltaX = moveEvent.clientX - startX
-          const minW = 320
-          const maxW = Math.max(minW, (window.innerWidth || 1200) - 340)
-          const newWidth = Math.min(Math.max(initialWidth + deltaX, minW), maxW)
-          setSplitWidth(newWidth)
-          try { window.localStorage.setItem('dsh-lark-split-width', String(newWidth)) } catch {}
+        const onPointerMove = (moveEvent) => {
+          const nextW = Math.round(Math.min(Math.max(initialWidth + (moveEvent.clientX - startX), minW), maxW))
+          setSplitWidth(nextW)
         }
-
-        const onMouseUp = () => {
+        const onPointerUp = () => {
           setIsResizing(false)
-          window.removeEventListener('mousemove', onMouseMove)
-          window.removeEventListener('mouseup', onMouseUp)
+          try { window.localStorage.setItem('dsh-lark-split-width', String(splitWidthRef.current)) } catch {}
+          window.removeEventListener('pointermove', onPointerMove)
+          window.removeEventListener('pointerup', onPointerUp)
+          window.removeEventListener('pointercancel', onPointerUp)
         }
-
-        window.addEventListener('mousemove', onMouseMove)
-        window.addEventListener('mouseup', onMouseUp)
+        window.addEventListener('pointermove', onPointerMove)
+        window.addEventListener('pointerup', onPointerUp)
+        window.addEventListener('pointercancel', onPointerUp)
       }, [])
 
       const resetSplitWidth = useCallback(() => {
-        setSplitWidth(460)
-        try { window.localStorage.setItem('dsh-lark-split-width', '460') } catch {}
+        setIsEasingSplit(true)
+        setSplitWidth(420)
+        try { window.localStorage.setItem('dsh-lark-split-width', '420') } catch {}
+        setTimeout(() => setIsEasingSplit(false), 300)
       }, [])
+
       const adjustInputRef = useRef(null)
-      const chatEndRef = useRef(null)
       const chatStreamRef = useRef(null)
-      const webviewRef = useRef(null)
-      const focusAdjustRef = useRef(false)
       const [showDetails, setShowDetails] = useState(false)
       const [plan, setPlan] = useState(null)
-      const [result, setResult] = useState(null)
+      const [changedFields, setChangedFields] = useState([])
+      const [nudgeBuild, setNudgeBuild] = useState(false)
+      const changedTimerRef = useRef(null)
+      const nudgeTimerRef = useRef(null)
+      const lastRefinePromptRef = useRef('')
       const [busy, setBusy] = useState(null)
       const [error, setError] = useState(null)
       const [health, setHealth] = useState(null)
       const [recent, setRecent] = useState(readRecent)
       const [active, setActive] = useState(null)
-      const [live, setLive] = useState(null)
-      const [copiedUrl, setCopiedUrl] = useState(false)
       const [copiedView, setCopiedView] = useState(false)
-      // Where the real Base went: null = never asked, 'sidebar' | 'window' = open.
-      const [realState, setRealState] = useState(null)
-      // A hand-off the host refused: shown instead of silently opening Chrome.
-      const [realError, setRealError] = useState(null)
-      const [openingReal, setOpeningReal] = useState(false)
-      const openedReal = useRef(new Set())
-      const realTable = props.realTable
-      const hostReady = Boolean(realTable && realTable.available())
-      const [samplesOpen, setSamplesOpen] = useState(!hostReady)
+      const [toast, setToast] = useState(null)
+      const toastTimerRef = useRef(null)
       const alive = useRef(true)
+
+      const showToast = useCallback((nextToast) => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+        setToast(nextToast)
+        const duration = nextToast && nextToast.onUndo ? 5000 : 2800
+        toastTimerRef.current = setTimeout(() => setToast(null), duration)
+      }, [])
+
+      const dismissToast = useCallback(() => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+        setToast(null)
+      }, [])
 
       const [models, setModels] = useState([])
       const [selectedModel, setSelectedModel] = useState(() => {
-        try {
-          const saved = JSON.parse(window.localStorage.getItem('dsh-lark-model') || 'null')
-          return saved || null
-        } catch {
-          return null
-        }
+        try { return JSON.parse(window.localStorage.getItem('dsh-lark-model') || 'null') || null } catch { return null }
       })
-
       const modelKey = useCallback((m) => (m ? `${m.provider || ''}:${m.id || ''}` : ''), [])
 
       useEffect(() => {
@@ -3519,27 +4214,20 @@ body:has(.lw) [class*="viewArea"] {
         authFetch(`${API}/models`)
           .then((r) => r.json())
           .then((data) => {
-            if (isMount && data && data.ok && Array.isArray(data.models) && data.models.length > 0) {
-              setModels(data.models)
-              try {
-                const saved = JSON.parse(window.localStorage.getItem('dsh-lark-model') || 'null')
-                if (saved) {
-                  const matched = data.models.find((m) => (m.provider === saved.provider && m.id === saved.id) || m.id === saved.id)
-                  if (matched) {
-                    setSelectedModel(matched)
-                    return
-                  }
-                }
-              } catch {}
-              if (data.current) {
-                const matched = data.models.find((m) => (m.provider === data.current.provider && m.id === data.current.model) || m.id === data.current.model)
-                if (matched) {
-                  setSelectedModel(matched)
-                  return
-                }
+            if (!isMount || !data || !data.ok || !Array.isArray(data.models) || data.models.length === 0) return
+            setModels(data.models)
+            try {
+              const saved = JSON.parse(window.localStorage.getItem('dsh-lark-model') || 'null')
+              if (saved) {
+                const matched = data.models.find((m) => (m.provider === saved.provider && m.id === saved.id) || m.id === saved.id)
+                if (matched) { setSelectedModel(matched); return }
               }
-              setSelectedModel(data.models[0])
+            } catch {}
+            if (data.current) {
+              const matched = data.models.find((m) => (m.provider === data.current.provider && m.id === data.current.model) || m.id === data.current.model)
+              if (matched) { setSelectedModel(matched); return }
             }
+            setSelectedModel(data.models[0])
           })
           .catch(() => {})
         return () => { isMount = false }
@@ -3549,53 +4237,11 @@ body:has(.lw) [class*="viewArea"] {
         const found = models.find((m) => modelKey(m) === targetKey || m.id === targetKey)
         if (found) {
           setSelectedModel(found)
-          try {
-            window.localStorage.setItem('dsh-lark-model', JSON.stringify(found))
-          } catch {}
+          try { window.localStorage.setItem('dsh-lark-model', JSON.stringify(found)) } catch {}
         }
       }, [models, modelKey])
 
-      const openRealTable = useCallback(async (url, options = {}) => {
-        if (!url) return
-        if (!realTable) {
-          window.open(url, '_blank', 'noopener')
-          setRealState('window')
-          return
-        }
-        setOpeningReal(true)
-        try {
-          const outcome = await realTable.open(url, { navigate: options.navigate !== false })
-          if (!alive.current) return
-          if (outcome.mode === 'sidebar') {
-            openedReal.current.add(url)
-            setRealError(null)
-            setRealState('sidebar')
-            return
-          }
-          if (outcome.mode === 'no-session') {
-            if (!options.silent) setRealError(t('view.noSession'))
-            return
-          }
-          if (outcome.mode === 'error') {
-            setRealState(null)
-            setRealError(outcome.message || t('view.openFailed'))
-            return
-          }
-          // The host has no docked browser: an explicit external open, never a silent one.
-          window.open(url, '_blank', 'noopener')
-          setRealState('window')
-        } finally {
-          if (alive.current) setOpeningReal(false)
-        }
-      }, [realTable, t])
-
-      /**
-       * The table is the source of truth: show it once, then leave the tab alone.
-       * Automatic hand-off never switches the panel under the user; only an
-       * explicit click may bring the conversation forward to host the tab.
-       */
-      const autoOpenRealTable = useCallback(() => {}, [])
-
+      const realTable = props.realTable
       useEffect(() => {
         if (realTable && typeof realTable.closeSidebarBrowserTabs === 'function') {
           realTable.closeSidebarBrowserTabs(props.sessionId)
@@ -3603,30 +4249,26 @@ body:has(.lw) [class*="viewArea"] {
       }, [props.sessionId, realTable])
 
       const lastSyncedActiveRef = useRef(null)
+      const busyRef = useRef(busy)
+      busyRef.current = busy
 
       const refreshHealth = useCallback(async () => {
         try {
-          const payload = await authFetch(`${API}/state`).then((response) => response.json())
-          if (alive.current) {
-            setHealth(payload)
-            setError(null)
-            if (payload && payload.active && payload.active.updatedAt) {
-              const incoming = payload.active
-              if (!lastSyncedActiveRef.current || incoming.updatedAt > (lastSyncedActiveRef.current.updatedAt || 0)) {
-                lastSyncedActiveRef.current = incoming
-                if (incoming.preview && incoming.plan) {
-                  setPlan(incoming.plan)
-                  setStage('preview')
-                } else if (incoming.url) {
-                  setActive(incoming)
-                  setStage('view')
-                  try {
-                    const existing = readRecent()
-                    const next = [incoming, ...existing.filter((e) => e.url !== incoming.url)].slice(0, 8)
-                    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next))
-                    setRecent(next)
-                  } catch {}
-                }
+          const payload = await authFetch(`${API}/state`).then((r) => r.json())
+          if (!alive.current) return
+          setHealth(payload)
+          setError(null)
+          if (payload && payload.active && payload.active.updatedAt && !busyRef.current) {
+            const incoming = payload.active
+            if (!lastSyncedActiveRef.current || incoming.updatedAt > (lastSyncedActiveRef.current.updatedAt || 0)) {
+              lastSyncedActiveRef.current = incoming
+              if (incoming.preview && incoming.plan) {
+                setPlan(incoming.plan)
+                setStage('preview')
+              } else if (incoming.url) {
+                setActive(incoming)
+                setStage('view')
+                setRecent(rememberRecent(incoming))
               }
             }
           }
@@ -3635,54 +4277,53 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [])
 
+      // Visibility-aware health check (pauses when hidden, polite interval when connected)
+      const connected = Boolean(health && health.stage === 'ready' && health.auth && health.auth.userReady)
       useEffect(() => {
         alive.current = true
         refreshHealth()
+        const intervalMs = connected ? 15000 : 4000
         const timer = setInterval(() => {
-          if (alive.current) refreshHealth()
-        }, 3000)
+          if (alive.current && (typeof document === 'undefined' || !document.hidden)) refreshHealth()
+        }, intervalMs)
+        const onVisible = () => {
+          if (typeof document !== 'undefined' && !document.hidden && alive.current) refreshHealth()
+        }
+        document.addEventListener('visibilitychange', onVisible)
         return () => {
           alive.current = false
           clearInterval(timer)
+          document.removeEventListener('visibilitychange', onVisible)
         }
-      }, [refreshHealth])
+      }, [refreshHealth, connected])
 
-      // Coming straight from the success card: leave the cursor where the next
-      // sentence goes, the same way the composer starts a table.
+      // Smart auto-scroll: only scroll if user is already near bottom
       useEffect(() => {
-        if (stage === 'view' && live && live.ok && focusAdjustRef.current) {
-          focusAdjustRef.current = false
-          adjustInputRef.current?.focus()
-        }
-      }, [stage, live])
-
-      useEffect(() => {
-        if (stage === 'view' && chatStreamRef.current) {
-          chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight
+        const el = chatStreamRef.current
+        if (stage !== 'view' || !el) return
+        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+        if (distFromBottom < 140) {
+          el.scrollTop = el.scrollHeight
         }
       }, [stage, history, busy, liveReasoning])
 
-      // Hide host conversation bottom composer when Workbench is active in conversation
+      // Hide host conversation composer via lightweight MutationObserver (no 250ms polling)
       useEffect(() => {
-        const findAndHide = () => {
-          const seats = document.querySelectorAll(
-            '[data-composer-seat], [data-conversation-region="composer"], [class*="composerSeat"], [class*="composerStack"]'
-          )
-          seats.forEach((seat) => {
+        const selector = '[data-composer-seat], [data-conversation-region="composer"], [class*="composerSeat"], [class*="composerStack"]'
+        const hideSeats = () => {
+          document.querySelectorAll(selector).forEach((seat) => {
             if (seat && !seat.dataset.lwHidden) {
               seat.dataset.lwHidden = 'true'
               seat.style.setProperty('display', 'none', 'important')
             }
           })
         }
-        findAndHide()
-        const timer = setInterval(findAndHide, 250)
+        hideSeats()
+        const observer = new MutationObserver(hideSeats)
+        if (document.body) observer.observe(document.body, { childList: true, subtree: true })
         return () => {
-          clearInterval(timer)
-          const seats = document.querySelectorAll(
-            '[data-composer-seat], [data-conversation-region="composer"], [class*="composerSeat"], [class*="composerStack"]'
-          )
-          seats.forEach((seat) => {
+          observer.disconnect()
+          document.querySelectorAll(selector).forEach((seat) => {
             if (seat && seat.dataset.lwHidden === 'true') {
               delete seat.dataset.lwHidden
               seat.style.removeProperty('display')
@@ -3691,16 +4332,68 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [])
 
-      const connected = Boolean(health && health.stage === 'ready' && health.auth && health.auth.userReady)
+      // Smart desktop auto-focus when entering workspace
+      useEffect(() => {
+        if (stage !== 'view') return
+        const canHover = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: hover)').matches
+        if (canHover && adjustInputRef.current) {
+          requestAnimationFrame(() => adjustInputRef.current && adjustInputRef.current.focus())
+        }
+      }, [stage, active && active.url])
+
+      // Escape cancels destructive confirm card
+      useEffect(() => {
+        if (!confirmPlan) return undefined
+        const onKey = (e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            setConfirmPlan(null)
+          }
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+      }, [confirmPlan])
+
       const toolOk = !health || !health.cli || health.cli.available !== false
 
-      const post = useCallback(async (path, body) => {
+      const post = useCallback(async (path, body, signal) => {
         const response = await authFetch(`${API}${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
+          signal,
         })
         return response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }))
+      }, [])
+
+      const stopActiveRequest = useCallback(() => {
+        if (activeRequestAbortRef.current) {
+          activeRequestAbortRef.current.abort()
+          activeRequestAbortRef.current = null
+        }
+        setBusy(null)
+        setLiveReasoning('')
+        showToast({ message: t('toast.stopped') })
+      }, [showToast, t])
+
+      const restart = useCallback(() => {
+        if (activeRequestAbortRef.current) {
+          activeRequestAbortRef.current.abort()
+          activeRequestAbortRef.current = null
+        }
+        setStage('pick')
+        setPlan(null)
+        setActive(null)
+        setError(null)
+        setHistory([])
+        setSentence('')
+        setTweakText('')
+        setAdjustText('')
+        setAdjustError(null)
+        setConfirmPlan(null)
+        setShowDetails(false)
+        setCopiedView(false)
+        setCompactPane('chat')
       }, [])
 
       const build = useCallback(async () => {
@@ -3711,8 +4404,6 @@ body:has(.lw) [class*="viewArea"] {
           const payload = await post('/build', { plan, kanban: true, sample: true })
           if (!alive.current) return
           if (payload.ok) {
-            setResult(payload)
-            setCopiedUrl(false)
             const item = {
               name: payload.baseName,
               url: payload.url,
@@ -3722,8 +4413,9 @@ body:has(.lw) [class*="viewArea"] {
             }
             setRecent(rememberRecent(item))
             setActive(item)
+            setHistory([])
             setStage('view')
-            setAdjustNote('表格已在飞书生成！可以在下方输入一句话继续调整。')
+            showToast({ message: t('toast.built') })
           } else {
             setError(payload.message || payload.error || t('error.title'))
           }
@@ -3732,114 +4424,50 @@ body:has(.lw) [class*="viewArea"] {
         } finally {
           if (alive.current) setBusy(null)
         }
-      }, [plan, busy, post, t, autoOpenRealTable])
+      }, [plan, busy, post, showToast, t])
 
-      const restart = useCallback(() => {
-        setStage('pick')
-        setPlan(null)
-        setResult(null)
-        setActive(null)
-        setLive(null)
-        setError(null)
-        setHistory([])
-        setSentence('')
-        setTweakText('')
-        setAdjustText('')
-        setAdjustNote(null)
-        setAdjustWarn(false)
-        setAdjustError(null)
-        setConfirmPlan(null)
-        setShowDetails(false)
-        setCopiedUrl(false)
-        setCopiedView(false)
-      }, [])
-
-      /** Reopen a table that was created earlier: read its live data through
-       *  the same CLI that built it, so the panel is a workspace, not a dead end. */
-      const openRecent = useCallback(async (item) => {
-        if (!item || busy) return
-        const token = item.token || baseTokenFrom(item.url)
-        setActive(item)
-        setStage('view')
-        setLive({ loading: true })
-        setError(null)
-        setHistory([])
-        setAdjustText('')
-        setAdjustNote(null)
-        setAdjustWarn(false)
-        setAdjustError(null)
-        setConfirmPlan(null)
-        if (!token) {
-          setLive({ ok: false, message: t('view.noToken') })
-          return
-        }
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 15000)
-        try {
-          const query = new URLSearchParams({ token, limit: '12' })
-          if (item.table) query.set('table', item.table)
-          const payload = await authFetch(`${API}/records?${query.toString()}`, { signal: controller.signal })
-            .then((response) => response.json())
-          if (!alive.current) return
-          if (payload && payload.ok) {
-            setLive({ ok: true, fields: payload.fields ?? [], rows: payload.rows ?? [], more: Boolean(payload.more) })
-            if (payload.table && payload.table !== item.table) {
-              const entries = readRecent().map((entry) => (
-                entry.url === item.url ? { ...entry, table: payload.table } : entry
-              ))
-              try {
-                window.localStorage.setItem(RECENT_KEY, JSON.stringify(entries))
-              } catch {
-                // ignore storage failures, the view still works
-              }
-              setRecent(entries)
-            }
-          } else {
-            setLive({ ok: false, message: (payload && (payload.message || payload.error)) || t('view.error') })
-          }
-        } catch (failure) {
-          if (alive.current) setLive({ ok: false, message: failure instanceof Error ? failure.message : String(failure) })
-        } finally {
-          clearTimeout(timer)
-        }
-      }, [busy, t, autoOpenRealTable])
-
-      /** From the success card: reopen the same table and land in the adjust bar. */
-      const continueAdjusting = useCallback(() => {
-        if (!result) return
-        const item = {
-          name: result.baseName,
-          url: result.url,
-          token: result.token,
-          at: Date.now(),
-          table: result.tables && result.tables[0] ? result.tables[0].name : undefined,
-        }
-        if (item.url) setRecent(rememberRecent(item))
-        focusAdjustRef.current = true
-        openRecent(item)
-      }, [result, openRecent])
-
-      /** Refresh table schema & preview data in background without wiping conversation history. */
-      const refreshLive = useCallback(async (item) => {
+      /** Background live sync — NEVER wipes chat history. */
+      const refreshLive = useCallback(async (item, showFeedback = false) => {
         if (!item) return
         const token = item.token || baseTokenFrom(item.url)
         if (!token) return
+        if (showFeedback) setSyncingTable(true)
         try {
           const query = new URLSearchParams({ token, limit: '12' })
           if (item.table) query.set('table', item.table)
           const res = await authFetch(`${API}/records?${query}`).then((r) => r.json())
           if (alive.current && res && res.ok) {
-            setLive({
-              ok: true,
-              fields: res.fields ?? [],
-              rows: res.rows ?? [],
-              more: Boolean(res.more),
-            })
+            if (res.table && res.table !== item.table) {
+              const next = { ...item, table: res.table }
+              setActive(next)
+              const entries = readRecent().map((e) => (e.url === next.url ? { ...e, table: next.table } : e))
+              try { window.localStorage.setItem(RECENT_KEY, JSON.stringify(entries)) } catch {}
+              setRecent(entries)
+            }
+            if (showFeedback) {
+              setSyncedTick(true)
+              showToast({ message: t('toast.synced') })
+              setTimeout(() => { if (alive.current) setSyncedTick(false) }, 1600)
+            }
           }
-        } catch {}
-      }, [])
+        } catch {} finally {
+          if (alive.current && showFeedback) setSyncingTable(false)
+        }
+      }, [showToast, t])
 
-      /** Shared tail for "apply" and "apply after confirming a deletion". */
+      const openRecent = useCallback(async (item) => {
+        if (!item || busy) return
+        setActive(item)
+        setStage('view')
+        setCompactPane('chat')
+        setError(null)
+        setHistory([])
+        setAdjustText('')
+        setAdjustError(null)
+        setConfirmPlan(null)
+        refreshLive(item, false)
+      }, [busy, refreshLive])
+
       const finishAdjust = useCallback(async (payload) => {
         if (!payload) {
           setAdjustError(t('error.title'))
@@ -3852,7 +4480,6 @@ body:has(.lw) [class*="viewArea"] {
         if (payload.type === 'missing_scope') {
           setConfirmPlan(null)
           setAdjustError(null)
-          setAdjustText('')
           setHistory((prev) => [
             ...prev,
             {
@@ -3861,7 +4488,7 @@ body:has(.lw) [class*="viewArea"] {
               domainTitle: payload.domainTitle || '飞书功能',
               requiredScopes: payload.requiredScopes || [],
               consoleUrl: payload.consoleUrl,
-              text: payload.reply || payload.message || '需要开通对应权限才能继续。',
+              text: payload.reply || payload.message || '',
             },
           ])
           return
@@ -3869,7 +4496,6 @@ body:has(.lw) [class*="viewArea"] {
         if (payload.type === 'table_plan' && payload.plan) {
           setConfirmPlan(null)
           setAdjustError(null)
-          setAdjustText('')
           setSentence(payload.sentence || payload.plan.baseName || '')
           setPlan(payload.plan)
           setTweakText('')
@@ -3878,14 +4504,12 @@ body:has(.lw) [class*="viewArea"] {
           return
         }
         if (!payload.ok && !payload.summary && !payload.reply) {
-          setAdjustError(payload.message || payload.error || t('error.title'))
+          const msg = payload.message || payload.error || t('error.title')
+          setHistory((prev) => [...prev, { role: 'assistant', text: humanize(msg), error: true }])
           return
         }
         setConfirmPlan(null)
-        setAdjustText('')
-        setAdjustWarn(payload.ok === false)
-        const replyText = payload.reply || payload.summary || t('view.adjustDone')
-        setAdjustNote(replyText)
+        const replyText = payload.reply || payload.summary || ''
         setHistory((prev) => [
           ...prev,
           {
@@ -3896,46 +4520,26 @@ body:has(.lw) [class*="viewArea"] {
           },
         ])
 
-        // Only update local table preview data if there were actual table mutations.
-        // Feishu webview natively syncs via collaborative WebSocket, so we never reload the full webview page.
         if (payload.type !== 'answer' && payload.type !== 'collab' && payload.type !== 'suggest_table') {
-          if (payload.live && payload.live.ok) {
-            setLive({
-              ok: true,
-              fields: payload.live.fields ?? [],
-              rows: payload.live.rows ?? [],
-              more: Boolean(payload.live.more),
-            })
-            if (payload.live.table && active && payload.live.table !== active.table) {
-              const next = { ...active, table: payload.live.table }
-              setActive(next)
-              const entries = readRecent().map((entry) => (
-                entry.url === next.url ? { ...entry, table: next.table } : entry
-              ))
-              try {
-                window.localStorage.setItem(RECENT_KEY, JSON.stringify(entries))
-              } catch {}
-              setRecent(entries)
-            }
-          } else {
-            await refreshLive(active)
+          if (payload.live && payload.live.ok && payload.live.table && active && payload.live.table !== active.table) {
+            const next = { ...active, table: payload.live.table }
+            setActive(next)
+            const entries = readRecent().map((e) => (e.url === next.url ? { ...e, table: next.table } : e))
+            try { window.localStorage.setItem(RECENT_KEY, JSON.stringify(entries)) } catch {}
+            setRecent(entries)
           }
         }
-      }, [active, refreshLive, t])
+      }, [active, t])
 
       const openCollab = useCallback((initialPrompt) => {
-        const item = { type: 'collab', name: '飞书协同助手' }
-        setActive(item)
+        setActive({ type: 'collab', name: t('view.collabTitle') })
         setStage('view')
         setHistory([])
         setAdjustText(initialPrompt || '')
         setAdjustError(null)
-        setAdjustWarn(false)
         setConfirmPlan(null)
-        setLive(null)
-      }, [])
+      }, [t])
 
-      /** A follow-up sentence changes the table in place or answers questions. */
       const applyAdjust = useCallback(async (overrideText, options = {}) => {
         if (busy) return
         const text = (typeof overrideText === 'string' ? overrideText : adjustText).trim()
@@ -3947,8 +4551,7 @@ body:has(.lw) [class*="viewArea"] {
           return
         }
         if (isCollab && (!active || active.type !== 'collab')) {
-          const item = { type: 'collab', name: '飞书协同助手' }
-          setActive(item)
+          setActive({ type: 'collab', name: t('view.collabTitle') })
           setStage('view')
         }
         const recentHistory = history
@@ -3957,24 +4560,25 @@ body:has(.lw) [class*="viewArea"] {
           .slice(-8)
 
         if (options.retryIndex !== undefined) {
-          // Replace in-place: remove the failed card and keep existing user prompt
           setHistory((prev) => prev.filter((_, i) => i !== options.retryIndex))
         } else {
           setHistory((prev) => [...prev, { role: 'user', text }])
         }
         setAdjustText('')
-        if (adjustInputRef.current) {
-          adjustInputRef.current.style.height = 'auto'
-        }
         setBusy('adjust')
         setLiveReasoning('')
         setAdjustError(null)
+
+        const controller = new AbortController()
+        activeRequestAbortRef.current = controller
+
         try {
           let payload
           if (isCollab && typeof window !== 'undefined' && window.fetch) {
             const resp = await authFetch(`${API}/adjust`, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
+              signal: controller.signal,
               body: JSON.stringify({
                 token: token || '',
                 type: 'collab',
@@ -3995,8 +4599,7 @@ body:has(.lw) [class*="viewArea"] {
                 const { done, value } = await reader.read()
                 if (done) {
                   if (buf.trim()) {
-                    const lines = buf.split('\n')
-                    for (const line of lines) {
+                    for (const line of buf.split('\n')) {
                       const trimmed = line.trim()
                       if (trimmed.startsWith('data:')) {
                         try {
@@ -4012,17 +4615,13 @@ body:has(.lw) [class*="viewArea"] {
                 const parts = buf.split('\n\n')
                 buf = parts.pop() || ''
                 for (const part of parts) {
-                  const lines = part.split('\n')
-                  for (const line of lines) {
+                  for (const line of part.split('\n')) {
                     const trimmed = line.trim()
                     if (trimmed.startsWith('data:')) {
                       try {
                         const evt = JSON.parse(trimmed.slice(5).trim())
-                        if (evt.type === 'reasoning') {
-                          setLiveReasoning((prev) => prev + evt.delta)
-                        } else if (evt.type === 'done') {
-                          payload = evt.payload
-                        }
+                        if (evt.type === 'reasoning') setLiveReasoning((prev) => prev + evt.delta)
+                        else if (evt.type === 'done') payload = evt.payload
                       } catch {}
                     }
                   }
@@ -4040,17 +4639,18 @@ body:has(.lw) [class*="viewArea"] {
               history: recentHistory,
               model: selectedModel ? selectedModel.id : undefined,
               provider: selectedModel ? selectedModel.provider : undefined,
-            })
+            }, controller.signal)
           }
-          if (!alive.current) return
+          if (!alive.current || controller.signal.aborted) return
           if (payload) await finishAdjust(payload)
         } catch (failure) {
+          if (controller.signal.aborted) return
           const errMsg = failure instanceof Error ? failure.message : String(failure)
           if (alive.current) {
-            setAdjustError(errMsg)
-            setHistory((prev) => [...prev, { role: 'assistant', text: `未完成：${errMsg}`, error: true }])
+            setHistory((prev) => [...prev, { role: 'assistant', text: humanize(errMsg), error: true }])
           }
         } finally {
+          if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
           if (alive.current) {
             setBusy(null)
             setLiveReasoning('')
@@ -4058,65 +4658,120 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [active, adjustText, busy, finishAdjust, history, post, selectedModel, t])
 
-      const planFor = useCallback(
-        async (text) => {
-          if (!text || !text.trim() || busy) return
-          const s = text.trim()
-          setSentence(s)
-          setBusy('plan')
-          setError(null)
-          try {
-            const payload = await post('/plan', {
-              sentence: s,
-              model: selectedModel ? selectedModel.id : undefined,
-              provider: selectedModel ? selectedModel.provider : undefined,
-            })
-            if (!alive.current) return
-            if (payload && payload.ok && payload.plan) {
-              setPlan(payload.plan)
-              setTweakText('')
-              setShowDetails(false)
-              setStage('preview')
-              return
-            }
-            if (payload && payload.isNotTable) {
-              // 用户输入非建表意图（如日常问候、查日程、问答），自然转入飞书协同助手
-              openCollab(s)
-              await applyAdjust(s, { collab: true })
-              return
-            }
-            setError(payload?.message || payload?.error || t('error.title'))
-          } catch (err) {
-            if (alive.current) {
-              setError(err instanceof Error ? err.message : String(err))
-            }
-          } finally {
-            if (alive.current) {
-              setBusy(null)
-            }
+      const planFor = useCallback(async (text) => {
+        if (!text || !text.trim() || busy) return
+        const s = text.trim()
+        setSentence(s)
+        setBusy('plan')
+        setError(null)
+        const controller = new AbortController()
+        activeRequestAbortRef.current = controller
+        try {
+          const payload = await post('/plan', {
+            sentence: s,
+            model: selectedModel ? selectedModel.id : undefined,
+            provider: selectedModel ? selectedModel.provider : undefined,
+          }, controller.signal)
+          if (!alive.current || controller.signal.aborted) return
+          if (payload && payload.ok && payload.plan) {
+            setPlan(payload.plan)
+            setTweakText('')
+            setShowDetails(false)
+            setStage('preview')
+            return
           }
-        },
-        [busy, post, selectedModel, alive, openCollab, applyAdjust, t],
-      )
+          if (payload && payload.isNotTable) {
+            // Seamlessly hand off non-table queries to Lark Assistant
+            if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
+            setBusy(null)
+            openCollab(s)
+            setTimeout(() => { applyAdjust(s, { collab: true }) }, 0)
+            return
+          }
+          setError(payload?.message || payload?.error || t('error.title'))
+        } catch (err) {
+          if (controller.signal.aborted) return
+          if (alive.current) setError(err instanceof Error ? err.message : String(err))
+        } finally {
+          if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
+          if (alive.current) setBusy(null)
+        }
+      }, [busy, post, selectedModel, openCollab, applyAdjust, t])
 
-      const refine = useCallback(
-        async (extra) => {
-          const clean = extra.trim()
-          if (!clean || busy) return
-          const base = sentence || (plan ? plan.baseName : '')
-          await planFor(`${base}。另外：${clean}`)
-        },
-        [sentence, plan, planFor, busy],
-      )
+      const refine = useCallback(async (extra) => {
+        const clean = extra.trim()
+        if (!clean || busy || !plan) return
+        lastRefinePromptRef.current = clean
+        const prevPlan = plan
+        setBusy('refine')
+        setError(null)
+        const controller = new AbortController()
+        activeRequestAbortRef.current = controller
+        try {
+          const payload = await post('/plan', {
+            sentence: clean,
+            currentPlan: prevPlan,
+            model: selectedModel ? selectedModel.id : undefined,
+            provider: selectedModel ? selectedModel.provider : undefined,
+          }, controller.signal)
+          if (!alive.current || controller.signal.aborted) return
 
-      /** The exact ops the panel just planned, replayed after the user says yes. */
+          if (payload && payload.ok && payload.action === 'build') {
+            setTweakText('')
+            if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
+            setBusy(null)
+            setTimeout(() => { build() }, 0)
+            return
+          }
+
+          if (payload && payload.ok && payload.action === 'keep') {
+            setTweakText('')
+            showToast({ message: t('toast.planReady') })
+            if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current)
+            setNudgeBuild(true)
+            nudgeTimerRef.current = setTimeout(() => { if (alive.current) setNudgeBuild(false) }, 1600)
+            return
+          }
+
+          if (payload && payload.ok && payload.plan) {
+            const nextPlan = payload.plan
+            // Compute highlighted fields (server list with client fallback diff)
+            let diffNames = Array.isArray(payload.changedFields) ? payload.changedFields : []
+            if (diffNames.length === 0) {
+              const prevNames = new Set((prevPlan.tables?.[0]?.fields || []).map((f) => f.name))
+              diffNames = (nextPlan.tables?.[0]?.fields || []).map((f) => f.name).filter((n) => !prevNames.has(n))
+            }
+            setPlan(nextPlan)
+            setTweakText('')
+            if (diffNames.length > 0) {
+              if (changedTimerRef.current) clearTimeout(changedTimerRef.current)
+              setChangedFields(diffNames)
+              changedTimerRef.current = setTimeout(() => { if (alive.current) setChangedFields([]) }, 1700)
+            }
+            showToast({
+              message: t('toast.refined'),
+              onUndo: () => {
+                setPlan(prevPlan)
+                setChangedFields([])
+              },
+            })
+            return
+          }
+
+          setError(payload?.message || payload?.error || t('error.title'))
+        } catch (err) {
+          if (controller.signal.aborted) return
+          if (alive.current) setError(err instanceof Error ? err.message : String(err))
+        } finally {
+          if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
+          if (alive.current) setBusy(null)
+        }
+      }, [plan, busy, post, selectedModel, build, showToast, t])
+
       const confirmApply = useCallback(async () => {
         if (!confirmPlan || !active || busy) return
         const token = active.token || baseTokenFrom(active.url)
-        if (!token) {
-          setAdjustError(t('view.noToken'))
-          return
-        }
+        if (!token) { setAdjustError(t('view.noToken')); return }
         setBusy('adjust')
         setAdjustError(null)
         try {
@@ -4135,16 +4790,32 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [active, busy, confirmPlan, finishAdjust, post, t])
 
+      // Instant Remove from Recent + 5s Undo Toast
       const forgetRecent = useCallback((item) => {
         if (!item) return
-        const next = readRecent().filter((entry) => entry.url !== item.url)
-        try {
-          window.localStorage.setItem(RECENT_KEY, JSON.stringify(next))
-        } catch {
-          // keep the in-memory list consistent even if storage is unavailable
-        }
+        const previous = readRecent()
+        const next = previous.filter((entry) => entry.url !== item.url)
+        try { window.localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch {}
         setRecent(next)
-      }, [])
+        showToast({
+          message: t('recent.removed').replace('%s', item.name),
+          onUndo: () => {
+            try { window.localStorage.setItem(RECENT_KEY, JSON.stringify(previous)) } catch {}
+            setRecent(previous)
+          },
+        })
+      }, [showToast, t])
+
+      // Instant Clear Chat + 5s Undo Toast
+      const clearChat = useCallback(() => {
+        if (history.length === 0) return
+        const snapshot = history
+        setHistory([])
+        showToast({
+          message: t('toast.cleared'),
+          onUndo: () => setHistory(snapshot),
+        })
+      }, [history, showToast, t])
 
       const copyActiveUrl = useCallback(() => {
         if (!active || !active.url) return
@@ -4152,37 +4823,52 @@ body:has(.lw) [class*="viewArea"] {
         if (clipboard && clipboard.writeText) {
           clipboard.writeText(active.url).then(() => {
             setCopiedView(true)
-            setTimeout(() => setCopiedView(false), 1800)
+            showToast({ message: t('toast.copied') })
+            setTimeout(() => { if (alive.current) setCopiedView(false) }, 1800)
           }).catch(() => {})
         }
-      }, [active])
+      }, [active, showToast, t])
 
-      const copyResultUrl = useCallback(() => {
-        if (!result || !result.url) return
-        const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
-        if (clipboard && clipboard.writeText) {
-          clipboard.writeText(result.url).then(() => {
-            setCopiedUrl(true)
-            setTimeout(() => setCopiedUrl(false), 1800)
-          }).catch(() => {})
-        }
-      }, [result])
-
+      // ── Account Modal State ──────────────────────────────────────────────
       const [showAccountModal, setShowAccountModal] = useState(false)
       const [busyAccount, setBusyAccount] = useState(false)
-      const [accountConfirm, setAccountConfirm] = useState(null)
       const [scopesInfo, setScopesInfo] = useState(null)
 
       useEffect(() => {
-        if (showAccountModal) {
-          authFetch(`${API}/connect/scopes`)
-            .then((r) => r.json())
-            .then((data) => {
-              if (data && data.ok) setScopesInfo(data)
-            })
-            .catch(() => {})
-        }
+        if (!showAccountModal) return
+        authFetch(`${API}/connect/scopes`)
+          .then((r) => r.json())
+          .then((data) => { if (data && data.ok && alive.current) setScopesInfo(data) })
+          .catch(() => {})
       }, [showAccountModal])
+
+      const handleGrantAll = useCallback(async () => {
+        setSyncingAuth(true)
+        try {
+          const payload = await post('/connect/login/start', {})
+          if (payload.ok && payload.url) {
+            window.open(payload.url, '_blank', 'noopener')
+            const deadline = Date.now() + 60000
+            let pollCount = 0
+            while (Date.now() < deadline && alive.current) {
+              await new Promise((r) => setTimeout(r, pollCount < 4 ? 400 : 1200))
+              pollCount++
+              const sc = await authFetch(`${API}/connect/scopes`).then((r) => r.json()).catch(() => null)
+              if (sc && sc.ok && alive.current) {
+                setScopesInfo(sc)
+                if (Object.values(sc.domains || {}).every((d) => d.ready)) {
+                  refreshHealth()
+                  break
+                }
+              }
+              const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
+              if (st && st.ok) { refreshHealth(); break }
+            }
+          }
+        } catch {} finally {
+          if (alive.current) setSyncingAuth(false)
+        }
+      }, [post, refreshHealth])
 
       const handleLogout = useCallback(async () => {
         if (busyAccount) return
@@ -4190,15 +4876,12 @@ body:has(.lw) [class*="viewArea"] {
         try {
           await post('/connect/logout', {})
           setShowAccountModal(false)
-          setAccountConfirm(null)
-          if (stage === 'view') {
-            restart()
-          }
+          if (stage === 'view') restart()
           await refreshHealth()
         } catch (err) {
           setError(err instanceof Error ? err.message : String(err))
         } finally {
-          setBusyAccount(false)
+          if (alive.current) setBusyAccount(false)
         }
       }, [busyAccount, post, stage, restart, refreshHealth])
 
@@ -4208,15 +4891,12 @@ body:has(.lw) [class*="viewArea"] {
         try {
           await post('/connect/unbind', {})
           setShowAccountModal(false)
-          setAccountConfirm(null)
-          if (stage === 'view') {
-            restart()
-          }
+          if (stage === 'view') restart()
           await refreshHealth()
         } catch (err) {
           setError(err instanceof Error ? err.message : String(err))
         } finally {
-          setBusyAccount(false)
+          if (alive.current) setBusyAccount(false)
         }
       }, [busyAccount, post, stage, restart, refreshHealth])
 
@@ -4225,111 +4905,84 @@ body:has(.lw) [class*="viewArea"] {
         {
           type: 'button',
           className: 'lw-status',
-          role: 'button',
           onClick: () => setShowAccountModal(true),
-          title: '点击管理飞书连接、退出登录或换绑应用',
-          'aria-label': '飞书连接与账号设置',
+          title: t('status.manage'),
+          'aria-label': t('status.manage'),
         },
         h('span', { className: `lw-dot ${!health ? 'is-busy' : health.stage === 'unknown' ? 'is-bad' : connected ? 'is-ok' : ''}` }),
         h(
           'span',
-          null,
+          { className: isNarrow ? 'lw-hide-compact' : undefined },
           !health
-            ? t('gate.idle')
+            ? t('status.checking')
             : health.stage === 'unknown'
               ? t('status.offline')
               : connected
-                ? t('status.ready')
+                ? (health.auth && health.auth.userName ? health.auth.userName : t('status.ready'))
                 : t('status.setup'),
-          connected && health.auth && health.auth.userName ? ` · ${health.auth.userName}` : '',
         ),
-        h(Icon, { name: 'chevronDown', size: 10, style: { marginLeft: 2, opacity: 0.65 } }),
       )
 
-      const isSubView = connected && busy !== 'plan' && (stage === 'preview' || stage === 'done' || stage === 'view')
-
-      const header = isSubView
-        ? h(
-            'div',
-            { className: 'lw-topbar' },
-            h(
-              'button',
-              { type: 'button', className: 'lw-back', disabled: Boolean(busy), onClick: restart },
-              h(Icon, { name: 'arrowLeft', size: 15 }),
-              stage === 'view' ? t('view.back') : t('preview.back'),
-            ),
-            statusBadge,
-          )
-        : h(
-            'header',
-            { className: 'lw-head' },
-            h(
-              'div',
-              { className: 'lw-head-main' },
-              h('span', { className: 'lw-mark' }, h(Mark, { size: 15 })),
-              h(
-                'div',
-                { className: 'lw-head-copy' },
-                h('span', { className: 'lw-name' }, t('app.name')),
-              ),
-            ),
-            statusBadge,
-          )
+      // ── Screen Rendering ─────────────────────────────────────────────────
 
       let content = null
+
       if (!health) {
         content = h(
           'section',
-          { className: 'lw-card' },
+          { className: 'lw-planning' },
           h(TableSkeleton),
-          h(Button, { variant: 'ghost', size: 'sm', onClick: refreshHealth }, t('status.recheck')),
         )
       } else if (health.stage === 'unknown') {
         content = h(
           'section',
-          { className: 'lw-card' },
+          { className: 'lw-card lw-stage-in' },
           h('div', { className: 'lw-sect' }, h('h2', { className: 'lw-h' }, t('status.offline')), h('p', { className: 'lw-p' }, t('gate.retryBody'))),
-          h('div', { className: 'lw-actions' }, h(Button, { variant: 'primary', onClick: refreshHealth }, t('status.recheck'))),
+          h('div', { className: 'lw-actions' }, h(Button, { variant: 'primary', size: 'sm', onClick: refreshHealth }, t('status.recheck'))),
         )
       } else if (!connected) {
-        content = h(ConnectGate, { health, t, onRecheck: refreshHealth })
+        content = h(ConnectGate, { health, t, onRecheck: refreshHealth, onToast: showToast })
       } else if (stage === 'pick') {
         const planning = busy === 'plan'
+        const primaryScenes = SCENARIOS.filter((s) => s.primary)
+        const extraScenes = SCENARIOS.filter((s) => !s.primary)
+
+        const runScenario = (scenario) => {
+          if (scenario.type === 'collab') {
+            openCollab('')
+            setTimeout(() => { applyAdjust(scenario.prompt, { collab: true }) }, 0)
+          } else {
+            setSentence(scenario.prompt)
+            planFor(scenario.prompt)
+          }
+        }
+
         content = h(
           'section',
-          { className: 'lw-pick' },
-          h(
-            'div',
-            { className: 'lw-hero' },
-            h('h1', { className: 'lw-hero-title' }, t('pick.title')),
-          ),
-          h(
-            'div',
-            { className: 'lw-own' },
-            h(UnifiedComposer, {
-              value: sentence,
-              onChange: (val) => {
-                setSentence(val)
-                setError(null)
-              },
-              onSubmit: () => {
-                if (sentence.trim().length >= 2) planFor(sentence)
-              },
-              placeholder: t('pick.placeholder'),
-              busy: planning,
-              busyText: t('busy.planning'),
-              buttonText: '生成预览',
-              disabled: !toolOk || sentence.trim().length < 2,
-              models,
-              selectedModel,
-              modelKey,
-              changeModel,
-              trustText: t('pick.trust'),
-              minHeight: 76,
-              id: 'lw-own',
-              ariaLabel: t('pick.own'),
-            }),
-          ),
+          { className: 'lw-pick lw-stage-in' },
+          h('h1', { className: 'lw-hero-title' }, t('pick.title')),
+          h(UnifiedComposer, {
+            value: sentence,
+            onChange: (val) => {
+              setSentence(val)
+              if (error) setError(null)
+            },
+            onSubmit: () => {
+              if (sentence.trim().length >= 2) planFor(sentence)
+            },
+            onStop: planning ? stopActiveRequest : null,
+            placeholder: t('pick.placeholder'),
+            busy: planning,
+            disabled: !toolOk || sentence.trim().length < 2,
+            models,
+            selectedModel,
+            modelKey,
+            changeModel,
+            minHeight: 62,
+            id: 'lw-own',
+            ariaLabel: t('pick.own'),
+            t,
+          }),
           error
             ? h(Banner, {
                 tone: 'error',
@@ -4339,462 +4992,288 @@ body:has(.lw) [class*="viewArea"] {
               })
             : null,
           planning
-            ? null
-            : h(
-                'div',
-                { className: 'lw-scenes', role: 'group', 'aria-label': t('pick.subtitle') },
-                SCENARIOS.map((scenario) =>
-                  h(
-                    'button',
-                    {
-                      key: scenario.id,
-                      type: 'button',
-                      className: 'lw-chip',
-                      title: scenario.desc,
-                      disabled: Boolean(busy) || !toolOk,
-                      onClick: () => {
-                        if (scenario.type === 'collab') {
-                          openCollab(scenario.prompt)
-                          applyAdjust(scenario.prompt)
-                        } else {
-                          setSentence(scenario.prompt)
-                          planFor(scenario.prompt)
-                        }
-                      },
-                    },
-                    h(Icon, { name: scenario.icon, size: 13, className: 'lw-chip-ico' }),
-                    h('span', null, scenario.title),
-                  ),
-                ),
-              ),
-          planning
             ? h(
                 'div',
                 { className: 'lw-planning', 'aria-live': 'polite' },
-                h('p', { className: 'lw-meta' }, t('busy.planningSub')),
+                h('span', { className: 'lw-meta' }, t('busy.planningSub')),
                 h(TableSkeleton),
               )
-            : h(Recent, {
-                items: recent,
-                t,
-                onOpen: openRecent,
-                onForget: forgetRecent,
-                disabled: Boolean(busy) || !toolOk,
-              }),
+            : h(
+                'div',
+                { className: 'lw-scenes-wrap' },
+                h(
+                  'div',
+                  { className: 'lw-scenes', role: 'group', 'aria-label': t('pick.own') },
+                  primaryScenes.map((scenario) =>
+                    h(
+                      'button',
+                      {
+                        key: scenario.id,
+                        type: 'button',
+                        className: 'lw-chip',
+                        disabled: Boolean(busy) || !toolOk,
+                        onClick: () => runScenario(scenario),
+                      },
+                      h(Icon, { name: scenario.icon, size: 13, className: 'lw-chip-ico' }),
+                      h('span', null, t(scenario.titleKey)),
+                    ),
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lw-chip is-muted',
+                      'aria-expanded': showMoreScenes,
+                      onClick: () => setShowMoreScenes((v) => !v),
+                    },
+                    h(Icon, { name: showMoreScenes ? 'chevronDown' : 'moreHorizontal', size: 13 }),
+                    h('span', null, showMoreScenes ? t('pick.less') : t('pick.more')),
+                  ),
+                ),
+                h(
+                  AnimatedCollapse,
+                  { open: showMoreScenes },
+                  h(
+                    'div',
+                    { className: 'lw-scenes', style: { paddingTop: 2 } },
+                    extraScenes.map((scenario) =>
+                      h(
+                        'button',
+                        {
+                          key: scenario.id,
+                          type: 'button',
+                          className: 'lw-chip',
+                          disabled: Boolean(busy) || !toolOk,
+                          onClick: () => runScenario(scenario),
+                        },
+                        h(Icon, { name: scenario.icon, size: 13, className: 'lw-chip-ico' }),
+                        h('span', null, t(scenario.titleKey)),
+                      ),
+                    ),
+                  ),
+                ),
+                h(Recent, {
+                  items: recent,
+                  t,
+                  onOpen: openRecent,
+                  onForget: forgetRecent,
+                  disabled: Boolean(busy) || !toolOk,
+                }),
+              ),
         )
       } else if (stage === 'preview' && plan) {
         const primaryTable = plan.tables[0]
-        const totalCols = plan.tables.reduce((sum, tbl) => sum + tbl.fields.length, 0)
+        const totalCols = plan.tables.reduce((sum, tbl) => sum + (tbl.fields || []).length, 0)
         const totalRows = primaryTable ? (primaryTable.records ?? []).length : 0
         const hasKanban = plan.tables.some((tbl) => Boolean(tbl.kanbanField))
-
-        const previewCard = h(
-          'section',
-          { className: 'lw-card', style: { width: '100%', maxWidth: 1040, margin: '0 auto' } },
-          h(
-            'div',
-            { className: 'lw-preview-head' },
-            h(
-              'div',
-              { style: { minWidth: 0, flex: 1 } },
-              h('h2', { className: 'lw-preview-title' }, plan.baseName || t('preview.title')),
-              plan.intro ? h('p', { className: 'lw-p', style: { marginTop: 4 } }, plan.intro) : null,
-              h(
-                'div',
-                { className: 'lw-preview-meta' },
-                h('span', null, `${totalCols} ${t('preview.cols')}`),
-                totalRows > 0 ? h('span', { className: 'lw-preview-sep' }, '·') : null,
-                totalRows > 0 ? h('span', null, `${totalRows} ${t('preview.rows')}`) : null,
-                hasKanban ? h('span', { className: 'lw-preview-sep' }, '·') : null,
-                hasKanban ? h('span', null, t('preview.kanban')) : null,
-              ),
-            ),
-            h(
-              Button,
-              { variant: 'primary', disabled: Boolean(busy) || !toolOk, onClick: build },
-              busy === 'build' ? t('busy.building') : busy === 'plan' ? t('busy.planning') : t('preview.build'),
-            ),
-          ),
-          busy === 'build' || busy === 'plan'
-            ? h(TableSkeleton)
-            : plan.tables.map((table) =>
-                h(
-                  'div',
-                  { key: table.name, style: { display: 'flex', flexDirection: 'column', gap: 10 } },
-                  plan.tables.length > 1 ? h('div', { className: 'lw-meta' }, table.name) : null,
-                  h(PreviewTable, { table, t }),
-                ),
-              ),
-          h(
-            'button',
-            {
-              type: 'button',
-              className: 'lw-details-toggle',
-              'aria-expanded': showDetails,
-              onClick: () => setShowDetails((value) => !value),
-            },
-            h(Icon, { name: 'chevron', size: 13, className: `lw-details-chevron${showDetails ? ' is-open' : ''}` }),
-            showDetails ? t('preview.detailsHide') : `${t('preview.detailsShow')} (${totalCols})`,
-          ),
-          showDetails
-            ? plan.tables.map((table) => h(Legend, { key: `legend-${table.name}`, table }))
-            : null,
-        )
-
-        const tweakDock = h(
-          'div',
-          { className: 'lw-ws-dock' },
-          h(
-            'div',
-            { className: 'lw-composer-wrap', style: { maxWidth: 1040 } },
-            h(
-              'div',
-              { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 4 } },
-              h('span', { style: { fontSize: 12, color: 'var(--lw-ink-3)', marginRight: 2 } }, '快捷调整:'),
-              [
-                { label: '+ 加一列状态', prompt: '增加一列「状态」，单选：待处理/进行中/已完成' },
-                { label: '+ 加一列负责人', prompt: '增加一列「负责人」，关联团队成员' },
-                { label: '+ 增加优先级', prompt: '增加一列「优先级」，单选：高/中/低' },
-                { label: '生成看板视图', prompt: '针对当前表生成一个按状态分组的看板视图' },
-                { label: '补充示例数据', prompt: '再帮我补充 3 条真实的业务示例记录' },
-              ].map((item, idx) =>
-                h(
-                  'button',
-                  {
-                    key: idx,
-                    type: 'button',
-                    className: 'lw-chip',
-                    style: { padding: '4px 10px', fontSize: 12, height: 'auto' },
-                    disabled: Boolean(busy),
-                    onClick: () => {
-                      setTweakText(item.prompt)
-                      refine(item.prompt)
-                    },
-                  },
-                  item.label,
-                ),
-              ),
-            ),
-            h(UnifiedComposer, {
-              value: tweakText,
-              onChange: (val) => setTweakText(val),
-              onSubmit: () => {
-                if (tweakText.trim()) refine(tweakText)
-              },
-              placeholder: t('preview.tweakPlaceholder') || '想微调？比如：再加一列「来源」，或去掉「预计金额」',
-              busy: busy === 'plan',
-              busyText: '调整中…',
-              buttonText: '调整方案',
-              disabled: !tweakText.trim(),
-              models,
-              selectedModel,
-              modelKey,
-              changeModel,
-              trustText: '直连你的飞书账号，安全隐私仅自己可见',
-              minHeight: 52,
-              id: 'lw-tweak',
-              ariaLabel: '微调方案',
-            }),
-          ),
-        )
+        const isRefining = busy === 'refine' || busy === 'plan'
+        const isBuilding = busy === 'build'
+        const changedSet = changedFields.length > 0 ? new Set(changedFields) : null
 
         content = h(
           'div',
-          { className: 'lw-workspace' },
+          { className: 'lw-workspace lw-stage-in' },
           h(
-            'div',
+            'header',
             { className: 'lw-ws-header' },
             h(
               'div',
               { className: 'lw-ws-header-left' },
               h(
                 'button',
-                { type: 'button', className: 'lw-back', disabled: Boolean(busy), onClick: restart, title: t('preview.back') },
+                { type: 'button', className: 'lw-back', disabled: Boolean(busy), onClick: restart },
                 h(Icon, { name: 'arrowLeft', size: 14 }),
                 h('span', null, t('preview.back')),
               ),
               h('div', { className: 'lw-ws-sep' }),
-              h('span', { className: 'lw-ws-title' }, plan.baseName || '多维表格方案预览'),
-              statusBadge,
+              h('span', { className: 'lw-ws-title' }, plan.baseName || t('preview.title')),
             ),
             h(
               'div',
               { className: 'lw-ws-header-right' },
               h(
                 Button,
-                { variant: 'primary', size: 'sm', disabled: Boolean(busy) || !toolOk, onClick: build },
-                busy === 'build' ? t('busy.building') : busy === 'plan' ? t('busy.planning') : t('preview.build'),
+                {
+                  variant: 'primary',
+                  size: 'sm',
+                  className: nudgeBuild ? 'is-nudge' : '',
+                  disabled: Boolean(busy) || !toolOk,
+                  onClick: build,
+                },
+                isBuilding || isRefining ? h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }) : null,
+                isBuilding ? t('busy.building') : isRefining ? t('busy.refining') : t('preview.build'),
               ),
             ),
           ),
           h(
             'div',
             { className: 'lw-preview-scroll' },
-            error
-              ? h(Banner, {
-                  tone: 'error',
-                  title: t('error.title'),
-                  children: humanize(error),
-                  style: { maxWidth: 1040, width: '100%', marginBottom: 12 },
-                  action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (sentence ? planFor(sentence) : restart()) }, t('error.retry')),
-                })
-              : null,
-            previewCard,
-          ),
-          tweakDock,
-        )
-      } else if (stage === 'done' && result) {
-        const steps = [t('done.step1'), t('done.step2'), t('done.step3'), t('done.step4')]
-        content = h(
-          'section',
-          { className: 'lw-card' },
-          h(
-            'div',
-            { className: 'lw-done-head' },
-            h('span', { className: 'lw-check', 'aria-hidden': true }, h(Icon, { name: 'tick', size: 22, strokeWidth: 2.1 })),
             h(
               'div',
-              { className: 'lw-done-copy' },
-              h('div', { className: 'lw-done-eyebrow' }, t('done.title')),
-              h('h2', { className: 'lw-done-title' }, result.baseName),
-              result.url
-                ? h(
-                    'a',
-                    {
-                      className: 'lw-url',
-                      href: result.url,
-                      target: '_blank',
-                      rel: 'noreferrer',
-                      onClick: (event) => {
-                        event.preventDefault()
-                        continueAdjusting()
-                      },
-                    },
-                    result.url,
-                  )
-                : null,
-            ),
-          ),
-          h(
-            'div',
-            { className: 'lw-actions' },
-            h(
-              Button,
-              { variant: 'primary', onClick: continueAdjusting, disabled: !result.token && !result.url },
-              '进入分屏工作台查看真表',
-            ),
-            result.url
-              ? h(
-                  Button,
-                  { variant: 'ghost', onClick: () => window.open(result.url, '_blank', 'noopener') },
-                  '外部浏览器打开',
-                  h(Icon, { name: 'arrowUpRight', size: 14 }),
-                )
-              : null,
-            result.url
-              ? h(Button, { variant: 'ghost', onClick: copyResultUrl }, copiedUrl ? t('done.copied') : t('done.copy'))
-              : null,
-            h(Button, { variant: 'ghost', onClick: restart }, t('done.again')),
-          ),
-          realError
-            ? h(Banner, {
-                tone: 'error',
-                title: t('view.openFailed'),
-                children: humanize(realError),
-                action: result.url
-                  ? h(
+              { className: 'lw-preview-inner' },
+              error
+                ? h(Banner, {
+                    tone: 'error',
+                    title: t('error.title'),
+                    children: humanize(error),
+                    action: h(
                       Button,
-                      { variant: 'ghost', size: 'sm', onClick: () => window.open(result.url, '_blank', 'noopener') },
-                      t('view.openExternal'),
-                    )
-                  : null,
-              })
-            : null,
-          (result.warnings ?? []).length > 0
-            ? h(Banner, {
-                tone: 'warn',
-                title: t('done.warnings'),
-                children: h('ul', { style: { margin: 0, paddingLeft: 16 } }, result.warnings.map((warning, index) => h('li', { key: index }, warning))),
-              })
-            : null,
-          h(
-            'div',
-            { className: 'lw-next' },
-            h('div', { className: 'lw-next-title' }, t('done.next')),
-            h(
-              'div',
-              { className: 'lw-next-grid' },
-              steps.map((stepText, index) =>
+                      {
+                        variant: 'ghost',
+                        size: 'sm',
+                        onClick: () => {
+                          const retryText = tweakText.trim() || lastRefinePromptRef.current
+                          if (retryText) refine(retryText)
+                          else setError(null)
+                        },
+                      },
+                      t('error.retry'),
+                    ),
+                  })
+                : null,
+              h(
+                'div',
+                { className: 'lw-preview-head' },
+                h('h2', { className: 'lw-preview-title' }, plan.baseName || t('preview.title')),
+                plan.intro ? h('p', { className: 'lw-p' }, plan.intro) : null,
                 h(
                   'div',
-                  { className: 'lw-next-card', key: index },
-                  h('span', { className: 'lw-next-num' }, String(index + 1)),
-                  h('span', null, stepText),
+                  { className: 'lw-preview-meta' },
+                  h('span', null, t('preview.draft')),
+                  h('span', { className: 'lw-preview-sep' }, '·'),
+                  h('span', null, `${totalCols} ${t('preview.cols')}`),
+                  totalRows > 0 ? h('span', { className: 'lw-preview-sep' }, '·') : null,
+                  totalRows > 0 ? h('span', null, `${totalRows} ${t('preview.rows')}`) : null,
+                  hasKanban ? h('span', { className: 'lw-preview-sep' }, '·') : null,
+                  hasKanban ? h('span', null, t('preview.kanban')) : null,
+                ),
+              ),
+              plan.tables.map((table) =>
+                h(
+                  'div',
+                  { key: table.name, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+                  plan.tables.length > 1 ? h('div', { className: 'lw-meta' }, table.name) : null,
+                  h(PreviewTable, { table, t, refining: isRefining || isBuilding, changedSet }),
+                ),
+              ),
+              h(
+                'div',
+                null,
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lw-details-toggle',
+                    'aria-expanded': showDetails,
+                    onClick: () => setShowDetails((v) => !v),
+                  },
+                  h(Icon, { name: 'chevronRight', size: 12, className: `lw-details-chevron${showDetails ? ' is-open' : ''}` }),
+                  showDetails ? t('preview.detailsHide') : `${t('preview.detailsShow')} (${totalCols})`,
+                ),
+                h(
+                  AnimatedCollapse,
+                  { open: showDetails },
+                  plan.tables.map((table) => h(Legend, { key: `legend-${table.name}`, table, t })),
                 ),
               ),
             ),
-            h('p', { className: 'lw-meta' }, t('done.adjustHint')),
+          ),
+          h(
+            'div',
+            { className: 'lw-ws-dock' },
+            h(
+              'div',
+              { className: 'lw-composer-wrap', style: { maxWidth: 900 } },
+              h(
+                'div',
+                { className: 'lw-scenes' },
+                (() => {
+                  const existingNames = (primaryTable?.fields || []).map((f) => String(f.name || ''))
+                  const hasField = (re) => existingNames.some((n) => re.test(n))
+                  const candidates = [
+                    !hasField(/负责人|跟进人|经办人|owner|assignee/i)
+                      ? { label: t('preview.chipOwner'), prompt: '增加一列「负责人」，关联团队成员' }
+                      : null,
+                    !hasField(/优先级|紧急|重要|priority/i)
+                      ? { label: t('preview.chipPriority'), prompt: '增加一列「优先级」，单选：高/中/低' }
+                      : null,
+                    !hasField(/备注|说明|notes?|remark/i)
+                      ? { label: t('preview.chipNotes'), prompt: '增加一列「备注」，文本类型' }
+                      : null,
+                    { label: t('preview.chipSamples'), prompt: '再帮我补充 3 条真实的业务示例记录' },
+                  ].filter(Boolean).slice(0, 3)
+                  return candidates.map((item) =>
+                    h(
+                      'button',
+                      {
+                        key: item.label,
+                        type: 'button',
+                        className: 'lw-chip',
+                        disabled: Boolean(busy),
+                        onClick: () => refine(item.prompt),
+                      },
+                      item.label,
+                    ),
+                  )
+                })(),
+              ),
+              h(UnifiedComposer, {
+                value: tweakText,
+                onChange: setTweakText,
+                onSubmit: () => { if (tweakText.trim()) refine(tweakText) },
+                onStop: isRefining ? stopActiveRequest : null,
+                placeholder: t('preview.tweakPlaceholder'),
+                busy: isRefining,
+                disabled: !tweakText.trim(),
+                models,
+                selectedModel,
+                modelKey,
+                changeModel,
+                minHeight: 46,
+                id: 'lw-tweak',
+                ariaLabel: t('preview.tweakPlaceholder'),
+                t,
+              }),
+            ),
           ),
         )
       } else if (stage === 'view' && active) {
         const isTableMode = Boolean(active && active.type !== 'collab' && active.url)
-        const fields = live && live.ok ? live.fields : []
-        const rows = live && live.ok ? live.rows : []
-        const stats = live && live.ok
+        const showSplit = isTableMode && !isCompact && tableOpen
+        const showChatPane = !isTableMode || !isCompact || compactPane === 'chat'
+        const showWebviewPane = isTableMode && (isCompact ? compactPane === 'table' : tableOpen)
+
+        const starters = isTableMode
           ? [
-              `${fields.length} ${t('preview.cols')}`,
-              rows.length > 0 ? `${rows.length} ${t('view.rows')}` : null,
-            ].filter(Boolean).join(' · ')
-          : ''
+              { icon: 'chart', label: t('starter.analyze'), prompt: '帮我对当前表格数据进行统计分析，提取关键洞察与数据分布' },
+              { icon: 'layout', label: t('starter.kanban'), prompt: '为当前表创建一个按状态分组的看板视图' },
+              { icon: 'table', label: t('starter.form'), prompt: '针对当前表格搭建一个数据收集表单，方便录入数据' },
+              { icon: 'checkSquare', label: t('starter.batch'), prompt: '帮我检查当前表格数据，列出缺失字段或需要补齐的记录' },
+            ]
+          : [
+              { icon: 'calendar', label: t('starter.calendar'), prompt: '查一下我今天的日程安排与会议' },
+              { icon: 'checkSquare', label: t('starter.todo'), prompt: '列出我所有未完成的待办事项' },
+              { icon: 'people', label: t('starter.chat'), prompt: '搜索我加入的飞书群聊' },
+              { icon: 'mail', label: t('starter.mail'), prompt: '查一下我最近收到的重要邮件' },
+            ]
 
-        const HERO_RECOMMENDATIONS = [
-          {
-            icon: 'chart',
-            color: '#ff7d00',
-            label: '数据分析',
-            prompt: '帮我对当前表格数据进行统计分析，提取关键洞察与数据分布',
-          },
-          {
-            icon: 'table',
-            color: '#722ed1',
-            label: '数据表搭建',
-            prompt: '帮我规划并新建一张业务数据表，包含常用的基础字段',
-          },
-          {
-            icon: 'form',
-            color: '#f53f3f',
-            label: '收集表搭建',
-            prompt: '针对当前表格搭建一个数据收集表单，方便录入数据',
-          },
-          {
-            icon: 'dashboard',
-            color: '#165dff',
-            label: '仪表盘搭建',
-            prompt: '为当前数据表创建一个仪表盘与统计图表，直观展示关键指标',
-          },
-          {
-            icon: 'layout',
-            color: '#00b42a',
-            label: '视图页面搭建',
-            prompt: '为当前表创建一个看板视图或画册视图，方便团队协作与进度跟踪',
-          },
-          {
-            icon: 'shieldCheck',
-            color: '#0fc6c2',
-            label: '高级权限配置',
-            prompt: '开启高级权限并配置不同成员角色的行级与列级访问权限',
-          },
-          {
-            icon: 'zap',
-            color: '#f7ba1e',
-            label: '批量数据处理',
-            prompt: '帮我批量检查并更新数据记录（如批量更新状态或补齐空缺字段）',
-          },
-          {
-            icon: 'helpCircle',
-            color: '#86909c',
-            label: '教程问答',
-            prompt: '多维表格有哪些常用公式和高阶功能？',
-          },
-        ]
-
-        const COLLAB_HERO_RECOMMENDATIONS = [
-          {
-            icon: 'calendar',
-            color: '#165dff',
-            label: '今日日程',
-            prompt: '查一下我今天的日程安排与会议',
-          },
-          {
-            icon: 'check',
-            color: '#00b42a',
-            label: '我的待办',
-            prompt: '列出我所有未完成的待办事项',
-          },
-          {
-            icon: 'people',
-            color: '#722ed1',
-            label: '搜索群聊',
-            prompt: '搜索我加入的可见群聊列表',
-          },
-          {
-            icon: 'receipt',
-            color: '#ff7d00',
-            label: '邮件速览',
-            prompt: '查一下我最近收到的重要邮件',
-          },
-          {
-            icon: 'user',
-            color: '#0fc6c2',
-            label: '查通讯录',
-            prompt: '按名字查同事信息或联系方式',
-          },
-          {
-            icon: 'table',
-            color: '#2b5aed',
-            label: '新建多维表格',
-            prompt: '我想新建一张项目任务跟踪的多维表格',
-          },
-          {
-            icon: 'book',
-            color: '#f53f3f',
-            label: '查知识库',
-            prompt: '在团队知识库中搜索最新规范',
-          },
-          {
-            icon: 'helpCircle',
-            color: '#86909c',
-            label: '协同答疑',
-            prompt: '飞书支持哪些自动化流程与日程联动？',
-          },
-        ]
-
-        const handleUsePrompt = (promptText) => {
-          setAdjustText(promptText)
-        }
-
-        const heroCard = h(
+        const emptyState = h(
           'div',
-          { className: 'lw-hero-card' },
+          { className: 'lw-empty-stage' },
+          h('div', { className: 'lw-empty-mark' }, h(Icon, { name: isTableMode ? 'table' : 'spark', size: 17 })),
+          h('p', { className: 'lw-empty-copy' }, isTableMode ? t('view.emptyTable') : t('view.emptyCollab')),
           h(
             'div',
-            { className: 'lw-hero-head', style: { justifyContent: 'space-between', alignItems: 'center', gap: 6 } },
-            h(
-              'div',
-              { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' } },
-              h(
-                'div',
-                { className: 'lw-hero-avatar', style: { flex: 'none' } },
-                h(Icon, { name: 'larkAi', size: 20 }),
-              ),
-              h(
-                'div',
-                { className: 'lw-hero-title-wrap', style: { minWidth: 0 } },
-                h('div', { className: 'lw-hero-title', style: { whiteSpace: 'nowrap' } }, isTableMode ? '飞书表格 AI 助手' : '飞书全能协同助手'),
-                h('div', { className: 'lw-hero-subtitle', style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, isTableMode ? `已连接「${active.name}」` : '已连接飞书全域协同服务'),
-              ),
-            ),
-          ),
-          h(
-            'div',
-            { className: 'lw-hero-body', style: { fontSize: 12.5, lineHeight: 1.5 } },
-            isTableMode
-              ? '支持完整多轮对话记忆与追问。你可以直接输入修改指令（如加列、改选项、建看板），也可以随时提问（如「刚刚加了什么记录」）。'
-              : '随时通过对话查询日程、管理待办、搜索群聊、起草邮件或查通讯录。如需建表或改表，输入一句话即可自动切换至表格模式。',
-          ),
-          h('div', { className: 'lw-hero-hints-title' }, '为你推荐'),
-          h(
-            'div',
-            { className: 'lw-hero-hints' },
-            (isTableMode ? HERO_RECOMMENDATIONS : COLLAB_HERO_RECOMMENDATIONS).map((item, idx) =>
+            { className: 'lw-empty-chips' },
+            starters.map((item, idx) =>
               h(
                 'button',
                 {
                   key: idx,
                   type: 'button',
                   className: 'lw-chip',
-                  onClick: () => handleUsePrompt(item.prompt),
-                  title: `填入指令：${item.prompt}`,
+                  disabled: Boolean(busy),
+                  onClick: () => applyAdjust(item.prompt),
                 },
                 h(Icon, { name: item.icon, size: 13, className: 'lw-chip-ico' }),
                 h('span', null, item.label),
@@ -4805,39 +5284,26 @@ body:has(.lw) [class*="viewArea"] {
 
         const chatFeed = h(
           'div',
-          { ref: chatStreamRef, className: 'lw-chat-stream', style: { flex: 1, padding: '14px 14px', overflowY: 'auto' } },
-          heroCard,
+          { ref: chatStreamRef, className: 'lw-chat-stream' },
+          history.length === 0 && busy !== 'adjust' ? emptyState : null,
           history.map((msg, idx) => {
             if (msg.missingScope) {
               return h(
                 'div',
-                {
-                  key: idx,
-                  className: 'lw-msg lw-msg-ai',
-                  style: { marginBottom: 12 },
-                },
-                h('div', { className: 'lw-msg-role' }, selectedModel?.name || '飞书助手'),
+                { key: idx, className: 'lw-msg lw-msg-ai' },
                 h(
                   'div',
-                  {
-                    style: {
-                      padding: '12px 14px',
-                      background: 'color-mix(in srgb, var(--lw-accent) 8%, var(--lw-surface))',
-                      border: '1px solid color-mix(in srgb, var(--lw-accent) 25%, transparent)',
-                      borderRadius: 12,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                    },
-                  },
-                  h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: 'var(--lw-ink)' } }, [
-                    h(Icon, { name: 'shieldCheck', size: 16, style: { color: 'var(--lw-accent)' } }),
-                    `需要开通「${msg.domainTitle || '飞书功能'}」访问权限`,
-                  ]),
-                  h('div', { style: { fontSize: 12, color: 'var(--lw-ink-2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' } }, msg.text),
+                  { className: 'lw-scope-card' },
                   h(
                     'div',
-                    { style: { display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' } },
+                    { className: 'lw-scope-head' },
+                    h(Icon, { name: 'shieldCheck', size: 15, style: { color: 'var(--lw-accent)' } }),
+                    t('view.scopeNeed').replace('%s', msg.domainTitle || ''),
+                  ),
+                  msg.text ? h('div', { className: 'lw-meta', style: { whiteSpace: 'pre-wrap' } }, msg.text) : null,
+                  h(
+                    'div',
+                    { className: 'lw-actions' },
                     h(
                       Button,
                       {
@@ -4864,9 +5330,7 @@ body:has(.lw) [class*="viewArea"] {
                                 if (st && st.ok) {
                                   setSyncingAuth(false)
                                   const lastUser = [...history.slice(0, idx)].reverse().find((m) => m && m.role === 'user')
-                                  if (lastUser && lastUser.text) {
-                                    applyAdjust(lastUser.text, { retryIndex: idx })
-                                  }
+                                  if (lastUser && lastUser.text) applyAdjust(lastUser.text, { retryIndex: idx })
                                   return
                                 }
                               }
@@ -4876,7 +5340,8 @@ body:has(.lw) [class*="viewArea"] {
                           }
                         },
                       },
-                      syncingAuth ? '正在等待飞书授权确认…' : `立即授权「${msg.domainTitle || '此功能'}」并查询 ↗`,
+                      syncingAuth ? h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }) : null,
+                      syncingAuth ? t('view.scopeWaiting') : t('view.scopeAuth'),
                     ),
                     h(
                       Button,
@@ -4890,7 +5355,7 @@ body:has(.lw) [class*="viewArea"] {
                           if (lastUser && lastUser.text) applyAdjust(lastUser.text, { retryIndex: idx })
                         },
                       },
-                      '重试',
+                      t('view.retry'),
                     ),
                     msg.consoleUrl
                       ? h(
@@ -4898,77 +5363,55 @@ body:has(.lw) [class*="viewArea"] {
                           {
                             href: msg.consoleUrl,
                             target: '_blank',
-                            rel: 'noopener',
-                            style: { fontSize: 11, color: 'var(--lw-ink-3)', marginLeft: 4, textDecoration: 'none' },
+                            rel: 'noopener noreferrer',
+                            className: 'lw-md-link',
+                            style: { fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 'auto' },
                           },
-                          '应用管理配置 ↗',
+                          t('view.scopeConsole'),
+                          h(Icon, { name: 'arrowUpRight', size: 11 }),
                         )
                       : null,
                   ),
                 ),
               )
             }
+
             if (msg.role === 'user') {
               return h(
                 'div',
-                {
-                  key: idx,
-                  className: 'lw-msg lw-msg-user',
-                  style: { marginBottom: 12 },
-                },
-                h('div', { className: 'lw-msg-role' }, '你'),
-                h('div', { className: 'lw-msg-text', style: { whiteSpace: 'pre-wrap', lineHeight: 1.5 } }, msg.text),
+                { key: idx, className: 'lw-msg lw-msg-user' },
+                h('div', { className: 'lw-msg-text' }, msg.text),
               )
             }
+
+            const prevUser = msg.error
+              ? [...history.slice(0, idx)].reverse().find((m) => m && m.role === 'user')
+              : null
+
             return h(AssistantBubble, {
               key: idx,
               msg,
-              modelName: selectedModel?.name || 'AI',
+              t,
+              onRetry: prevUser ? () => applyAdjust(prevUser.text, { retryIndex: idx }) : null,
             })
           }),
           busy === 'adjust'
             ? h(
                 'div',
-                { className: 'lw-msg lw-msg-ai is-busy' },
-                h('div', { className: 'lw-msg-role' }, selectedModel?.name || 'AI'),
+                { className: 'lw-msg lw-msg-ai' },
                 h(
                   'div',
-                  { className: 'lw-msg-text lw-thinking-pill-busy' },
-                  [
-                    h(
-                      'div',
-                      { className: 'lw-thinking-header' },
-                      [
-                        h(
-                          'svg',
-                          {
-                            className: 'lw-thinking-spin',
-                            width: 14,
-                            height: 14,
-                            viewBox: '0 0 24 24',
-                            fill: 'none',
-                            stroke: 'currentColor',
-                            strokeWidth: 2,
-                            strokeLinecap: 'round',
-                            strokeLinejoin: 'round',
-                            style: { color: 'var(--lw-accent)' },
-                          },
-                          [
-                            h('path', { d: 'M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z' }),
-                            h('path', { d: 'M9 21h6' }),
-                          ],
-                        ),
-                        h('span', { className: 'lw-thinking-shimmer' }, '正在深度思考…'),
-                      ],
-                    ),
-                    liveReasoning
-                      ? h('div', { className: 'lw-thinking-live-body' }, liveReasoning)
-                      : null,
-                  ],
+                  { className: 'lw-thinking-live', role: 'status', 'aria-live': 'polite' },
+                  h(
+                    'div',
+                    { className: 'lw-thinking-head' },
+                    h('span', { className: 'lw-dot is-busy' }),
+                    h('span', { className: 'lw-thinking-label' }, t('busy.thinking')),
+                  ),
+                  liveReasoning ? h('div', { className: 'lw-thinking-content' }, liveReasoning) : null,
                 ),
               )
             : null,
-          h('div', { ref: chatEndRef }),
         )
 
         const adjustBlock = h(
@@ -4978,8 +5421,13 @@ body:has(.lw) [class*="viewArea"] {
             ? h(
                 'div',
                 { className: 'lw-confirm-card', role: 'alertdialog', 'aria-label': t('view.confirmTitle') },
-                h('div', { className: 'lw-confirm-title' }, t('view.confirmTitle')),
-                h('div', { className: 'lw-confirm-body' }, t('view.confirmBody')),
+                h(
+                  'div',
+                  { className: 'lw-confirm-head' },
+                  h(Icon, { name: 'alertCircle', size: 15, style: { color: 'var(--lw-danger)' } }),
+                  t('view.confirmTitle'),
+                ),
+                h('div', { className: 'lw-meta' }, t('view.confirmBody')),
                 h(
                   'ul',
                   { className: 'lw-confirm-list' },
@@ -4987,48 +5435,41 @@ body:has(.lw) [class*="viewArea"] {
                 ),
                 h(
                   'div',
-                  { className: 'lw-actions' },
-                  h(Button, { variant: 'danger', disabled: Boolean(busy), onClick: confirmApply }, t('view.confirmYes')),
-                  h(Button, { variant: 'ghost', disabled: Boolean(busy), onClick: () => setConfirmPlan(null) }, t('view.confirmNo')),
+                  { className: 'lw-actions', style: { justifyContent: 'flex-end' } },
+                  h(Button, { size: 'sm', variant: 'ghost', disabled: Boolean(busy), onClick: () => setConfirmPlan(null) }, t('view.confirmNo')),
+                  h(Button, { size: 'sm', variant: 'danger', disabled: Boolean(busy), onClick: confirmApply }, t('view.confirmYes')),
                 ),
               )
             : h(
                 'div',
                 { className: 'lw-composer-wrap' },
+                adjustError ? h(Banner, { tone: 'error', title: t('error.title'), children: humanize(adjustError) }) : null,
                 h(UnifiedComposer, {
                   value: adjustText,
-                  onChange: (val) => setAdjustText(val),
-                  onSubmit: () => {
-                    if (adjustText.trim()) applyAdjust()
-                  },
-                  placeholder: isTableMode
-                    ? '输入表格调整指令（如：加一列负责人、批量改状态），回车调整…'
-                    : '输入飞书协同指令，回车发送…',
+                  onChange: setAdjustText,
+                  onSubmit: () => { if (adjustText.trim()) applyAdjust() },
+                  onStop: busy === 'adjust' ? stopActiveRequest : null,
+                  placeholder: isTableMode ? t('view.tablePlaceholder') : t('view.collabPlaceholder'),
                   busy: busy === 'adjust',
-                  busyText: '思考执行中…',
-                  buttonText: isTableMode ? '调整' : '发送',
                   disabled: !adjustText.trim(),
                   models,
                   selectedModel,
                   modelKey,
                   changeModel,
-                  trustText: '直连你的飞书账号，安全隐私仅自己可见',
-                  minHeight: 52,
+                  minHeight: 44,
                   id: 'lw-adjust-input',
-                  ariaLabel: '协同指令输入框',
+                  ariaLabel: isTableMode ? t('view.tablePlaceholder') : t('view.collabPlaceholder'),
                   inputRef: adjustInputRef,
+                  t,
                 }),
-                adjustError
-                  ? h(Banner, { tone: 'error', title: t('error.title'), children: humanize(adjustError) })
-                  : null,
               ),
         )
 
         content = h(
           'div',
-          { className: 'lw-workspace' },
+          { className: 'lw-workspace lw-stage-in' },
           h(
-            'div',
+            'header',
             { className: 'lw-ws-header' },
             h(
               'div',
@@ -5037,42 +5478,41 @@ body:has(.lw) [class*="viewArea"] {
                 'button',
                 { type: 'button', className: 'lw-back', onClick: restart, title: t('view.back') },
                 h(Icon, { name: 'arrowLeft', size: 14 }),
-                h('span', null, t('view.back')),
+                h('span', { className: isNarrow ? 'lw-hide-compact' : undefined }, t('view.back')),
               ),
               h('div', { className: 'lw-ws-sep' }),
-              h('span', { className: 'lw-ws-title' }, isTableMode ? active.name : '飞书协同助手'),
-              statusBadge,
+              h('span', { className: 'lw-ws-title', title: isTableMode ? active.name : t('view.collabTitle') }, isTableMode ? active.name : t('view.collabTitle')),
             ),
             isTableMode
               ? h(
                   'div',
                   { className: 'lw-ws-header-right' },
-                  h(
-                    Button,
-                    {
-                      variant: 'ghost',
-                      size: 'sm',
-                      title: '重新读取飞书最新数据',
-                      onClick: () => openRecent(active),
-                    },
-                    h(Icon, { name: 'refresh', size: 13 }),
-                    '同步数据',
-                  ),
-                  h(
-                    Button,
-                    { variant: 'ghost', size: 'sm', onClick: copyActiveUrl },
-                    copiedView ? t('done.copied') : t('done.copy'),
-                  ),
-                  active.url
+                  isCompact
                     ? h(
-                        Button,
-                        {
-                          variant: tableOpen ? 'primary' : 'ghost',
-                          size: 'sm',
-                          onClick: () => toggleTable(!tableOpen),
-                          title: tableOpen ? '收起右侧飞书表格，进入全屏对话模式' : '展开右侧飞书表格，进入分屏协作模式',
-                        },
-                        tableOpen ? '收起表格 ◫' : '展开表格 ◫',
+                        'div',
+                        { className: 'lw-seg', role: 'tablist' },
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            role: 'tab',
+                            'aria-selected': compactPane === 'chat',
+                            className: `lw-seg-btn${compactPane === 'chat' ? ' is-active' : ''}`,
+                            onClick: () => setCompactPane('chat'),
+                          },
+                          t('view.tabChat'),
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            role: 'tab',
+                            'aria-selected': compactPane === 'table',
+                            className: `lw-seg-btn${compactPane === 'table' ? ' is-active' : ''}`,
+                            onClick: () => setCompactPane('table'),
+                          },
+                          t('view.tabTable'),
+                        ),
                       )
                     : null,
                   h(
@@ -5080,428 +5520,161 @@ body:has(.lw) [class*="viewArea"] {
                     {
                       variant: 'ghost',
                       size: 'sm',
-                      onClick: () => window.open(active.url, '_blank', 'noopener'),
-                      title: '在系统默认浏览器中打开飞书完整表格',
+                      iconOnly: isCompact,
+                      disabled: syncingTable,
+                      title: syncedTick ? t('view.synced') : t('view.sync'),
+                      'aria-label': t('view.sync'),
+                      onClick: () => refreshLive(active, true),
                     },
-                    '外部打开',
+                    h(Icon, {
+                      name: syncedTick ? 'check' : 'refresh',
+                      size: 13,
+                      className: syncingTable ? 'lw-spin' : syncedTick ? 'lw-pop-in' : undefined,
+                      style: syncedTick ? { color: 'var(--lw-ok)' } : undefined,
+                    }),
+                    !isCompact ? h('span', null, syncedTick ? t('view.synced') : t('view.sync')) : null,
+                  ),
+                  h(
+                    Button,
+                    {
+                      variant: 'ghost',
+                      size: 'sm',
+                      iconOnly: true,
+                      title: copiedView ? t('view.copied') : t('view.copy'),
+                      'aria-label': t('view.copy'),
+                      onClick: copyActiveUrl,
+                    },
+                    h(Icon, {
+                      name: copiedView ? 'check' : 'copy',
+                      size: 13,
+                      className: copiedView ? 'lw-pop-in' : undefined,
+                      style: copiedView ? { color: 'var(--lw-ok)' } : undefined,
+                    }),
+                  ),
+                  !isCompact && active.url
+                    ? h(
+                        Button,
+                        {
+                          variant: 'ghost',
+                          size: 'sm',
+                          active: tableOpen,
+                          title: tableOpen ? t('view.tableHide') : t('view.tableShow'),
+                          'aria-pressed': tableOpen,
+                          onClick: () => toggleTable(!tableOpen),
+                        },
+                        h(Icon, { name: 'splitPane', size: 13 }),
+                        h('span', null, tableOpen ? t('view.tableHide') : t('view.tableShow')),
+                      )
+                    : null,
+                  h(
+                    Button,
+                    {
+                      variant: 'ghost',
+                      size: 'sm',
+                      iconOnly: true,
+                      title: t('view.external'),
+                      'aria-label': t('view.external'),
+                      onClick: () => window.open(active.url, '_blank', 'noopener'),
+                    },
                     h(Icon, { name: 'arrowUpRight', size: 13 }),
                   ),
                 )
               : h(
                   'div',
                   { className: 'lw-ws-header-right' },
-                  h(
-                    Button,
-                    {
-                      variant: 'ghost',
-                      size: 'sm',
-                      onClick: () => setHistory([]),
-                      title: '清空当前对话会话',
-                    },
-                    '清空对话',
-                  ),
+                  history.length > 0
+                    ? h(
+                        Button,
+                        {
+                          variant: 'ghost',
+                          size: 'sm',
+                          onClick: clearChat,
+                          title: t('view.clearTip'),
+                        },
+                        h(Icon, { name: 'trash', size: 13 }),
+                        h('span', null, t('view.clear')),
+                      )
+                    : null,
+                  statusBadge,
                 ),
           ),
           h(
             'div',
-            { className: 'lw-ws-layout' },
+            { ref: layoutRef, className: 'lw-ws-layout' },
             h(
               'div',
               {
-                className: `lw-ws-left ${isTableMode && tableOpen ? 'is-split' : 'is-full'}`,
-                style: isTableMode && tableOpen
-                  ? {
-                      width: splitWidth,
-                      flex: 'none',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      transition: isResizing ? 'none' : 'width .15s ease',
-                      background: 'var(--lw-bg)',
-                    }
-                  : {
-                      flex: '1 1 auto',
-                      width: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      background: 'var(--lw-bg)',
-                    },
+                className: `lw-ws-left ${showSplit ? 'is-split' : 'is-full'}${isEasingSplit ? ' is-easing' : ''}${!showChatPane ? ' is-hidden' : ''}`,
+                style: showSplit ? { width: Math.min(splitWidth, Math.max(280, containerWidth - 300)) } : undefined,
               },
               chatFeed,
               adjustBlock,
             ),
-            isTableMode && tableOpen
+            showSplit
               ? h('div', {
                   className: `lw-resizer${isResizing ? ' is-active' : ''}`,
-                  onMouseDown: startResize,
+                  role: 'separator',
+                  'aria-orientation': 'vertical',
+                  onPointerDown: startResize,
                   onDoubleClick: resetSplitWidth,
-                  title: '拖拽调整分栏宽度，双击恢复默认',
+                  title: t('view.resizeTip'),
                 })
               : null,
             isTableMode && active.url
               ? h(
                   'div',
                   {
-                    className: 'lw-ws-right',
-                    style: {
-                      flex: 1,
-                      height: '100%',
-                      display: tableOpen ? 'flex' : 'none',
-                      pointerEvents: isResizing ? 'none' : 'auto',
-                    },
+                    className: `lw-ws-right${!showWebviewPane ? ' is-hidden' : ''}`,
+                    style: { pointerEvents: isResizing ? 'none' : 'auto' },
                   },
-                  h(NativeWebview, { url: active.url, key: 'persistent-lark-webview' }),
+                  h(NativeWebview, { url: active.url, t, key: 'persistent-lark-webview' }),
                 )
               : null,
-            isTableMode && isResizing ? h('div', { className: 'lw-resize-overlay' }) : null,
           ),
         )
       }
 
       const isWorkspace = (stage === 'view' && Boolean(active)) || (stage === 'preview' && Boolean(plan))
 
-      const accountModal = showAccountModal
-        ? h(
-            'div',
-            {
-              className: 'lw-modal-overlay',
-              onClick: () => {
-                if (!busyAccount) {
-                  setShowAccountModal(false)
-                  setAccountConfirm(null)
-                }
-              },
-            },
-            h(
-              'div',
-              {
-                className: 'lw-modal-box',
-                onClick: (e) => e.stopPropagation(),
-              },
-              h(
-                'div',
-                { className: 'lw-modal-head' },
-                h(
-                  'div',
-                  { className: 'lw-modal-title' },
-                  h(Icon, { name: 'shieldCheck', size: 18, style: { color: 'var(--lw-accent)' } }),
-                  '飞书连接与账号设置',
-                ),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'lw-modal-close',
-                    onClick: () => {
-                      if (!busyAccount) {
-                        setShowAccountModal(false)
-                        setAccountConfirm(null)
-                      }
-                    },
-                    title: '关闭',
-                  },
-                  '✕',
-                ),
-              ),
-              h(
-                'div',
-                { className: 'lw-account-card' },
-                h(
-                  'div',
-                  { className: 'lw-account-row' },
-                  h('span', { className: 'lw-account-label' }, '当前登录人'),
-                  h(
-                    'span',
-                    { className: 'lw-account-val', style: { display: 'flex', alignItems: 'center', gap: 6 } },
-                    h('span', { className: `lw-dot ${connected ? 'is-ok' : 'is-bad'}` }),
-                    health.auth?.userName || (connected ? '已授权' : '未登录'),
-                  ),
-                ),
-                h(
-                  'div',
-                  { className: 'lw-account-row' },
-                  h('span', { className: 'lw-account-label' }, '飞书应用 (App ID)'),
-                  h('span', { className: 'lw-account-val', style: { fontFamily: 'monospace', fontSize: 12 } }, health.app?.appId || '未配置'),
-                ),
-                h(
-                  'div',
-                  { className: 'lw-account-row' },
-                  h('span', { className: 'lw-account-label' }, '连接工具 (CLI)'),
-                  h('span', { className: 'lw-account-val' }, health.cli?.available ? '正常就绪 (lark-cli)' : '不可用'),
-                ),
-              ),
-              h(
-                'div',
-                { className: 'lw-account-scopes', style: { display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0' } },
-                h(
-                  'div',
-                  { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--lw-ink)' } },
-                  h('span', null, '飞书全域能力与权限大盘'),
-                  scopesInfo?.consoleUrl
-                    ? h(
-                        'a',
-                        {
-                          href: scopesInfo.consoleUrl,
-                          target: '_blank',
-                          rel: 'noopener',
-                          style: { fontSize: 11, color: 'var(--lw-accent)', textDecoration: 'none' },
-                        },
-                        '前往开放平台配置 ↗',
-                      )
-                    : null,
-                ),
-                h(
-                  'div',
-                  {
-                    style: {
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: 6,
-                      padding: '8px',
-                      background: 'var(--lw-surface)',
-                      borderRadius: 8,
-                      border: '1px solid var(--lw-line)',
-                    },
-                  },
-                  [
-                    { name: '多维表格与云文档', ready: scopesInfo?.domains?.base?.ready ?? true, count: scopesInfo?.domains?.base?.count || 87, icon: 'table' },
-                    { name: '日历与日程', ready: scopesInfo?.domains?.calendar?.ready ?? false, icon: 'calendar' },
-                    { name: '任务与待办', ready: scopesInfo?.domains?.task?.ready ?? false, icon: 'check' },
-                    { name: '即时消息与群聊', ready: scopesInfo?.domains?.im?.ready ?? false, icon: 'people' },
-                    { name: '飞书邮箱', ready: scopesInfo?.domains?.mail?.ready ?? false, icon: 'receipt' },
-                    { name: '通讯录与组织', ready: scopesInfo?.domains?.contact?.ready ?? false, icon: 'user' },
-                  ].map((item, i) =>
-                    h(
-                      'div',
-                      {
-                        key: i,
-                        style: {
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '4px 8px',
-                          fontSize: 11.5,
-                          borderRadius: 6,
-                          background: 'var(--lw-bg)',
-                        },
-                      },
-                      h('span', { style: { display: 'flex', alignItems: 'center', gap: 5 } }, [
-                        h(Icon, { name: item.icon, size: 12, style: { opacity: 0.7 } }),
-                        item.name,
-                      ]),
-                      h(
-                        'span',
-                        {
-                          style: {
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            fontSize: 10.5,
-                            color: item.ready ? 'var(--lw-success)' : !scopesInfo ? 'var(--lw-accent)' : 'var(--lw-ink-3)',
-                          },
-                        },
-                        item.ready
-                          ? [h('span', { className: 'lw-dot is-ok', style: { width: 5, height: 5 } }), item.count ? `${item.count}项就绪` : '已开通']
-                          : !scopesInfo
-                            ? [h('span', { className: 'lw-dot is-busy', style: { width: 5, height: 5 } }), '核验中…']
-                            : [h('span', { className: 'lw-dot', style: { width: 5, height: 5, background: 'var(--lw-ink-4)' } }), '未开启'],
-                      ),
-                    ),
-                  ),
-                ),
-                Boolean(scopesInfo && [
-                  scopesInfo?.domains?.base?.ready,
-                  scopesInfo?.domains?.calendar?.ready,
-                  scopesInfo?.domains?.task?.ready,
-                  scopesInfo?.domains?.im?.ready,
-                  scopesInfo?.domains?.mail?.ready,
-                  scopesInfo?.domains?.contact?.ready,
-                ].every(Boolean))
-                  ? h(
-                      'div',
-                      {
-                        style: {
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6,
-                          padding: '8px 12px',
-                          marginTop: 6,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          color: 'var(--lw-success)',
-                          background: 'color-mix(in srgb, var(--lw-success) 8%, var(--lw-surface))',
-                          borderRadius: 8,
-                          border: '1px solid color-mix(in srgb, var(--lw-success) 20%, transparent)',
-                        },
-                      },
-                      h(Icon, { name: 'shieldCheck', size: 15 }),
-                      '飞书全域协同能力已全部开通就绪',
-                    )
-                  : (!scopesInfo || syncingAuth)
-                    ? h(
-                        'div',
-                        {
-                          style: {
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 8,
-                            padding: '8px 12px',
-                            marginTop: 6,
-                            fontSize: 12,
-                            fontWeight: 500,
-                            color: 'var(--lw-ink-2)',
-                            background: 'color-mix(in srgb, var(--lw-ink) 4%, var(--lw-surface))',
-                            borderRadius: 8,
-                            border: '1px solid var(--lw-line)',
-                          },
-                        },
-                        h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }),
-                        h('span', null, syncingAuth ? '正在开通全域协同…' : '正在核验全域权限…'),
-                      )
-                    : h(
-                        Button,
-                        {
-                          size: 'sm',
-                          variant: 'primary',
-                          disabled: busyAccount,
-                          onClick: async () => {
-                            setSyncingAuth(true)
-                            try {
-                              const payload = await post('/connect/login/start', {})
-                              if (payload.ok && payload.url) {
-                                window.open(payload.url, '_blank', 'noopener')
-                                const deadline = Date.now() + 60000
-                                let pollCount = 0
-                                while (Date.now() < deadline) {
-                                  const waitMs = pollCount < 4 ? 400 : 1200
-                                  await new Promise((r) => setTimeout(r, waitMs))
-                                  pollCount++
-                                  const sc = await authFetch(`${API}/connect/scopes`).then((r) => r.json()).catch(() => null)
-                                  if (sc && sc.ok) {
-                                    setScopesInfo(sc)
-                                    const allOk = Object.values(sc.domains || {}).every((d) => d.ready)
-                                    if (allOk) {
-                                      refreshHealth()
-                                      break
-                                    }
-                                  }
-                                  const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-                                  if (st && st.ok) {
-                                    refreshHealth()
-                                    break
-                                  }
-                                }
-                              }
-                            } catch {} finally {
-                              setSyncingAuth(false)
-                            }
-                          },
-                          style: { marginTop: 4, width: '100%' },
-                        },
-                        '一键开通全域协同授权 ↗',
-                      ),
-              ),
-              accountConfirm === 'logout'
-                ? h(
-                    'div',
-                    { style: { display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--lw-danger) 6%, var(--lw-surface))', border: '1px solid color-mix(in srgb, var(--lw-danger) 25%, transparent)', borderRadius: 12 } },
-                    h('div', { style: { fontSize: 13, fontWeight: 600, color: 'var(--lw-ink)' } }, '确定要退出当前飞书账号吗？'),
-                    h('div', { style: { fontSize: 12, color: 'var(--lw-ink-2)', lineHeight: 1.5 } }, `退出后将清除「${health.auth?.userName || '当前用户'}」的登录 Token，你可以切换为其他飞书账号扫码或确认授权登录。`),
-                    h(
-                      'div',
-                      { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 } },
-                      h(Button, { size: 'sm', variant: 'ghost', disabled: busyAccount, onClick: () => setAccountConfirm(null) }, '取消'),
-                      h(Button, { size: 'sm', variant: 'danger', disabled: busyAccount, onClick: handleLogout }, busyAccount ? '正在退出…' : '确认退出登录'),
-                    ),
-                  )
-                : accountConfirm === 'unbind'
-                  ? h(
-                      'div',
-                      { style: { display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--lw-danger) 6%, var(--lw-surface))', border: '1px solid color-mix(in srgb, var(--lw-danger) 25%, transparent)', borderRadius: 12 } },
-                      h('div', { style: { fontSize: 13, fontWeight: 600, color: 'var(--lw-ink)' } }, '确定要解绑当前飞书应用吗？'),
-                      h('div', { style: { fontSize: 12, color: 'var(--lw-ink-2)', lineHeight: 1.5 } }, `将清除当前绑定的 App ID (${health.app?.appId || ''}) 与应用凭据，解绑后可以重新输入新企业的自建应用 App ID 和 Secret。`),
-                      h(
-                        'div',
-                        { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 } },
-                        h(Button, { size: 'sm', variant: 'ghost', disabled: busyAccount, onClick: () => setAccountConfirm(null) }, '取消'),
-                        h(Button, { size: 'sm', variant: 'danger', disabled: busyAccount, onClick: handleUnbind }, busyAccount ? '正在解绑…' : '确认解绑应用'),
-                      ),
-                    )
-                  : h(
-                      'div',
-                      { className: 'lw-account-actions' },
-                      h(
-                        'div',
-                        { className: 'lw-account-action-card' },
-                        h(
-                          'div',
-                          { className: 'lw-account-action-text' },
-                          h('div', { className: 'lw-account-action-name' }, '切换账号 / 退出登录'),
-                          h('div', { className: 'lw-account-action-desc' }, '清除当前飞书登录凭据，切换至其他飞书用户账号'),
-                        ),
-                        h(
-                          Button,
-                          {
-                            size: 'sm',
-                            variant: 'ghost',
-                            disabled: busyAccount || !connected,
-                            onClick: () => setAccountConfirm('logout'),
-                          },
-                          '退出登录',
-                        ),
-                      ),
-                      h(
-                        'div',
-                        { className: 'lw-account-action-card' },
-                        h(
-                          'div',
-                          { className: 'lw-account-action-text' },
-                          h('div', { className: 'lw-account-action-name' }, '更换应用 / 换绑企业应用'),
-                          h('div', { className: 'lw-account-action-desc' }, '解绑当前应用凭据，换绑新的自建应用或企业空间'),
-                        ),
-                        h(
-                          Button,
-                          {
-                            size: 'sm',
-                            variant: 'danger',
-                            disabled: busyAccount || !health.app?.appId,
-                            onClick: () => setAccountConfirm('unbind'),
-                          },
-                          '换绑应用',
-                        ),
-                      ),
-                    ),
-            ),
-          )
-        : null
-
       return h(
         'div',
-        { className: `lw${isWorkspace ? ' is-workspace' : ''}`, 'data-theme': theme },
-        h('style', null, CSS),
+        {
+          ref: rootRef,
+          className: `lw${isWorkspace ? ' is-workspace' : ''}${isCompact ? ' is-compact' : ''}${isNarrow ? ' is-narrow' : ''}`,
+          'data-theme': theme,
+        },
         isWorkspace
           ? content
           : h(
               'div',
-              { className: `lw-col${stage === 'preview' ? ' is-wide' : ''}` },
-              isSubView ? null : header,
+              { className: 'lw-col' },
               h(
-                'div',
-                { className: 'lw-body' },
-                isSubView ? header : null,
-                error && stage !== 'pick'
-                  ? h(Banner, {
-                      tone: 'error',
-                      title: t('error.title'),
-                      children: humanize(error),
-                      action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (sentence ? planFor(sentence) : restart()) }, t('error.retry')),
-                    })
-                  : null,
-                content,
+                'header',
+                { className: 'lw-head' },
+                h(
+                  'div',
+                  { className: 'lw-head-main' },
+                  h('span', { className: 'lw-mark' }, h(Mark, { size: 13 })),
+                  h('span', { className: 'lw-name' }, t('app.name')),
+                ),
+                statusBadge,
               ),
+              h('div', { className: 'lw-body' }, content),
             ),
-        accountModal,
+        h(AccountModal, {
+          open: showAccountModal,
+          onClose: () => setShowAccountModal(false),
+          health,
+          connected,
+          scopesInfo,
+          syncingAuth,
+          busyAccount,
+          onGrantAll: handleGrantAll,
+          onLogout: handleLogout,
+          onUnbind: handleUnbind,
+          t,
+        }),
+        h(ToastStack, { toast, onDismiss: dismissToast, t }),
       )
     }
 

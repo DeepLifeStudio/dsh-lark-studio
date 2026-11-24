@@ -94,6 +94,50 @@ const SYSTEM_PROMPT = `你在帮一个用户设计飞书多维表格（Bitable B
 9. 一张表能表达清楚就只给一张表；确实需要主子表关系时最多 4 张，且不要编造关联字段。
 10. baseName 不超过 20 个字。`
 
+const REFINE_SYSTEM_PROMPT = `你在帮用户微调一张已经设计好的飞书多维表格草稿（JSON）。
+
+【第一原则：严格增量修改，禁止推倒重来】
+你会收到「当前草稿 JSON」和用户的「本次修改意见」。
+1. 如果用户的话是在表达满意、认可或确认（例如「不错」「挺好」「可以」「就这样」），没有提出具体修改要求，请只返回：
+   {"action": "keep"}
+   如果用户明确要求立刻创建/建表（例如「确认建表」「就按这个建吧」「开始生成」），请只返回：
+   {"action": "build"}
+2. 如果用户提出了局部修改（例如「加一列负责人」「去掉预计金额」「状态加上已流失」「把公司名称改成客户名称」）：
+   - 必须**原封不动保留**未涉及的 baseName、intro、表名、kanbanField、所有未改动字段（名称、类型、选项、description 均保持一致）以及所有已有示例记录的值！
+   - 严禁编造新的公司名/人名/金额去替换原有示例数据！
+   - 若新增了一列（text/select/number 类型），只需在原有每条示例记录中补上这一新列的值，原有列的值一个字都不要改。
+   - 若删除了一列，只删除该字段及示例记录中对应的 key。
+   - 只有当用户明确要求「补充示例」「多加几条数据」或「换一批数据」时，才追加或替换示例记录（字段结构仍保持不变）。
+3. 只输出合法的 JSON 对象，不要解释、不要 Markdown 代码块。修改时返回完整的表格 JSON（结构与当前草稿一致，包含 "isTable": true, "baseName", "intro", "tables"）。`
+
+const PURE_BUILD_RE = /^(?:(?:不错|挺好(?:的)?|很好|可以(?:的)?|行(?:的)?|好的|没问题|就这样(?:吧)?|就这个(?:吧)?|满意)[，,\s]*)?(?:确认(?:并)?建表|确认创建|确认生成|确认|开始建表|直接建(?:表)?|建表吧?|建吧|创建吧|生成吧|就(?:按|用)这个建(?:表)?|帮我建(?:表)?吧?|confirm|create(?:\s+base)?|build(?:\s+it)?)[！!。.~～\s]*$/i
+const PURE_KEEP_RE = /^(?:不错|挺好(?:的)?|很好|蛮好(?:的)?|好(?:的|呀|啊|滴)?|可以(?:的|呀|啊)?|行(?:的|呀|啊)?|没问题|就这样(?:吧)?|就这个(?:吧)?|很满意|满意|太棒了|棒|赞|ok|okay|nice|great|good|looks\s+good|lgtm)[！!。.~～\s]*$/i
+
+function diffChangedFields(prevPlan, nextPlan) {
+  const changed = []
+  const prevTables = Array.isArray(prevPlan?.tables) ? prevPlan.tables : []
+  const nextTables = Array.isArray(nextPlan?.tables) ? nextPlan.tables : []
+  const prevByTable = new Map(prevTables.map((t) => [t.name, t]))
+  for (let i = 0; i < nextTables.length; i++) {
+    const nt = nextTables[i]
+    const pt = prevByTable.get(nt.name) || prevTables[i]
+    const prevFieldMap = new Map((pt?.fields || []).map((f) => [f.name, f]))
+    for (const f of nt.fields || []) {
+      const old = prevFieldMap.get(f.name)
+      if (!old) {
+        changed.push(f.name)
+      } else {
+        const oldOpts = (old.options || []).map((o) => o.name).join('|')
+        const newOpts = (f.options || []).map((o) => o.name).join('|')
+        if (old.type !== f.type || oldOpts !== newOpts || old.description !== f.description) {
+          changed.push(f.name)
+        }
+      }
+    }
+  }
+  return [...new Set(changed)]
+}
+
 function clip(value, limit = MAX_NAME) {
   if (typeof value !== 'string') return ''
   return value.trim().replace(/\s+/g, ' ').slice(0, limit)
@@ -351,14 +395,18 @@ export function createPlanner({ ctx, config = {} }) {
     const routed = route()
     const provider = opts.provider || routed.provider
     const model = opts.model || routed.model
-    const messages = [{ role: 'user', content: [{ type: 'text', text: sentence }] }]
+    const isRefine = Boolean(opts.currentPlan && typeof opts.currentPlan === 'object' && Array.isArray(opts.currentPlan.tables))
+    const userPrompt = isRefine
+      ? `当前多维表格草稿 JSON：\n${JSON.stringify(opts.currentPlan, null, 2)}\n\n用户的本次修改意见：${sentence}`
+      : sentence
+    const messages = [{ role: 'user', content: [{ type: 'text', text: userPrompt }] }]
     const text = await collectText(
       ctx.llm.stream({
         provider,
         model,
-        system: SYSTEM_PROMPT,
+        system: isRefine ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT,
         messages,
-        temperature: 0.2,
+        temperature: isRefine ? 0.1 : 0.2,
         maxTokens: 2000,
         signal,
       }),
@@ -368,14 +416,28 @@ export function createPlanner({ ctx, config = {} }) {
   }
 
   /**
-   * Sentence -> validated blueprint. One repair attempt when the reply is not
-   * parseable JSON; anything else surfaces as a readable failure.
+   * Sentence -> validated blueprint. Supports both initial planning and
+   * strict incremental refinement when `opts.currentPlan` is provided.
    *
    * The whole exchange is bounded: a model call that never settles would leave
    * the panel spinning forever with no way out.
    */
   async function plan(sentence, signal, timeoutMs = PLAN_TIMEOUT_MS, opts = {}) {
     const text = String(sentence ?? '').trim()
+    const currentPlan = opts.currentPlan && typeof opts.currentPlan === 'object' && Array.isArray(opts.currentPlan.tables)
+      ? opts.currentPlan
+      : null
+
+    if (currentPlan) {
+      if (!text) return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
+      if (PURE_BUILD_RE.test(text)) {
+        return { ok: true, action: 'build', plan: currentPlan, changedFields: [] }
+      }
+      if (PURE_KEEP_RE.test(text)) {
+        return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
+      }
+    }
+
     if (text.length < 2) {
       return { ok: false, message: '请先用一句话描述你想要的表，例如「客户管理，记录公司、联系人、阶段和下次联系时间」。' }
     }
@@ -387,13 +449,16 @@ export function createPlanner({ ctx, config = {} }) {
         const routed = route()
         const provider = opts.provider || routed.provider
         const model = opts.model || routed.model
+        const retryPrompt = currentPlan
+          ? `当前多维表格草稿 JSON：\n${JSON.stringify(currentPlan, null, 2)}\n\n用户的本次修改意见：${text}`
+          : text
         const retry = await collectText(
           ctx.llm.stream({
             provider,
             model,
-            system: SYSTEM_PROMPT,
+            system: currentPlan ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT,
             messages: [
-              { role: 'user', content: [{ type: 'text', text }] },
+              { role: 'user', content: [{ type: 'text', text: retryPrompt }] },
               { role: 'user', content: [{ type: 'text', text: '上一次回复无法解析。请只输出一个 JSON 对象，不要任何其他文字。' }] },
             ],
             temperature: 0,
@@ -405,7 +470,19 @@ export function createPlanner({ ctx, config = {} }) {
         raw = parsePlanText(retry)
       }
       if (!raw) return { ok: false, message: '模型没有返回可解析的表结构，请换一种说法再试。' }
-      return sanitizePlan(raw)
+      if (currentPlan && (raw.action === 'keep' || raw.action === 'build')) {
+        return { ok: true, action: raw.action, plan: currentPlan, changedFields: [] }
+      }
+      const checked = sanitizePlan(raw)
+      if (!checked.ok) return checked
+      if (currentPlan) {
+        return {
+          ...checked,
+          action: 'update',
+          changedFields: diffChangedFields(currentPlan, checked.plan),
+        }
+      }
+      return checked
     } catch (error) {
       if (guard.timedOut()) {
         return { ok: false, message: '想太久了，没出结果。再点一次试试，或者换一句更短的话。' }

@@ -1282,6 +1282,121 @@ test('13.1 向导自动探活与手动确认双轨全链路请求及响应结构
   assert.strictEqual(typeof bodyFinish.ok, 'boolean')
 })
 
+// -------------------------------------------------------------
+// 14. UI/UX 规范、无表情符号、动效与主题契约回归校验
+// -------------------------------------------------------------
+test('14.1 全源码零 Emoji、CSS 变量完整、深浅色宿主同步与无障碍/动效契约校验', async () => {
+  const fs = await import('node:fs')
+  const emojiRe = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u
+  for (const rel of ['./client.js', './index.js', './ops.js', './planner.js', './adjust-planner.js']) {
+    const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
+    assert.strictEqual(emojiRe.test(src), false, `${rel} 不应包含任何表情符号`)
+  }
+
+  const clientSrc = fs.readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  // 1. 宿主深色模式监听 body[data-ds-dark-theme]
+  assert.ok(clientSrc.includes('data-ds-dark-theme'), '应同步监听宿主 body[data-ds-dark-theme]')
+  // 2. IME 输入法回车保护
+  assert.ok(clientSrc.includes('isComposing'), 'Composer 回车提交必须保护输入法组合态')
+  // 3. 减少动态效果与 hover 媒体查询门控
+  assert.ok(clientSrc.includes('prefers-reduced-motion: reduce'), '必须尊重系统减少动态效果设置')
+  assert.ok(clientSrc.includes('@media (hover: hover)'), 'hover 样式应门控在支持悬停的指针设备上')
+  // 4. 禁止使用已废弃或未定义的 CSS 自定义属性
+  for (const badVar of ['var(--lw-bad)', 'var(--lw-success)', 'var(--lw-ink-4)']) {
+    assert.strictEqual(clientSrc.includes(badVar), false, `不应引用未定义变量 ${badVar}`)
+  }
+  // 5. 样式单次注入 head，不随 React 重渲染反复创建 <style>
+  assert.ok(clientSrc.includes('ensureStyles'), '样式应单次注入文档 head')
+  assert.strictEqual(clientSrc.includes("h('style', null, CSS)"), false, '不应在组件 render 中内联重建整段 CSS')
+  // 6. 中英文词典键位完全一致
+  const zhBlock = clientSrc.match(/const ZH = \{([\s\S]*?)\n    \}/)
+  const enBlock = clientSrc.match(/const EN = \{([\s\S]*?)\n    \}/)
+  assert.ok(zhBlock && enBlock, '应同时存在 ZH 与 EN 词典')
+  const extractKeys = (block) => [...block.matchAll(/'([^']+)':/g)].map((m) => m[1]).sort()
+  assert.deepStrictEqual(extractKeys(zhBlock[1]), extractKeys(enBlock[1]), 'ZH 与 EN 词典键位必须完全对齐')
+})
+
+test('14.2 预览增量微调、认可/确认意图分流与变更列识别 (planner.plan + currentPlan)', async () => {
+  const { createPlanner } = await import('./planner.js')
+  const basePlan = {
+    baseName: '客户往来台账',
+    intro: '记录客户推进阶段与下次联系时间',
+    tables: [{
+      name: '客户表',
+      kanbanField: '销售阶段',
+      fields: [
+        { name: '公司名称', type: 'text', description: '客户公司全称' },
+        { name: '销售阶段', type: 'select', description: '当前阶段', options: [{ name: '初访' }, { name: '签约' }] },
+      ],
+      records: [
+        { 公司名称: '杭州云栖智能科技', 销售阶段: ['初访'] },
+      ],
+    }],
+  }
+
+  let llmCalls = 0
+  let lastUserPrompt = ''
+  const mockCtx = {
+    agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-chat' }) },
+    llm: {
+      stream({ messages }) {
+        llmCalls++
+        lastUserPrompt = messages[0].content[0].text
+        return (async function* () {
+          yield {
+            type: 'text-delta',
+            text: JSON.stringify({
+              isTable: true,
+              baseName: '客户往来台账',
+              intro: '记录客户推进阶段与下次联系时间',
+              tables: [{
+                name: '客户表',
+                kanbanField: '销售阶段',
+                fields: [
+                  { name: '公司名称', type: 'text', description: '客户公司全称' },
+                  { name: '销售阶段', type: 'select', description: '当前阶段', options: [{ name: '初访' }, { name: '签约' }] },
+                  { name: '优先级', type: 'select', description: '客户跟进优先级', options: [{ name: '高' }, { name: '中' }, { name: '低' }] },
+                ],
+                records: [
+                  { 公司名称: '杭州云栖智能科技', 销售阶段: ['初访'], 优先级: ['高'] },
+                ],
+              }],
+            }),
+          }
+        })()
+      },
+    },
+  }
+
+  const planner = createPlanner({ ctx: mockCtx })
+
+  // 1. 认可评价词（「不错」/「可以」）：零重生成，不调模型，保持原表不变
+  const keepRes = await planner.plan('不错', undefined, undefined, { currentPlan: basePlan })
+  assert.strictEqual(keepRes.ok, true)
+  assert.strictEqual(keepRes.action, 'keep')
+  assert.strictEqual(keepRes.plan, basePlan)
+  assert.strictEqual(llmCalls, 0, '纯认可词不应触发模型重写')
+
+  // 2. 明确确认建表指令（「确认建表」或「不错，建吧」）：返回 build 动作，不调模型
+  const buildRes = await planner.plan('确认建表', undefined, undefined, { currentPlan: basePlan })
+  assert.strictEqual(buildRes.ok, true)
+  assert.strictEqual(buildRes.action, 'build')
+  assert.strictEqual(buildRes.plan, basePlan)
+  const comboBuildRes = await planner.plan('不错，建吧', undefined, undefined, { currentPlan: basePlan })
+  assert.strictEqual(comboBuildRes.ok, true)
+  assert.strictEqual(comboBuildRes.action, 'build')
+  assert.strictEqual(llmCalls, 0)
+
+  // 3. 局部增量修改（「增加一列优先级」）：携带 currentPlan 进模型，保留旧值并返回 changedFields
+  const updateRes = await planner.plan('增加一列优先级', undefined, undefined, { currentPlan: basePlan })
+  assert.strictEqual(updateRes.ok, true)
+  assert.strictEqual(updateRes.action, 'update')
+  assert.strictEqual(llmCalls, 1)
+  assert.ok(lastUserPrompt.includes('杭州云栖智能科技'), '增量微调必须把现有草稿传给模型')
+  assert.deepStrictEqual(updateRes.changedFields, ['优先级'])
+  assert.strictEqual(updateRes.plan.tables[0].records[0]['公司名称'], '杭州云栖智能科技')
+})
+
 Promise.all(pendingTests).then(() => {
   setTimeout(() => {
     console.log(`\n========================================`)

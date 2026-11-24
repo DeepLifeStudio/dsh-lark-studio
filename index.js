@@ -94,7 +94,7 @@ function describePlan(plan) {
     .join('\n')
 
   const lines = [
-    `### 📋 多维表格结构规划：「${plan.baseName}」`,
+    `### 多维表格结构规划：「${plan.baseName}」`,
     `> ${plan.intro || '已为您规划标准字段结构与示例数据'}`,
     ``,
     `**字段清单 (${fields.length} 列)**: ${fields.map((f) => `\`${f.name}\` (${f.type})`).join(' · ')}`,
@@ -104,7 +104,7 @@ function describePlan(plan) {
     alignRow,
     sampleRows || `| ${fieldNames.map(() => '-').join(' | ')} |`,
     ``,
-    `💡 **在下方原生输入框继续完成**：`,
+    `**在下方输入框继续完成**：`,
     `- 需要微调？直接说：*“再加一列来源”*、*“把优先级改成高/中/低”*`,
     `- 确认无误？直接说：*“确认建表”*，我将直接在您的飞书空间生成此表！`,
   ]
@@ -397,8 +397,8 @@ export function apply(ctx, config = {}) {
             const scopeNames = (result.requiredScopes || []).join('、')
             return {
               ok: false,
-              summary: `⚠️ 缺少飞书「${result.domainTitle || '相关'}」权限。\n需要开通权限：${scopeNames}\n请在飞书开放平台开通：${result.consoleUrl}`,
-              reply: `⚠️ 缺少飞书「${result.domainTitle || '相关'}」权限。\n需要开通权限：${scopeNames}\n请在飞书开放平台开通：${result.consoleUrl}`,
+              summary: `缺少飞书「${result.domainTitle || '相关'}」权限。\n需要开通权限：${scopeNames}\n请在飞书开放平台开通：${result.consoleUrl}`,
+              reply: `缺少飞书「${result.domainTitle || '相关'}」权限。\n需要开通权限：${scopeNames}\n请在飞书开放平台开通：${result.consoleUrl}`,
             }
           }
           throw new Error(result.error || result.message || '执行飞书协同操作失败')
@@ -584,6 +584,7 @@ export function apply(ctx, config = {}) {
                 const planned = await planner.plan(body.sentence, undefined, undefined, {
                   model: body.model,
                   provider: body.provider,
+                  currentPlan: body.currentPlan,
                 })
                 return jsonResponse(200, planned)
               }

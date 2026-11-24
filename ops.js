@@ -1230,7 +1230,7 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'calendar',
-          reply: '📅 今日日程安排：\n\n您今天暂无待进行的日程或会议，可以专注处理其他工作。',
+          reply: '今日日程安排：\n\n今天暂无待进行的日程或会议，可以专注处理其他工作。',
           summary: '今日暂无日程安排',
         }
       }
@@ -1239,7 +1239,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         ok: true,
         type: 'collab',
         domain: 'calendar',
-        reply: `📅 为您找到以下日程安排：\n\n${lines.join('\n')}`,
+        reply: `为您找到以下日程安排：\n\n${lines.join('\n')}`,
         summary: `已查询到 ${events.length} 项日程`,
         data: events,
       }
@@ -1260,7 +1260,7 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'task',
-          reply: '📋 我的待办清单：\n\n太棒了！当前没有未完成的待办事项。',
+          reply: '我的待办清单：\n\n当前没有未完成的待办事项。',
           summary: '暂无未完成待办',
         }
       }
@@ -1269,7 +1269,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         ok: true,
         type: 'collab',
         domain: 'task',
-        reply: `📋 为您找到以下待办事项：\n\n${lines.join('\n')}`,
+        reply: `为您找到以下待办事项：\n\n${lines.join('\n')}`,
         summary: `已查询到 ${tasks.length} 项待办`,
         data: tasks,
       }
@@ -1290,16 +1290,16 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'im',
-          reply: '💬 群聊列表：\n\n未检索到您加入的公开群聊。如果您所在的群聊为私密群，需先将飞书机器人拉入该群。',
+          reply: '群聊列表：\n\n未检索到您加入的公开群聊。如果您所在的群聊为私密群，需先将飞书机器人拉入该群。',
           summary: '暂无群聊',
         }
       }
-      const lines = chats.slice(0, 10).map((c, i) => `${i + 1}. 👥 ${c.name || '未命名群聊'}`)
+      const lines = chats.slice(0, 10).map((c, i) => `${i + 1}. ${c.name || '未命名群聊'}`)
       return {
         ok: true,
         type: 'collab',
         domain: 'im',
-        reply: `💬 为您找到以下飞书群聊：\n\n${lines.join('\n')}`,
+        reply: `为您找到以下飞书群聊：\n\n${lines.join('\n')}`,
         summary: `已查询到 ${chats.length} 个群聊`,
         data: chats,
       }
@@ -1320,7 +1320,7 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'mail',
-          reply: '✉️ 飞书邮件速览：\n\n最近暂无新邮件。',
+          reply: '飞书邮件速览：\n\n最近暂无新邮件。',
           summary: '暂无新邮件',
         }
       }
@@ -1338,7 +1338,7 @@ export function createOperations({ ctx, config = {}, planner }) {
             ok: true,
             type: 'collab',
             domain: 'mail',
-            reply: `✉️ 为您找到以下近期邮件：\n\n${mailTable.text || mailTable}`,
+            reply: `为您找到以下近期邮件：\n\n${mailTable.text || mailTable}`,
             reasoning: mailTable.reasoning || null,
             summary: `已查询到 ${mails.length} 封邮件`,
             data: mails,
@@ -1346,12 +1346,12 @@ export function createOperations({ ctx, config = {}, planner }) {
         }
       }
 
-      const lines = mails.slice(0, 5).map((m, i) => `${i + 1}. ✉️ ${m.subject || '无主题'} (发件人: ${m.from || '未知'})`)
+      const lines = mails.slice(0, 5).map((m, i) => `${i + 1}. ${m.subject || '无主题'} (发件人: ${m.from || '未知'})`)
       return {
         ok: true,
         type: 'collab',
         domain: 'mail',
-        reply: `✉️ 为您找到以下近期邮件：\n\n${lines.join('\n')}`,
+        reply: `为您找到以下近期邮件：\n\n${lines.join('\n')}`,
         summary: `已查询到 ${mails.length} 封邮件`,
         data: mails,
       }
@@ -1373,16 +1373,16 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'contact',
-          reply: `👤 通讯录检索：\n\n未检索到与「${q}」相关的联系人。`,
+          reply: `通讯录检索：\n\n未检索到与「${q}」相关的联系人。`,
           summary: '未找到联系人',
         }
       }
-      const lines = users.slice(0, 5).map((u, i) => `${i + 1}. 👤 ${u.localized_name || u.name || '未知姓名'}${u.department ? ` · ${u.department}` : ''}${u.enterprise_email || u.email ? ` (${u.enterprise_email || u.email})` : ''}`)
+      const lines = users.slice(0, 5).map((u, i) => `${i + 1}. ${u.localized_name || u.name || '未知姓名'}${u.department ? ` · ${u.department}` : ''}${u.enterprise_email || u.email ? ` (${u.enterprise_email || u.email})` : ''}`)
       return {
         ok: true,
         type: 'collab',
         domain: 'contact',
-        reply: `👤 为您找到以下飞书联系人：\n\n${lines.join('\n')}`,
+        reply: `为您找到以下飞书联系人：\n\n${lines.join('\n')}`,
         summary: `已找到 ${users.length} 位联系人`,
         data: users,
       }
@@ -1405,7 +1405,7 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'wiki',
-          reply: `📚 知识库与文档检索：\n\n未检索到与「${q}」相关的文档或知识库内容。建议更换关键词重试。`,
+          reply: `知识库与文档检索：\n\n未检索到与「${q}」相关的文档或知识库内容。建议更换关键词重试。`,
           summary: '未找到相关文档',
         }
       }
@@ -1414,13 +1414,13 @@ export function createOperations({ ctx, config = {}, planner }) {
         const url = item.result_meta?.url || ''
         const summary = (item.summary_highlighted || '').replace(/<\/?h>/g, '')
         const link = url ? `[${title}](${url})` : title
-        return `${i + 1}. 📄 **${link}**\n   ${summary || '暂无摘要'}`
+        return `${i + 1}. **${link}**\n   ${summary || '暂无摘要'}`
       })
       return {
         ok: true,
         type: 'collab',
         domain: 'wiki',
-        reply: `📚 为您在飞书知识库与云文档中找到以下与「${q}」相关的内容：\n\n${lines.join('\n\n')}`,
+        reply: `为您在飞书知识库与云文档中找到以下与「${q}」相关的内容：\n\n${lines.join('\n\n')}`,
         summary: `已找到 ${results.length} 篇相关文档`,
         data: results,
       }
@@ -1430,12 +1430,12 @@ export function createOperations({ ctx, config = {}, planner }) {
       const res = await wikiSpaceList(signal)
       if (res.ok && res.value?.data?.spaces) {
         const spaces = res.value.data.spaces
-        const lines = spaces.map((sp, i) => `${i + 1}. 📚 **${sp.name}** (${sp.space_type === 'team' ? '团队知识库' : '个人知识库'})`)
+        const lines = spaces.map((sp, i) => `${i + 1}. **${sp.name}** (${sp.space_type === 'team' ? '团队知识库' : '个人知识库'})`)
         return {
           ok: true,
           type: 'collab',
           domain: 'wiki',
-          reply: `📚 为您找到以下飞书知识库空间：\n\n${lines.join('\n')}`,
+          reply: `为您找到以下飞书知识库空间：\n\n${lines.join('\n')}`,
           summary: `已查询到 ${spaces.length} 个知识库`,
           data: spaces,
         }

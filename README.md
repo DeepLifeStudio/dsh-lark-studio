@@ -1,303 +1,193 @@
-# 飞书智能工作台 (Lark Workbench for DeepSeek Harness)
+# dsh-lark-studio
 
-[English](README_EN.md) | [简体中文](README.md)
-
-> **一句话，建一张表；一句话，调度飞书全域协同。**  
-> 专为 [DeepSeek Harness](https://github.com/deepseek-ai) 生态打造的大模型原生（LLM-Native）飞书全域协同与多维表格智能工作台插件。
+[简体中文](README.md) | [English](README_EN.md)
 
 [![npm version](https://img.shields.io/npm/v/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
-[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio)
-[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin.org-orange.svg)](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)
-[![dshopen](https://img.shields.io/badge/DSH-Open.org-purple.svg)](https://dshopen.org)
+[![dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
+DeepSeek Harness 的飞书插件。底层调用飞书官方 [`lark-cli`](https://www.npmjs.com/package/@larksuite/cli)，可以直接在聊天或右侧工作台里用自然语言建多维表格、改表结构和记录，顺带处理日程、待办、群消息、邮件、通讯录和审批。
 
-## 目录
-- [1. 这是什么？](#1-这是什么)
-- [2. 可以用来干什么？](#2-可以用来干什么)
-- [3. 为什么需要这种 UI 级工作台？](#3-为什么需要这种-ui-级工作台)
-- [4. 飞书全功能清单（全景列表）](#4-飞书全功能清单全景列表)
-- [5. 核心架构与交互流转](#5-核心架构与交互流转)
-- [6. 快速开始与安装部署](#6-快速开始与安装部署)
-  - [6.1 前置依赖](#61-前置依赖)
-  - [6.2 生态收录与各大插件市场源](#62-生态收录与各大插件市场源)
-  - [6.3 推荐安装方式（npm / 商店）](#63-推荐安装方式强烈建议通过-npm--商店安装)
-  - [6.4 插件更新升级方式](#64-插件更新升级方式)
-  - [6.5 首次连接三步向导 (ConnectGate)](#65-首次连接三步向导-connectgate)
-- [7. 常见问题 (FAQ)](#7-常见问题-faq)
-- [8. 开源协议](#8-开源协议)
+## 能做什么
 
----
+### 1. 一句话建多维表格
 
-## 1. 这是什么？
+不用先想清楚字段类型，直接说你想记什么，比如：
 
-**飞书智能工作台 (`dsh-lark-studio`)** 是一款深度集成在 DeepSeek Harness 桌面客户端中的 Agent 级桌面扩展插件。
+- `我想记一下客户，公司、联系人、谈到哪一步`
+- `做一个部门报销记录表`
+- `研发需求和 Bug 跟踪`
 
-它以 **DeepSeek 大语言模型底座**为智力引擎，底层无缝桥接飞书官方命令行工具 **`lark-cli` (`@larksuite/cli`)** 与飞书开放平台 OpenAPI。通过自然语言交互，抹平技术名词、表单配置与繁琐 API 调用的门槛，让用户只需“说大白话”，即可完成从**多维表格（Bitable Base）架构设计、字段搭建、数据维护**，到**日程排期、待办任务、即时通讯、邮件检索与通讯录查询**的飞书全域业务闭环。
+模型会先生成一份包含字段、选项、看板视图和示例数据的草稿。在侧边栏工作台里确认没问题后，点一下就会在你的飞书个人空间创建真实的多维表格并返回链接。
 
----
+也可以直接在 DSH 聊天输入框里用斜杠命令：
 
-## 2. 可以用来干什么？
+```text
+/lark 客户往来记录，谁在跟、预算多少、谈到哪一步
+```
 
-### 2.1 说一句话，秒级生成专业多维表格
-* **大白话直出专业表**：输入 *“我想记一下客户”*、*“做一个部门团建报销表”*、*“研发缺陷与需求跟踪”*，大模型自动推导业务逻辑，瞬间生成含 5~10 个规范业务字段、单选状态标签、看板分组、企业级真实仿真示例数据的完整 Base 蓝图。
-* **业务规范化命名**：告别随手乱取的列名，AI 自动将“多少钱”规范为“预计金额”，“谈到哪一步”规范为“销售阶段”，“谁负责”匹配为人员字段。
-* **一键落盘飞书真表**：在界面直接点击「确认并建表」，后台自动在飞书个人空间创建对应的多维表格，并生成可直接分享给团队的公开链接。
+### 2. 对话改表（不用切回飞书后台）
 
-### 2.2 在线连续对话微调（Chat-to-Table Ops）
-* **表结构动态演进**：无需去飞书后台逐个点开设置，在工作台内直接说话：
-  * *“再加一列报销状态，支持未提交、审批中、已打款”*
-  * *“把优先级这一列的低、中、高改成 P0、P1、P2”*
-  * *“删掉上次沟通时间这一列”*
-  * *“新增一个按优先级分组的看板视图”*
-* **智能数据运维与批量处理**：
-  * *“帮我新增一条客户记录，公司叫字节跳动，联系人张三，预算 50 万”*
-  * *“把所有进行中的任务截止日期推迟到下周五”*
-  * *“帮我清空所有已作废的账单”*
+表建好之后，继续用自然语言改结构或数据：
 
-### 2.3 飞书全域协同全能助手（Universal Lark Agent）
-不仅是多维表格工具，更是连接飞书日常办公的全局助手：
-* **日程协同**：*“查一下我今天有什么日程”*、*“明天下午有空闲时间吗”*，自动提取日程事件与时间地点。
-* **待办管理**：*“列出我所有未完成的待办任务”*、*“标记‘编写方案’为已完成”*。
-* **即时通讯**：*“帮我找一下最近活跃的项目群聊”*、*“给研发群发一条上线进度通知”*。
-* **邮件速览**：*“查看我的未读邮件并做个摘要”*。
-* **通讯录与组织**：*“搜一下市场部李四的工号、邮箱和职位”*。
+- `加一列报销状态，选项是未提交、审批中、已打款`
+- `把优先级的低/中/高改成 P0/P1/P2`
+- `按状态建一个看板视图`
+- `新增一条记录：公司字节跳动，联系人张三，预算 50 万`
+- `把所有进行中的任务截止日期延到下周五`
 
----
+涉及删列、删视图、删选项或删记录等不可撤销的操作时，会先列出影响项，等你确认后再执行。
 
-## 3. 为什么需要这种 UI 级工作台？
+### 3. 飞书日常协同
 
-单纯的终端命令行（CLI）或纯文字聊天机器人在处理“结构化业务”时存在天然的局限，本插件打造专用 UI 工作台的核心价值在于：
+除了多维表格，也可以在对话里直接查和改飞书日常事务：
 
-| 维度 | 传统纯文本对话 / 终端 CLI | 飞书智能工作台 (UI) | 工作台的意义与价值 |
-| :--- | :--- | :--- | :--- |
-| **感知体验** | 黑盒输出，只给出一段 JSON 或一句话“已创建”，用户不知道实际字段是否合规 | **动态骨架屏加载 $\rightarrow$ 结构化卡片直观预览** | **所见即所得 (WYSIWYG)**：在落盘前用户能清晰核对每一列的字段类型、选项标签、仿真样本，避免误建垃圾表。 |
-| **接入门槛** | 需手动安装依赖、手动创建 App、在终端敲命令获取 OAuth Code、扫码授权，流程极易中断 | **内置三步向导 (ConnectGate)** | **零门槛开箱即用**：自动嗅探 `lark-cli` 环境，一键复制安装命令，图形化引导应用配置与扫码登录。 |
-| **双屏作业** | 聊天窗口与真实飞书界面分离，用户需反复在浏览器与终端之间切换排查 | **分屏双工模式 (Dual-pane Mode)** | **真表联动无缝**：左侧为 AI 微调控制台，右侧支持一键内嵌飞书真实多维表格 Webview，边聊边改，真表实时同步。 |
-| **思维透明度**| 交互生硬，等待过程黑屏或干等卡顿，无法得知模型意图 | **深度思考实时流 (Thinking Stream)** | **透明可信赖的 Agent**：DeepSeek 的思考链路实时展示，让用户清晰看到大模型背后的业务拆解、字段类型推导逻辑。 |
-| **安全性** | 误操作直接破坏真实数据，无法逆转 | **破坏性操作主动拦截拦截机制** | **安全有保障**：对删列、清空表、删除大量记录等高危操作主动弹出二次确认卡片，杜绝数据误删事故。 |
+- **日程**：查今天日程、看某人忙闲、建/改/取消会议
+- **待办**：看未完成任务、建任务、指派负责人、标记完成
+- **消息与群聊**：搜群聊、查历史消息、给指定群或同事发消息
+- **邮件**：看收件箱摘要、读邮件、发邮件或草稿
+- **通讯录**：按姓名、部门或工号查同事信息
+- **审批与文档**：查待审批单、发起/通过/驳回审批、读写云文档和知识库
 
----
-
-## 4. 飞书全功能清单（全景列表）
-
-本插件全面覆盖飞书开放平台多维表格及协同办公全域能力，具体支持清单如下：
-
-### 4.1 多维表格（Bitable Base）架构与元数据
-- [x] **智能蓝图设计**：根据一句自然语言自动输出整套标准 Schema，含数据表、列类型、看板分组与示例行。
-- [x] **多表管理**：
-  - 新增数据表（`add_table`）
-  - 重命名数据表（`rename_table`）
-  - 获取库元数据与表列表（`readSchema`）
-- [x] **字段（列）生命周期管理**：
-  - **文本类**：普通文本、单行/多行、超链接 (URL)、电话 (Phone)、电子邮箱 (Email)、条形码 (Barcode)
-  - **数值类**：普通整数/浮点数、格式化货币（CNY/USD 等精度设置）、百分比、进度条（带颜色展示）
-  - **选项类**：单选下拉（Select）、多选标签（Multiple Select）
-  - **动态选项池**：增量追加选项（`add_options`）、安全剔除选项（`remove_options`）
-  - **时间日期**：自定义格式日期时间（`yyyy-MM-dd` / `yyyy-MM-dd HH:mm` 等）
-  - **协作人员**：飞书企业组织人员字段（User）
-  - **逻辑控制**：复选框字段（Checkbox）
-  - **高级与计算列**：自增编号（Auto Number）、公式计算列（Formula）、双向关联引用（Link / Lookup）
-  - **字段修改与删除**：列重命名（`rename_field`）、安全删除列（`delete_field`）
-
-### 4.2 多维表格视图与展示维度
-- [x] **经典网格视图（Grid View）**：数据总览与录入标准表格。
-- [x] **看板泳道视图（Kanban View）**：基于特定单选字段（如任务状态、推进阶段）自动分栏展示。
-- [x] **相册画册视图（Gallery View）**：富媒体、商品图与资产卡片展示。
-- [x] **日历排期视图（Calendar View）**：按起止日期字段映射日历排程。
-- [x] **甘特进度视图（Gantt View）**：项目工期与前后置任务排期。
-- [x] **视图管理**：新建视图（`add_view`）、重命名视图（`rename_view`）、删除视图（`delete_view`）。
-- [x] **字段显隐控制（View Masking）**：指定特定视图下显示或隐藏特定列（`set_view_visible_fields`）。
-
-### 4.3 记录级数据增删改查（Records Operations）
-- [x] **智能批量插入（Add Records）**：自动校验并格式化文本、单选、数值类型，批量追加行记录。
-- [x] **条件精准与批量修改（Update Records）**：支持基于复合条件（如 `状态 === "已完成"`）批量或单条更新记录内容。
-- [x] **安全批量与单条删除（Delete Records）**：支持条件过滤删除与指定 Record ID 物理删除。
-- [x] **样本数据快速探查（Peek Sampling）**：无需打开庞大表格，快速探查前 20 条实时数据结构。
-
-### 4.4 扩展能力与企业高级权限
-- [x] **高级权限控制（Advanced Permission）**：一键开启或关闭多维表格的高级权限隔离开关。
-- [x] **自定义角色权限体系**：
-  - 创建角色（`create_role`，定义表级与字段级编辑/只读权限）
-  - 更新角色权限（`update_role`）
-  - 删除角色（`delete_role`）
-- [x] **字段 AI 扩展插件（Field AI Extension）**：为指定字段绑定飞书内置 AI 能力，支持自然语言触发批量运算。
-- [x] **统计分析仪表盘（Dashboard）**：自动为表格配置多维度图表与统计看板。
-- [x] **收集问卷表单（Form）**：自动将表格转为外发数据收集问卷。
-
-### 4.5 飞书全域办公协同（Universal Collaboration CRUD 矩阵）
-
-对照飞书官方 `lark-cli` 体系，工作台不仅支持多维表格的深度运维，还对飞书协同生态各域提供了完整的**增（Create）、删（Delete）、改（Update）、查（Retrieve/Query）**全生命周期能力覆盖：
+如果当前飞书应用缺少某项权限，插件会直接给出对应权限名和飞书开放平台的跳转链接，不会只报一串错误码。
 
 <details>
-<summary><b>👉 点击展开查看完整 CRUD 协同能力矩阵（日历、任务、即时通讯、邮件、通讯录、审批、云文档与权限大盘）</b></summary>
-<br>
+<summary>查看完整功能清单（多维表格 + 飞书协同 CRUD）</summary>
 
-#### 📅 日历与会议（Calendar）
-* **增 (Create)**：创建日程与预约会议（`calendar +create`，支持指定主题、起止时间与参会人）、加入日程（`+join-event`）。
-* **删 (Delete)**：删除或取消日程会议（`calendar +delete`，支持周期日程与例外项）。
-* **改 (Update)**：更新日程时间地点与参会人（`calendar +update`）、回复会议邀请（`+rsvp` 接受/拒绝/待定）、转让日程组织者权限（`+transfer`）。
-* **查 (Query)**：今日/特定日期议程速览（`calendar +agenda`）、日程详情（`+get`）、关键词搜索日程（`+search-event`）、跨用户忙闲诊断（`+freebusy`）、智能会议室推荐（`+room-find`）、参会人签到状态（`+list-attendees`）、会议详情与纪要链接（`+meeting`）。
+#### 多维表格
 
-#### 📋 任务与待办（Task）
-* **增 (Create)**：新建待办任务（`task +create`）、新建任务清单（`+tasklist-create`）、拆分子任务（`subtasks create`）、添加任务评论（`+comment`）、上传附件（`+upload-attachment`）。
-* **删 (Delete)**：删除任务（`task tasks delete`）、删除任务清单（`tasklists delete`）、移除成员（`members remove`）。
-* **改 (Update)**：一键标记完成（`task +complete`）、重新打开任务（`+reopen`）、指派/转交责任人（`+assign`）、修改截止日期与描述（`+update`）、设置关注人（`+followers`）、设置任务提醒（`+reminder`）。
-* **查 (Query)**：我的待办清单（`task +get-my-tasks`）、与我相关的任务（`+get-related-tasks`）、关键词搜索任务（`+search`）、搜索任务清单（`+tasklist-search`）。
+- **多表管理**：新建数据表（`add_table`）、重命名数据表（`rename_table`）、读取库元数据与表结构（`readSchema`）
+- **字段类型**：
+  - 文本：普通文本、多行文本、超链接（URL）、电话、邮箱、条形码
+  - 数值：整数/浮点数、货币（CNY/USD 等）、百分比、进度条
+  - 选项：单选、多选，支持增量加选项（`add_options`）与删选项（`remove_options`）
+  - 其他：自定义格式日期时间、人员（User）、复选框、自动编号、公式、关联与查找引用（Link / Lookup）
+  - 字段变更：重命名列（`rename_field`）、删除列（`delete_field`）
+- **视图管理**：表格（Grid）、看板（Kanban）、画册（Gallery）、日历（Calendar）、甘特（Gantt）；支持新建/重命名/删除视图，以及按视图控制字段显隐（`set_view_visible_fields`）
+- **记录操作**：批量新增记录、按条件或指定 Record ID 更新与删除记录、快速抽样查看前 20 条数据（`peek`）
+- **权限与扩展**：开关高级权限、自定义角色增删改（`create_role` / `update_role` / `delete_role`）、字段 AI 扩展、仪表盘、收集表
 
-#### 💬 消息与即时通讯（IM）
-* **增 (Create / Send)**：发送文本/Markdown/卡片消息（`im +messages-send`，支持单聊与群聊）、消息串联回复（`+messages-reply`）、新建群聊/话题群（`+chat-create`）、消息星标标记（`+flag-create`）、置顶消息（`pins create`）。
-* **删 (Delete / Recall)**：撤回或删除已发消息（`im messages delete`）、取消星标（`+flag-cancel`）、取消置顶（`pins delete`）。
-* **改 (Update)**：编辑已发送消息内容（`im +messages-edit`）、更新群名称与群公告描述（`+chat-update`）、修改群成员权限与禁言（`chat.moderation update`）。
-* **查 (Query)**：群聊列表速览（`im +chat-list`）、关键词搜索群聊（`+chat-search`）、查看群成员列表（`+chat-members-list`）、拉取历史聊天记录（`+chat-messages-list`）、跨群检索消息（`+messages-search`）、查看消息已读人员清单（`+message-read-users`）、标记消息列表（`+flag-list`）。
+#### 飞书协同（对应 `lark-cli` 能力）
 
-#### ✉️ 飞书邮箱（Mail）
-* **增 (Create / Compose)**：撰写并发送新邮件（`mail +send`）、新建邮件草稿（`+draft-create`）、创建收信过滤规则（`+rule-create`）、创建邮件模板（`+template-create`）。
-* **删 (Delete / Trash)**：软删除邮件移至废纸篓（`mail +message-trash`）、删除会话主题（`+thread-trash`）、删除收信规则（`+rule-delete`）、废弃草稿（`user_mailbox.drafts delete`）。
-* **改 (Update / Reply)**：回复与全部回复（`mail +reply` / `+reply-all`）、转发邮件（`+forward`）、编辑已有草稿（`+draft-edit`）、发送已有草稿（`+draft-send`）、标记已读/移动文件夹/打标签（`+message-modify`）、更新收信规则（`+rule-update`）、启停收信规则（`+rule-enable`/`disable`）。
-* **查 (Query)**：收件箱速览（`mail +triage`）、读取邮件全文与附件（`+message` / `+messages`）、查看完整邮件往来会话（`+thread`）、文件夹列表（`user_mailbox.folders list`）、规则列表（`+rule-list`）、签名配置（`+signature`）。
-
-#### 👤 通讯录与组织架构（Contact）
-* **查 (Query)**：自然语言搜索同事（`contact +search-user`，按姓名、工号、部门反查）、获取个人详细档案与联系方式（`+get-user`）、搜索企业机器人与智能体应用（`+search-bot`）、批量查询用户基础资料（`user_profiles batch_query`）。
-* **增删改 (Enterprise Ops)**：通过企业管理员凭据支持部门层级创建、成员资料更新与离职归档。
-
-#### 🛡️ 审批与业务流（Approval）
-* **增 (Initiate)**：快速发起请假、报销、用印等各类业务审批单实例（`approval instances create`）。
-* **撤 (Cancel)**：撤销本人已发起且在流转中的审批申请（`approval instances cancel`）。
-* **改 / 推进 (Action)**：审批通过（`approval tasks approve`）、审批驳回拒绝（`approval tasks reject`）、转交审批人（`approval tasks transfer`）、加签处理（`approval tasks add_sign`）、回退至上一步（`approval tasks rollback`）、催办审批（`approval tasks remind`）。
-* **查 (Query)**：查询待我审批任务（`approval tasks query`）、查看审批单流转详情与表单数据（`approval instances get`）、查询我发起的审批（`approval instances initiated`）、搜索企业可用审批定义（`approval approvals search`）。
-
-#### 📄 云文档与知识库套件（Docs / Drive / Wiki / Markdown）
-* **增 (Create)**：创建飞书云文档（`docs`）、上传文件至云盘（`drive`）、创建知识空间与知识库节点（`wiki`）、创建 Drive 原生 Markdown 文件（`markdown`）。
-* **删 (Delete)**：删除云盘文件、移除知识库节点。
-* **改 (Update)**：向云文档追加或更新内容块、移动云盘文件与知识库节点层级、调整文件协作与分享权限。
-* **查 (Query)**：读取文档结构与全文内容、下载云盘文件、导出知识库目录树。
-
-#### 🔒 全域权限监控与自检大盘（Scopes Inspector）
-* **全域诊断**：自动检测当前账号已获批的 22 种开放平台权限领域（涵盖表格、日历、待办、消息、邮件、通讯录、审批、云文档等）。
-* **优雅降级**：调用任何未授权功能时，自动拦截报错并生成带 App ID 的直达授权链接卡片，指导用户一键在开放平台开通相应权限。
+- **日历与会议（Calendar）**
+  - 新增：创建日程与会议（`calendar +create`）、加入日程（`+join-event`）
+  - 修改：修改时间/地点/参会人（`calendar +update`）、回复邀请（`+rsvp`）、转让组织者（`+transfer`）
+  - 删除：取消或删除日程（`calendar +delete`，支持周期日程）
+  - 查询：当日/指定日期议程（`+agenda`）、日程详情（`+get`）、搜索日程（`+search-event`）、忙闲查询（`+freebusy`）、找会议室（`+room-find`）、参会人状态（`+list-attendees`）、会议信息与纪要（`+meeting`）
+- **任务与待办（Task）**
+  - 新增：建任务（`task +create`）、建清单（`+tasklist-create`）、建子任务（`subtasks create`）、评论（`+comment`）、上传附件（`+upload-attachment`）
+  - 修改：标记完成（`+complete`）、重开（`+reopen`）、指派负责人（`+assign`）、改截止时间与描述（`+update`）、加关注人（`+followers`）、设提醒（`+reminder`）
+  - 删除：删任务（`task tasks delete`）、删清单（`tasklists delete`）、移成员（`members remove`）
+  - 查询：我的待办（`+get-my-tasks`）、相关任务（`+get-related-tasks`）、搜任务（`+search`）、搜清单（`+tasklist-search`）
+- **消息与群聊（IM）**
+  - 新增/发送：发文本/Markdown/卡片消息（`im +messages-send`）、回复消息（`+messages-reply`）、建群（`+chat-create`）、星标（`+flag-create`）、置顶（`pins create`）
+  - 修改：编辑已发消息（`+messages-edit`）、改群名与公告（`+chat-update`）、群发言权限（`chat.moderation update`）
+  - 删除：撤回/删除消息（`im messages delete`）、取消星标（`+flag-cancel`）、取消置顶（`pins delete`）
+  - 查询：群聊列表（`+chat-list`）、搜群（`+chat-search`）、群成员（`+chat-members-list`）、聊天记录（`+chat-messages-list`）、跨群搜消息（`+messages-search`）、已读列表（`+message-read-users`）、星标列表（`+flag-list`）
+- **飞书邮箱（Mail）**
+  - 新增：发邮件（`mail +send`）、新建草稿（`+draft-create`）、建收信规则（`+rule-create`）、建模板（`+template-create`）
+  - 修改：回复/全部回复（`+reply` / `+reply-all`）、转发（`+forward`）、编辑与发送草稿（`+draft-edit` / `+draft-send`）、标已读/移文件夹/打标签（`+message-modify`）、更新与启停规则（`+rule-update` / `+rule-enable` / `+rule-disable`）
+  - 删除：移入废纸篓（`+message-trash` / `+thread-trash`）、删规则（`+rule-delete`）、删草稿（`user_mailbox.drafts delete`）
+  - 查询：收件箱摘要（`+triage`）、读邮件与附件（`+message` / `+messages`）、完整会话（`+thread`）、文件夹（`user_mailbox.folders list`）、规则列表（`+rule-list`）、签名（`+signature`）
+- **通讯录（Contact）**
+  - 查询：按姓名/工号/部门搜同事（`contact +search-user`）、查个人资料（`+get-user`）、搜机器人（`+search-bot`）、批量查资料（`user_profiles batch_query`）
+  - 组织管理：持有企业管理员凭据时支持部门创建、成员更新与离职归档
+- **审批（Approval）**
+  - 发起与撤销：发起审批单（`approval instances create`）、撤销本人申请（`approval instances cancel`）
+  - 审批动作：通过（`approve`）、驳回（`reject`）、转交（`transfer`）、加签（`add_sign`）、回退（`rollback`）、催办（`remind`）
+  - 查询：待我审批（`approval tasks query`）、审批详情（`approval instances get`）、我发起的（`approval instances initiated`）、搜审批定义（`approval approvals search`）
+- **云文档与知识库（Docs / Drive / Wiki / Markdown）**
+  - 支持创建、读取、追加/更新内容块、上传/下载/移动/删除云盘文件、维护知识库节点与协作权限，以及创建 Drive 原生 Markdown 文件
+- **权限自检（Scopes Inspector）**
+  - 检测当前账号在各开放平台领域的已授权状态；调用未授权接口时拦截报错并给出带 App ID 的直达授权链接
 
 </details>
 
----
+## 右侧边栏工作台
 
-## 5. 核心架构与交互流转
+插件会在 DSH 右侧边栏注册一个「飞书工作台」标签页，相比纯聊天多了几件顺手的事：
 
-本工作台遵循 **LLM-Native Agent** 架构思想，彻底摒弃死板的正则关键词判断：
+- **首次连接向导**：自动检查本地有没有装 `lark-cli`，引导配置飞书应用 `App ID / App Secret` 和浏览器 OAuth 授权。
+- **建表前预览**：用卡片展示字段、选项和示例数据，确认后再真正落盘。
+- **思考过程实时流**：建表与改表规划时实时展示模型的推理过程，方便核对字段推导是否符合预期。
+- **分屏联动**：左侧发指令改表，右侧直接内嵌飞书多维表格页面实时查看效果。
+- **权限自检**：集中查看各模块权限开通状态，缺哪项点链接去开就行。
 
-```mermaid
-flowchart TD
-    User([用户输入需求]) --> Classifier{DeepSeek 语义决策}
-    
-    Classifier -->|建表需求: 财务表、记客户...| PlanFlow[启动规划引擎]
-    PlanFlow --> Loading[前端骨架屏: 正在匹配列与示例数据...]
-    Loading --> Preview[直达预览界面: 表头 + 示例行 + 看板]
-    Preview --> Confirm[点击「确认并建表」]
-    Confirm --> LarkBase[(在飞书生成真实 Base 空间)]
-    
-    Classifier -->|日常协同: 查日程、问候、找群聊...| CollabFlow[飞书全域协同助手]
-    CollabFlow --> ScopeCheck{检测飞书 API 权限}
-    ScopeCheck -->|权限就绪| Exec[调用 lark-cli 获取数据并流式回复]
-    ScopeCheck -->|缺少权限| AuthCard[返回对应权限开通引导卡片]
-    
-    LarkBase --> ChatOps[通过自然语言连续微调结构与数据]
+## 安装
+
+### 前置条件
+
+- Node.js `>= 18.0.0`
+- DeepSeek Harness `>= 0.2.2-rc.1 < 0.3.0-0`
+- 全局安装飞书官方 CLI：
+
+```bash
+npm install -g @larksuite/cli
 ```
 
----
+### 安装插件
 
-## 6. 快速开始与安装部署
+通过 npm 安装到你使用的 profile（`web` 或 `desktop`）：
 
-### 6.1 前置依赖
-1. **Node.js**：版本 `>= 18.0.0`
-2. **飞书命令行工具 (`lark-cli`)**：
-   ```bash
-   npm install -g @larksuite/cli
-   ```
-
-### 6.2 生态收录与各大插件市场源
-
-本插件作为 DeepSeek Harness 生态的核心应用，已同步收录并入驻以下各大官方与社区主流生态插件源、精选目录与应用市场，方便按需检索与获取：
-
-| 平台 / 索引源 | 渠道类型 | 访问与检索说明 |
-| :--- | :--- | :--- |
-| 📦 **[npm Registry](https://www.npmjs.com/package/dsh-lark-studio)** | 原生官方包分发源 | 官方标准 npm 索引分发，原生支持标准 `dsh plugin add` 解析、自动版本发现与无缝升级 |
-| 🛒 **[dsh-market](https://github.com/dsh-market/dsh-market)** | 内置可视化商店（装机量第一） | 在 DSH 客户端直接内置安装 `dshmarket`，在「设置 → 插件市场」搜索 `dsh-lark-studio` / `飞书` 一键安装与更新 |
-| 🏪 **[DeepSeek 1024 插件商店](https://deepseek1024.com)** | 自动化大型插件市场 | 自动化格式校验收录，支持在 `deepseek1024.com` 网页或配套 CLI（`dsh-1024store`）检索与安装 |
-| 🌟 **[Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)** | 社区核心精选列表与索引基准 | 官方收录于生产力与办公协同分类，作为全网各大可视化市场的底层精选索引数据源 |
-| 🌐 **[DSH Plugin Hub](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)** | 体量最大聚合展示中心 | [插件详情页直达](https://dsh-plugin.org/plugins/DeepLifeStudio/dsh-lark-studio)，每日自动化爬虫同步 npm 与 GitHub 发版动态 |
-| 🔎 **[DSHSeek](https://dshseek.com/zh/plugins/)** | 中文精选核验目录 | 主打人工对照仓库与链接可达性复核的中文插件索引目录 |
-| 📚 **[Awesome DeepSeek Harness](https://github.com/libukai/awesome-deepseek-harness)** | 综合型生态指南清单 | 官方与社区精选指南仓库，汇总高星插件与入门资源 |
-| 💬 **[官方 Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154)** | DeepSeek 官方原生社区阵地 | 官方「Show Your Plugins!」专区正式发布展示与开发者交流索引 |
-| 🚀 **[dshopen 插件索引](https://dshopen.org)** | 开放生态索引门户 | 开放生态索引专区，收录配置指南与集成文档 |
-
-### 6.3 推荐安装方式（强烈推荐通过 npm / 商店安装）
-
-推荐直接通过 npm 包管理安装至当前使用的 profile（如 `web` 或 `desktop`）：
 ```bash
-# 推荐：安装到当前 profile
+# Web 模式
 dsh plugin --profile web add dsh-lark-studio
 
-# 若使用桌面端 profile：
+# Desktop 模式
 dsh plugin --profile desktop add dsh-lark-studio
 ```
 
-或在已安装 `dsh-market` 的 DSH 客户端中，直接在图形化市场界面点击 **「安装」**。
+也可以在 DSH 内置的 `dsh-market` 插件市场里搜 `dsh-lark-studio` 直接安装。
 
-> **启动提示**：若使用 Web UI 界面，启动 DSH 时请加上 `--patch` 参数，本工作台才能在右侧边栏即时加载生效：
-> ```bash
-> dsh start --patch
-> ```
+Web 模式下启动 DSH 需要带上 `--patch`，侧边栏工作台才会加载：
 
----
-
-### 6.4 插件更新升级方式
-
-#### 方式一：终端命令行一键升级（推荐）
 ```bash
-# 升级本插件至最新版本
-dsh plugin --profile web update dsh-lark-studio
+dsh start --patch
+```
 
-# 或检查并升级全量已安装插件
+### 更新
+
+```bash
+dsh plugin --profile web update dsh-lark-studio
+# 或更新全部插件
 dsh plugin update
 ```
 
-#### 方式二：图形化市场一键更新
-如果您是在 `dsh-market` 或 `1024store` 等可视化市场中安装的，插件发布新版本后，DSH 的「设置 → 插件市场」会出现红点更新提示，点击 **「更新」** 按钮即可一键静默升级。
+> 建议直接用 npm 安装，不要用 `git clone` 或 GitHub 仓库地址安装，否则 `dsh plugin update` 不会检测和拉取新版本。
 
----
+### 首次使用
 
-> [!WARNING]
-> ### ⚠️ 为什么强烈不建议使用 Git 源码（`git clone`）方式安装？
-> 
-> 虽然部分开发者习惯使用 `git clone` 或 `github:用户名/仓库名` 进行安装，但我们**强烈不建议**普通用户和生产环境采用 Git 方式：
-> 1. **无法接收版本更新通知**：Git 仓库分支拉取不携带 npm 的语义化版本（SemVer）标签元数据，DSH 宿主检测不到上游新版本的发布，导致你长期停留在旧版本且无从知晓；
-> 2. **无法使用 `dsh plugin update` 一键升级**：通过 Git 源码安装的插件会被标记为本地外链目录，执行 `dsh plugin update` 时会被跳过，必须用户手动进终端 `cd` 目录、`git pull`、再重新构建依赖，极易产生依赖断层和运行故障；
-> 3. **缺少发布完整性校验**：npm 官方源在发布时自带安全扫描与 SHA512 Integrity Hash 完整性校验，能杜绝因 Git 中间网络抖动造成的代码文件丢失。
-> 
-> **请始终优先使用 `dsh plugin add dsh-lark-studio`（npm 源）进行安装与更新！**
+安装后在 DSH 右侧边栏打开「飞书工作台」，按页面提示走完三步即可：
 
-### 6.5 首次连接三步向导 (ConnectGate)
-安装完成后，在 DeepSeek Harness 侧边栏打开「飞书工作台」，界面会自动检测环境：
-1. **连接工具检测 (CLI)**：自动检测 `lark-cli` 是否可用。若未检测到，界面提供一键复制命令。
-2. **应用配置绑定 (App)**：可点击直达飞书开放平台自动初始化应用，或手动填入企业自建应用的 `App ID` 与 `App Secret`。
-3. **安全身份授权 (Auth)**：点击「授权连接」，浏览器打开飞书授权页面确认登录即可完成闭环。
+1. 检测 `lark-cli`（未安装会给出安装命令）；
+2. 绑定飞书自建应用的 `App ID` 和 `App Secret`（或按引导新建一个）；
+3. 浏览器打开飞书授权页完成登录。
 
----
+## 暴露给 Agent 的工具与命令
 
-## 7. 常见问题 (FAQ)
+如果你习惯直接在主对话里让 Agent 自动调度，插件注册了以下入口：
 
-#### Q1：其他人使用本插件，也需要安装 `lark-cli` 吗？
-**需要。** `lark-cli` 是飞书官方提供的高性能通讯客户端，插件通过它免密执行各项飞书指令。首次使用未安装时，工作台会弹出图形化提示，一键复制命令安装即可。
+| 入口 | 类型 | 用途 |
+| :--- | :--- | :--- |
+| `/lark <描述>` | 斜杠命令 | 一句话直接创建多维表格 |
+| `lark_base_build` | Agent 工具 | 规划并创建多维表格（支持 `preview` 先预览） |
+| `lark_base_adjust` | Agent 工具 | 对已有表格增删改字段、选项、视图与记录 |
+| `lark_collab` | Agent 工具 | 执行日程、待办、消息、邮件、通讯录、审批等协同操作 |
 
-#### Q2：建好的表格保存在哪里？
-默认保存在您授权登录的飞书账号个人空间（**“我的空间”**），只有您自己可以访问。您可以随时通过工作台提供的链接分享给同事或团队协同。
+## 常见问题
 
-#### Q3：输入问候语或日常聊天会误触发建表吗？
-**不会。** 插件已接入 DeepSeek 大模型原生意图识别，对于“你好”、“今天有什么安排”、“谢谢”等非建表意图，系统会自动转入协同助手进行多轮自然对话，绝不会僵硬建表。
+**一定要装 `lark-cli` 吗？**  
+是的。插件不保存你的飞书账号密码，所有开放平台调用都通过本地的 `lark-cli` 和你本人的 OAuth 授权完成。
 
----
+**建出来的表存在哪里？**  
+默认在你授权登录的飞书账号「我的空间」下，默认仅自己可见，需要协作时再点飞书右上角分享即可。
 
-## 8. 开源协议
+**平时聊天会误触发建表吗？**  
+不会。普通问候或日常问答不会触发建表；只有在你明确表达建表需求或调用 `/lark` 时才会进入规划流程。
 
-本项目采用 [MIT License](LICENSE) 开源协议。欢迎提交 Issue 与 Pull Request！
+**收录与发布渠道**  
+已发布至 [npm](https://www.npmjs.com/package/dsh-lark-studio)，并收录于 [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)（同步至 `dsh-market`）、[DeepSeek 1024](https://deepseek1024.com/plugins/DeepLifeStudio/dsh-lark-studio)、[DSH Plugin Hub](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio) 及 [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154)。
+
+## License
+
+[MIT](LICENSE)

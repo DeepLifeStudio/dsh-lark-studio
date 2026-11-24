@@ -145,6 +145,17 @@ When running the Web UI, pass `--patch` so the sidebar workbench loads:
 dsh start --patch
 ```
 
+### Supported registries & directories
+
+| Platform / Registry | Type | How to install or browse |
+| :--- | :--- | :--- |
+| [npm Registry](https://www.npmjs.com/package/dsh-lark-studio) | Primary registry | Run `dsh plugin add dsh-lark-studio`; supports version checks and `dsh plugin update` |
+| [dsh-market](https://github.com/dsh-market/dsh-market) | In-app visual store | Search `dsh-lark-studio` or `Lark` under Settings → Plugin Market in DSH for one-click install/update |
+| [Awesome DSH Plugin](https://awesome-dsh-plugin.com/p/DeepLifeStudio/dsh-lark-studio/) | Curated directory | Listed under productivity/collaboration ([GitHub repo](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)); upstream index for `dsh-market` |
+| [DeepSeek 1024](https://deepseek1024.com/plugins/DeepLifeStudio/dsh-lark-studio) | Community store | Browse on the web or install via the `dsh-1024store` CLI |
+| [DSH Plugin Hub](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio) | Aggregated catalog | Automatically tracks npm and GitHub releases |
+| [Official Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154) | Official showcase | Listed in DeepSeek Harness "Show Your Plugins!" for release notes and feedback |
+
 ### Update
 
 ```bash
@@ -184,9 +195,6 @@ In your own Lark account under **My Space** (private by default). Use the share 
 
 **Will casual chat accidentally create tables?**  
 No. Normal greetings and questions stay in conversation; table planning only runs when you ask to build a table or use `/lark`.
-
-**Distribution**  
-Published on [npm](https://www.npmjs.com/package/dsh-lark-studio) and indexed on [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) (synced to `dsh-market`), [DeepSeek 1024](https://deepseek1024.com/plugins/DeepLifeStudio/dsh-lark-studio), [DSH Plugin Hub](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio), and [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154).
 
 ## License
 

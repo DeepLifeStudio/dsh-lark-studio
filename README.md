@@ -145,6 +145,17 @@ Web 模式下启动 DSH 需要带上 `--patch`，侧边栏工作台才会加载�
 dsh start --patch
 ```
 
+### 支持的安装与索引源
+
+| 平台 / 源 | 类型 | 获取与安装方式 |
+| :--- | :--- | :--- |
+| [npm Registry](https://www.npmjs.com/package/dsh-lark-studio) | 主分发源 | 运行 `dsh plugin add dsh-lark-studio`，支持自动检测版本与 `dsh plugin update` |
+| [dsh-market](https://github.com/dsh-market/dsh-market) | 客户端内置市场 | 在 DSH 客户端「设置 → 插件市场」搜索 `dsh-lark-studio` 或 `飞书` 一键安装与更新 |
+| [Awesome DSH Plugin](https://awesome-dsh-plugin.com/p/DeepLifeStudio/dsh-lark-studio/) | 社区精选目录 | 收录于办公协同分类（[GitHub 仓库](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)），同时作为 `dsh-market` 的上游索引 |
+| [DeepSeek 1024](https://deepseek1024.com/plugins/DeepLifeStudio/dsh-lark-studio) | 社区插件商店 | 支持网页检索详情，或配合 `dsh-1024store` CLI 安装 |
+| [DSH Plugin Hub](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio) | 聚合展示页 | 自动同步 npm 与 GitHub 发版记录 |
+| [官方 Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154) | 官方社区发布贴 | DeepSeek Harness 仓库「Show Your Plugins!」展示与交流入口 |
+
 ### 更新
 
 ```bash
@@ -184,9 +195,6 @@ dsh plugin update
 
 **平时聊天会误触发建表吗？**  
 不会。普通问候或日常问答不会触发建表；只有在你明确表达建表需求或调用 `/lark` 时才会进入规划流程。
-
-**收录与发布渠道**  
-已发布至 [npm](https://www.npmjs.com/package/dsh-lark-studio)，并收录于 [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)（同步至 `dsh-market`）、[DeepSeek 1024](https://deepseek1024.com/plugins/DeepLifeStudio/dsh-lark-studio)、[DSH Plugin Hub](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio) 及 [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions/14154)。
 
 ## License
 

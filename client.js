@@ -78,27 +78,7 @@ window.__ModuleLoader__.load({
         headers.set('x-dsh-session-id', sid)
       }
 
-      let res
-      try {
-        res = await fetch(targetUrl, { ...options, headers })
-      } catch (err) {
-        throw err
-      }
-
-      // If primary Connection route (api/dsh-lark) 404s on an older host, try legacy /dsh-lark/api fallback
-      if (res.status === 404 && typeof targetUrl === 'string' && targetUrl.includes('api/dsh-lark')) {
-        const fallbackUrl = targetUrl.replace(/(\/)?api\/dsh-lark/, '/dsh-lark/api')
-        try {
-          const fallbackHeaders = new Headers(options.headers || {})
-          if (sid) fallbackHeaders.set('x-dsh-session-id', sid)
-          const fallbackRes = await fetch(fallbackUrl, { ...options, headers: fallbackHeaders })
-          if (fallbackRes.ok || fallbackRes.status !== 404) {
-            return fallbackRes
-          }
-        } catch {}
-      }
-
-      return res
+      return fetch(targetUrl, { ...options, headers })
     }
 
     // ── Content ────────────────────────────────────────────────────────────

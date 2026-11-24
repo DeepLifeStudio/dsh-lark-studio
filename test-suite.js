@@ -6,7 +6,7 @@ import assert from 'node:assert'
 import { spawn } from 'node:child_process'
 import { sanitizeOps, createAdjustPlanner } from './adjust-planner.js'
 import { destructiveChanges, createOperations } from './ops.js'
-import { verifyApiSecurity } from './index.js'
+import { inject } from './index.js'
 
 console.log('🚀 开始执行飞书工作台多维表格全功能自动化测试...\n')
 
@@ -657,135 +657,39 @@ test('9.5 飞书团队知识库与云文档检索调度验证', async () => {
   assert.ok(typeof res.reply === 'string' && res.reply.includes('知识库'))
 })
 
-test('10.1 Host 与 Origin 安全边界防护测试 (全方法拦截外域与跨站伪造)', () => {
-  const fakeSession = { id: 'session-valid-12345' }
+test('10.1 旧 /dsh-lark/api HTTP 路由与固定 desktop-workbench 绕过已彻底移除', async () => {
+  assert.strictEqual(inject.includes('webServer'), false, 'inject 不应再依赖 webServer')
+  assert.strictEqual(inject.includes('sessions'), false, 'inject 不应再依赖 sessions')
+  assert.strictEqual(inject.includes('connection'), true, 'inject 必须包含 connection')
+
+  let webServerRegisterCalled = false
+  const registeredRoutes = new Map()
   const mockCtx = {
-    webServer: {
-      getOrigin: () => 'http://127.0.0.1:49152'
+    subprocess: realSubprocess,
+    connection: {
+      fetch: {
+        register: (route) => {
+          registeredRoutes.set(route.path, route)
+          return () => { registeredRoutes.delete(route.path) }
+        }
+      }
     },
-    sessions: {
-      get: (id) => (id === 'session-valid-12345' ? fakeSession : undefined),
-      list: () => [fakeSession]
-    }
+    webServer: {
+      register: () => {
+        webServerRegisterCalled = true
+        return () => {}
+      }
+    },
+    commands: { register: () => {} },
+    tools: { register: () => {} },
+    effect: (fn) => fn()
   }
 
-  // 1. 正常本地请求通过
-  const validReq = {
-    method: 'GET',
-    headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152', 'x-dsh-session-id': 'session-valid-12345' }
-  }
-  const res1 = verifyApiSecurity(validReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
-  assert.strictEqual(res1.ok, true)
+  const { apply } = await import('./index.js')
+  apply(mockCtx)
 
-  // 2. 缺少 Host 头直接拦截 403
-  const noHostReq = {
-    method: 'GET',
-    headers: { origin: 'http://127.0.0.1:49152' }
-  }
-  const res2 = verifyApiSecurity(noHostReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
-  assert.strictEqual(res2.ok, false)
-  assert.strictEqual(res2.status, 403)
-
-  // 3. DNS Rebinding 外网 Host 拦截 403
-  const badHostReq = {
-    method: 'GET',
-    headers: { host: 'attacker.com' }
-  }
-  const res3 = verifyApiSecurity(badHostReq, new URL('http://attacker.com/dsh-lark/api/state'), mockCtx)
-  assert.strictEqual(res3.ok, false)
-  assert.strictEqual(res3.status, 403)
-
-  // 4. 浏览器 Cross-Site 标记拦截 403
-  const crossSiteReq = {
-    method: 'POST',
-    headers: { host: '127.0.0.1:49152', 'sec-fetch-site': 'cross-site' }
-  }
-  const res4 = verifyApiSecurity(crossSiteReq, new URL('http://127.0.0.1:49152/dsh-lark/api/adjust'), mockCtx)
-  assert.strictEqual(res4.ok, false)
-  assert.strictEqual(res4.status, 403)
-
-  // 5. 非法 Origin 拦截 403 (GET / POST 全方法生效)
-  const badOriginReq = {
-    method: 'GET',
-    headers: { host: '127.0.0.1:49152', origin: 'https://evil.site' }
-  }
-  const res5 = verifyApiSecurity(badOriginReq, new URL('http://127.0.0.1:49152/dsh-lark/api/records'), mockCtx)
-  assert.strictEqual(res5.ok, false)
-  assert.strictEqual(res5.status, 403)
-})
-
-test('10.2 DSH 会话身份验证测试 (ctx.sessions 拦截未授权访问)', () => {
-  const fakeSession = { id: 'session-valid-12345', cwd: '/workspace' }
-  const mockCtx = {
-    webServer: { getOrigin: () => 'http://127.0.0.1:49152' },
-    sessions: {
-      get: (id) => (id === 'session-valid-12345' ? fakeSession : undefined),
-      list: () => [fakeSession]
-    }
-  }
-
-  // 1. 未携带 x-dsh-session-id 拦截 401
-  const reqNoSession = {
-    method: 'GET',
-    headers: { host: '127.0.0.1:49152' }
-  }
-  const res1 = verifyApiSecurity(reqNoSession, new URL('http://127.0.0.1:49152/dsh-lark/api/records'), mockCtx)
-  assert.strictEqual(res1.ok, false)
-  assert.strictEqual(res1.status, 401)
-  assert.ok(res1.error.includes('会话鉴权失败'))
-
-  // 2. 伪造或过期的 session id 拦截 401
-  const reqBadSession = {
-    method: 'POST',
-    headers: { host: '127.0.0.1:49152', 'x-dsh-session-id': 'session-fake-99999' }
-  }
-  const res2 = verifyApiSecurity(reqBadSession, new URL('http://127.0.0.1:49152/dsh-lark/api/adjust'), mockCtx)
-  assert.strictEqual(res2.ok, false)
-  assert.strictEqual(res2.status, 401)
-
-  // 3. 携带合法 x-dsh-session-id 鉴权通过
-  const reqGoodSession = {
-    method: 'GET',
-    headers: { host: '127.0.0.1:49152', 'x-dsh-session-id': 'session-valid-12345' }
-  }
-  const res3 = verifyApiSecurity(reqGoodSession, new URL('http://127.0.0.1:49152/dsh-lark/api/records'), mockCtx)
-  assert.strictEqual(res3.ok, true)
-
-  // 4. URL query 参数携带合法 sessionId 鉴权通过
-  const reqQuerySession = {
-    method: 'GET',
-    headers: { host: '127.0.0.1:49152' }
-  }
-  const res4 = verifyApiSecurity(reqQuerySession, new URL('http://127.0.0.1:49152/dsh-lark/api/records?sessionId=session-valid-12345'), mockCtx)
-  assert.strictEqual(res4.ok, true)
-})
-
-test('10.3 全部 /dsh-lark/api 路由（含 state/active/models/connect）均要求 DSH 会话身份', () => {
-  const fakeSession = { id: 'session-valid-12345' }
-  const mockCtx = {
-    webServer: { getOrigin: () => 'http://127.0.0.1:49152' },
-    sessions: {
-      get: (id) => (id === 'session-valid-12345' ? fakeSession : undefined),
-      list: () => [fakeSession]
-    }
-  }
-
-  for (const path of ['/state', '/active', '/models', '/connect/scopes', '/records']) {
-    const req = {
-      method: 'GET',
-      headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152' }
-    }
-    const res = verifyApiSecurity(req, new URL(`http://127.0.0.1:49152/dsh-lark/api${path}`), mockCtx)
-    assert.strictEqual(res.ok, false, `${path} should require a DSH session`)
-    assert.strictEqual(res.status, 401)
-  }
-
-  const okReq = {
-    method: 'GET',
-    headers: { host: '127.0.0.1:49152', origin: 'http://127.0.0.1:49152', 'x-dsh-session-id': 'session-valid-12345' }
-  }
-  const okRes = verifyApiSecurity(okReq, new URL('http://127.0.0.1:49152/dsh-lark/api/state'), mockCtx)
-  assert.strictEqual(okRes.ok, true)
+  assert.strictEqual(webServerRegisterCalled, false, '不应注册任何旧版 webServer /dsh-lark/api 路由')
+  assert.strictEqual(registeredRoutes.size, 16, '全部 16 个端点应仅通过 DSH Connection Fetch 注册')
 })
 
 test('10.4 DSH Connection Fetch 路由注册与调用测试 (官方 Connection 机制)', async () => {
@@ -1065,36 +969,13 @@ test('11.4 协同问答与流式思考 (SSE ReadableStream) 全链路消费解�
   assert.strictEqual(receivedDone, true, 'SSE 应当以 done 事件正常收尾')
 })
 
-test('11.5 客户端通信弹性降级验证 (Connection 优先 + 404 自动回退)', async () => {
-  let callCount = 0
-
-  const mockFetch = async (targetUrl, options) => {
-    callCount++
-    if (targetUrl.includes('api/dsh-lark/state')) {
-      return new Response('Not Found', { status: 404 })
-    }
-    if (targetUrl.includes('/dsh-lark/api/state')) {
-      return new Response(JSON.stringify({ ok: true, fallback: true }), { status: 200 })
-    }
-    return new Response('Not Found', { status: 404 })
-  }
-
-  const clientAuthFetch = async (url, options = {}) => {
-    let res = await mockFetch(url, options)
-    if (res.status === 404 && typeof url === 'string' && url.includes('api/dsh-lark')) {
-      const fallbackUrl = url.replace(/(\/)?api\/dsh-lark/, '/dsh-lark/api')
-      const fallbackRes = await mockFetch(fallbackUrl, options)
-      if (fallbackRes.ok) return fallbackRes
-    }
-    return res
-  }
-
-  const res = await clientAuthFetch('api/dsh-lark/state')
-  assert.strictEqual(res.status, 200)
-  const data = await res.json()
-  assert.strictEqual(data.ok, true)
-  assert.strictEqual(data.fallback, true)
-  assert.strictEqual(callCount, 2, '应当在 404 后成功回退到旧版接口')
+test('11.5 客户端通信唯一路径校验 (仅走 Connection Fetch，不回退旧路由)', async () => {
+  const fs = await import('node:fs')
+  const clientSrc = fs.readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  const indexSrc = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8')
+  assert.strictEqual(clientSrc.includes('/dsh-lark/api'), false, 'client.js 不应保留旧 /dsh-lark/api 回退')
+  assert.strictEqual(indexSrc.includes('/dsh-lark/api'), false, 'index.js 不应保留旧 /dsh-lark/api 路由')
+  assert.strictEqual(indexSrc.includes('desktop-workbench'), false, 'index.js 不应保留固定 desktop-workbench 标记')
 })
 
 // -------------------------------------------------------------
@@ -1274,21 +1155,9 @@ test('12.1 明面与暗面全部请求及其返回响应结构穷尽验证 (27 �
   assert.strictEqual(r17.status, 200)
   assert.strictEqual(typeof r17.data.ok, 'boolean')
 
-  // --- 【第三组：暗面协议与安全防护请求（6 个）】 ---
-  // 18. OPTIONS 预检请求响应 (CORS preflight)
-  assert.ok(registeredWebRoute, 'webServer 路由应当已注册')
-  let optionsHeaderStatus = 0
-  let optionsHeaders = {}
-  await registeredWebRoute.handler(
-    { method: 'OPTIONS', headers: { origin: 'http://127.0.0.1:49152' }, url: '/dsh-lark/api/state' },
-    {
-      statusCode: 0,
-      setHeader: (k, v) => { optionsHeaders[k.toLowerCase()] = v },
-      end: () => { optionsHeaderStatus = 204 }
-    }
-  )
-  assert.strictEqual(optionsHeaderStatus, 204)
-  assert.ok(optionsHeaders['access-control-allow-origin'])
+  // --- 【第三组：暗面协议与安全防护请求】 ---
+  // 18. 确认旧版 webServer 路由已彻底移除
+  assert.strictEqual(registeredWebRoute, null, '旧版 webServer /dsh-lark/api 路由不应再被注册')
 
   // 19. 404 未知端点拒绝
   const stateRoute = registeredFetchRoutes.get('/api/dsh-lark/state')

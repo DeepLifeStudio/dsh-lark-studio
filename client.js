@@ -23,6 +23,13 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const { useCallback, useEffect, useMemo, useRef, useState } = React
+    let NativeSwitch = null
+    try {
+      const uiPrimitives = require('@deepseek-ai/dsh-client-ui-primitives')
+      if (uiPrimitives && typeof uiPrimitives.Switch === 'function') {
+        NativeSwitch = uiPrimitives.Switch
+      }
+    } catch {}
 
     const API = 'api/dsh-lark'
     const NS = 'dsh-lark-studio'
@@ -523,6 +530,9 @@ window.__ModuleLoader__.load({
       'account.working': '处理中…',
       'account.cancel': '取消',
       'account.close': '关闭',
+      'settings.convTabLabel': '对话顶部标签页',
+      'settings.convTabDesc': '在会话顶部「对话 / 轨迹」旁显示飞书工作台标签页',
+      'settings.convTabSaving': '正在保存…',
       'scope.base': '多维表格',
       'scope.calendar': '日历日程',
       'scope.task': '任务待办',
@@ -737,6 +747,9 @@ window.__ModuleLoader__.load({
       'account.working': 'Working…',
       'account.cancel': 'Cancel',
       'account.close': 'Close',
+      'settings.convTabLabel': 'Conversation header tab',
+      'settings.convTabDesc': 'Show Lark Workbench tab beside Chat / Trajectory in conversations',
+      'settings.convTabSaving': 'Saving…',
       'scope.base': 'Base & Docs',
       'scope.calendar': 'Calendar',
       'scope.task': 'Tasks',
@@ -2329,6 +2342,87 @@ window.__ModuleLoader__.load({
   text-overflow: ellipsis;
 }
 .lw-mono { font-family: var(--mono); font-size: 11.5px; }
+
+.lw-switch {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-border-l3, #D4D7DD);
+  cursor: pointer;
+}
+.lw-switch[aria-checked="true"] {
+  background: var(--dsw-alias-brand-primary, #111318);
+}
+.lw-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.lw-switch-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary-foreground, #FFFFFF);
+  transition: transform 120ms ease;
+  pointer-events: none;
+}
+.lw-switch[aria-checked="false"] .lw-switch-thumb {
+  background: var(--dsw-alias-switch-thumb, #FFFFFF);
+}
+.lw-switch[aria-checked="true"] .lw-switch-thumb {
+  transform: translateX(16px);
+}
+.lw-plugin-cfg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(15, 17, 21, 0.08));
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1, #FFFFFF);
+}
+.lw-plugin-cfg[data-theme="dark"] {
+  border-color: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.08));
+  background: var(--dsw-alias-bg-layer-1, #1C1C1F);
+}
+.lw-plugin-cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.lw-plugin-cfg-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.lw-plugin-cfg-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, #111318);
+}
+.lw-plugin-cfg[data-theme="dark"] .lw-plugin-cfg-title {
+  color: var(--dsw-alias-label-primary, #F3F4F6);
+}
+.lw-plugin-cfg-desc {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #7D8494);
+  line-height: 1.45;
+}
+.lw-plugin-cfg[data-theme="dark"] .lw-plugin-cfg-desc {
+  color: var(--dsw-alias-label-tertiary, #8E95A5);
+}
 
 .lw-scope-grid {
   display: grid;
@@ -4206,7 +4300,71 @@ body:has(.lw) [class*="viewArea"] {
 
     // ── Account & Permissions Modal ────────────────────────────────────────
 
-    function AccountModal({ open, onClose, health, connected, scopesInfo, syncingAuth, busyAccount, onGrantAll, onLogout, onUnbind, t }) {
+    function ConversationTabSwitch({ getEnabled, subscribe, onToggle, t }) {
+      const [enabled, setEnabled] = useState(() => Boolean(getEnabled && getEnabled()))
+      useEffect(() => {
+        setEnabled(Boolean(getEnabled && getEnabled()))
+        if (typeof subscribe !== 'function') return undefined
+        return subscribe(() => {
+          setEnabled(Boolean(getEnabled && getEnabled()))
+        })
+      }, [getEnabled, subscribe])
+      const handleChange = (next) => {
+        if (typeof onToggle !== 'function') return
+        const val = Boolean(next)
+        setEnabled(val)
+        onToggle(val)
+      }
+      if (NativeSwitch) {
+        return h(NativeSwitch, {
+          checked: enabled,
+          onChange: handleChange,
+          label: t('settings.convTabLabel'),
+          title: t('settings.convTabDesc'),
+          disabled: typeof onToggle !== 'function',
+        })
+      }
+      return h(
+        'button',
+        {
+          type: 'button',
+          role: 'switch',
+          'aria-checked': enabled ? 'true' : 'false',
+          'aria-label': t('settings.convTabLabel'),
+          title: t('settings.convTabDesc'),
+          disabled: typeof onToggle !== 'function',
+          className: `lw-switch${enabled ? ' is-on' : ''}`,
+          onClick: () => handleChange(!enabled),
+        },
+        h('span', { className: 'lw-switch-thumb' }),
+      )
+    }
+
+    function PluginBundleConfig({ subject, getEnabled, subscribe, onToggle, t: propT }) {
+      useEffect(() => ensureStyles(), [])
+      const theme = useHostTheme()
+      if (subject && (subject.kind !== 'bundle' || subject.pkg?.name !== 'dsh-lark-studio')) {
+        return null
+      }
+      const tr = typeof propT === 'function' ? propT : (k) => k
+      return h(
+        'div',
+        { className: 'lw-plugin-cfg', 'data-theme': theme },
+        h(
+          'div',
+          { className: 'lw-plugin-cfg-row' },
+          h(
+            'div',
+            { className: 'lw-plugin-cfg-text' },
+            h('span', { className: 'lw-plugin-cfg-title' }, tr('settings.convTabLabel')),
+            h('span', { className: 'lw-plugin-cfg-desc' }, tr('settings.convTabDesc')),
+          ),
+          h(ConversationTabSwitch, { getEnabled, subscribe, onToggle, t: tr }),
+        ),
+      )
+    }
+
+    function AccountModal({ open, onClose, health, connected, scopesInfo, syncingAuth, busyAccount, onGrantAll, onLogout, onUnbind, convTabProps, t }) {
       const { mounted, phase } = useAnimatedPresence(open, 160)
       const [confirmMode, setConfirmMode] = useState(null)
       const boxRef = useRef(null)
@@ -4308,6 +4466,18 @@ body:has(.lw) [class*="viewArea"] {
               h('span', { className: 'lw-kv-key' }, t('account.cli')),
               h('span', { className: 'lw-kv-val' }, health?.cli?.available ? t('account.cliReady') : t('account.cliMissing')),
             ),
+            convTabProps
+              ? h(
+                  'div',
+                  { className: 'lw-kv-row' },
+                  h('span', { className: 'lw-kv-key', title: t('settings.convTabDesc') }, t('settings.convTabLabel')),
+                  h(
+                    'span',
+                    { className: 'lw-kv-val' },
+                    h(ConversationTabSwitch, { ...convTabProps, t }),
+                  ),
+                )
+              : null,
           ),
           h(
             'div',
@@ -6057,6 +6227,7 @@ body:has(.lw) [class*="viewArea"] {
           onGrantAll: handleGrantAll,
           onLogout: handleLogout,
           onUnbind: handleUnbind,
+          convTabProps: props.convTabProps,
           t,
         }),
         h(ToastStack, { toast, onDismiss: dismissToast, t }),
@@ -6065,10 +6236,77 @@ body:has(.lw) [class*="viewArea"] {
 
     return {
       inject: ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs'],
-      apply(ctx) {
+      apply(ctx, config) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }))
         const t = ctx.locale.bind(NS)
         const realTable = hostBrowser(ctx)
+        const CONV_TAB_KEY = 'dsh-lark-conv-tab'
+        let configFormsSvc = null
+        try {
+          configFormsSvc = typeof ctx.get === 'function' ? ctx.get('configForms') : null
+        } catch {}
+        const configForm =
+          configFormsSvc && typeof configFormsSvc.get === 'function'
+            ? configFormsSvc.get('lark-workbench')
+            : null
+        const convTabListeners = new Set()
+
+        const readLocalConvTab = () => {
+          try {
+            const raw = window.localStorage.getItem(CONV_TAB_KEY)
+            if (raw === 'true') return true
+            if (raw === 'false') return false
+          } catch {}
+          return null
+        }
+
+        const getConvTabEnabled = () => {
+          const localVal = readLocalConvTab()
+          if (localVal !== null) return localVal
+          const ref = config && config.showInConversationTab
+          const synced = ref && typeof ref.get === 'function' ? ref.get() : ref
+          if (typeof synced === 'boolean') return synced
+          const snap = configForm && typeof configForm.getSnapshot === 'function' ? configForm.getSnapshot() : null
+          return Boolean(snap && snap.value && snap.value.showInConversationTab)
+        }
+
+        const notifyConvTab = () => {
+          for (const fn of convTabListeners) {
+            try { fn() } catch {}
+          }
+        }
+
+        const subscribeConvTab = (listener) => {
+          convTabListeners.add(listener)
+          const unsubs = [() => convTabListeners.delete(listener)]
+          if (config && config.showInConversationTab && typeof config.showInConversationTab.subscribe === 'function') {
+            unsubs.push(config.showInConversationTab.subscribe(listener))
+          }
+          if (configForm && typeof configForm.subscribe === 'function') {
+            unsubs.push(configForm.subscribe(listener))
+          }
+          return () => {
+            for (const fn of unsubs) {
+              if (typeof fn === 'function') fn()
+            }
+          }
+        }
+
+        const toggleConvTab = (next) => {
+          const val = Boolean(next)
+          try { window.localStorage.setItem(CONV_TAB_KEY, String(val)) } catch {}
+          notifyConvTab()
+          if (configForm && typeof configForm.set === 'function') {
+            try { Promise.resolve(configForm.set('showInConversationTab', val)).catch(() => {}) } catch {}
+          }
+          return true
+        }
+
+        const convTabProps = {
+          getEnabled: getConvTabEnabled,
+          subscribe: subscribeConvTab,
+          onToggle: toggleConvTab,
+        }
 
         ctx.slots.inject('sidebar.panellist', () =>
           ctx.slots.register({ name: 'sidebar.panellist', id: 'lark-workbench', order: 20, label: () => t('app.name') }, PanelIcon),
@@ -6076,15 +6314,41 @@ body:has(.lw) [class*="viewArea"] {
         ctx.slots.inject('main', () =>
           ctx.slots.register(
             { name: 'main', key: 'lark-workbench', locale: NS },
-            (props) => h(Workbench, { ...props, realTable, ctx, isStandalone: true }),
+            (props) => h(Workbench, { ...props, realTable, ctx, convTabProps, isStandalone: true }),
           ),
         )
-        ctx.slots.inject('conversation.view', () =>
+        ctx.slots.inject('plugins.detail.section', () =>
           ctx.slots.register(
-            { name: 'conversation.view', id: 'lark-workbench', order: 5, label: () => t('app.name'), locale: NS },
-            (props) => h(Workbench, { ...props, realTable, ctx, isConversationView: true }),
+            { name: 'plugins.detail.section', id: 'dsh-lark-studio-settings', order: 10, locale: NS },
+            (props) => h(PluginBundleConfig, { ...props, ...convTabProps }),
           ),
         )
+
+        let disposeConvView = null
+        const syncConvView = () => {
+          const enabled = getConvTabEnabled()
+          if (enabled && !disposeConvView) {
+            disposeConvView = ctx.slots.inject('conversation.view', () =>
+              ctx.slots.register(
+                { name: 'conversation.view', id: 'lark-workbench', order: 5, label: () => t('app.name'), locale: NS },
+                (props) => h(Workbench, { ...props, realTable, ctx, convTabProps, isConversationView: true }),
+              ),
+            )
+          } else if (!enabled && disposeConvView) {
+            const dispose = disposeConvView
+            disposeConvView = null
+            dispose()
+          }
+        }
+        syncConvView()
+        ctx.effect(() => subscribeConvTab(syncConvView))
+        ctx.effect(() => () => {
+          if (disposeConvView) {
+            const dispose = disposeConvView
+            disposeConvView = null
+            dispose()
+          }
+        })
 
         if (ctx.sidebarRightTabs) {
           ctx.effect(() =>
@@ -6097,7 +6361,7 @@ body:has(.lw) [class*="viewArea"] {
           ctx.slots.inject('sidebar.right.pane.tab', () =>
             ctx.slots.register(
               { name: 'sidebar.right.pane.tab', key: 'lark-workbench', locale: NS },
-              (props) => h(Workbench, { ...props, realTable, ctx, isRightSidebar: true }),
+              (props) => h(Workbench, { ...props, realTable, ctx, convTabProps, isRightSidebar: true }),
             ),
           )
           ctx.slots.inject('sidebar.right.pane.tab.title', () =>

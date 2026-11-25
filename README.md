@@ -10,6 +10,8 @@
 
 DeepSeek Harness 的飞书插件。底层集成飞书官方 [`lark-cli`](https://www.npmjs.com/package/@larksuite/cli) 全域能力，可以直接在对话或飞书工作台里用自然语言建多维表格、改表结构和记录，并动态调度日历、待办、群聊、邮件、通讯录、审批、云文档、电子表格、会议纪要等 25+ 项飞书官方技能。
 
+![飞书工作台](assets/workbench-zh.png)
+
 ## 能做什么
 
 ### 1. 一句话建多维表格
@@ -193,6 +195,7 @@ npm install -g @larksuite/cli
 | `larkCliPath` | 空（自动检测） | 自定义 `lark-cli` 可执行文件路径（也可通过环境变量 `LARK_CLI_PATH` 指定） |
 | `binDir` | 空 | 自定义 `lark-cli` 所在目录（兼容 `@deepseek-ai/dsh-feishu` 配置） |
 | `identity` | `auto` | 调用飞书 API 时的默认身份模式（`auto` / `user` / `bot`） |
+| `showInConversationTab` | `false` | 是否在对话顶部标签页显示「飞书工作台」（默认关闭，可在插件配置中随时开启） |
 
 ## 暴露给 Agent 的工具与命令
 

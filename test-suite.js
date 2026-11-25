@@ -1653,10 +1653,139 @@ test('15.2 包清单、声明式 Config 与无冗余静态 SKILL 资产', async 
   assert.strictEqual(typeof Config, 'function', 'index.js 必须导出 Schemastery Config')
   const defaults = Config({})
   assert.strictEqual(defaults.identity, 'auto')
-  const customCfg = Config({ larkCliPath: '/opt/bin/lark-cli', binDir: '/opt/bin', identity: 'user' })
+  assert.strictEqual(defaults.showInConversationTab.get(), false, 'showInConversationTab 默认应关闭')
+  const customCfg = Config({ larkCliPath: '/opt/bin/lark-cli', binDir: '/opt/bin', identity: 'user', showInConversationTab: true })
   assert.strictEqual(customCfg.larkCliPath, '/opt/bin/lark-cli')
   assert.strictEqual(customCfg.binDir, '/opt/bin')
   assert.strictEqual(customCfg.identity, 'user')
+  assert.strictEqual(customCfg.showInConversationTab.get(), true, 'showInConversationTab 支持设为 true')
+
+  // 验证 client.js 对 showInConversationTab 的动态注入与卸载
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  let loadedPlugin = null
+  const prevWindow = globalThis.window
+  const prevDocument = globalThis.document
+  try {
+    const storage = new Map()
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+        setItem: (k, v) => storage.set(k, String(v)),
+        removeItem: (k) => storage.delete(k),
+      },
+      __ModuleLoader__: {
+        load(mod) {
+          loadedPlugin = mod.factory((name) => {
+            if (name === 'react') {
+              return {
+                createElement: (type, props, ...children) => ({ type, props, children }),
+                useCallback: (fn) => fn,
+                useEffect: () => {},
+                useMemo: (fn) => fn(),
+                useRef: (v) => ({ current: v }),
+                useState: (v) => [typeof v === 'function' ? v() : v, () => {}],
+              }
+            }
+            return {}
+          })
+        },
+      },
+    }
+    globalThis.document = { body: null, getElementById: () => null }
+    new Function(clientSrc)()
+    assert.ok(loadedPlugin && typeof loadedPlugin.apply === 'function', 'client.js 必须导出 apply')
+
+    const injectedSlots = new Map()
+    const effects = []
+    const registeredComponents = new Map()
+    const mockCtx = {
+      effect(fn) {
+        const d = fn()
+        if (typeof d === 'function') effects.push(d)
+        return d
+      },
+      locale: { register: () => () => {}, bind: () => (k) => k },
+      slots: {
+        register: (opts, comp) => {
+          registeredComponents.set(opts.name, comp)
+          return opts
+        },
+        inject(name, factory) {
+          injectedSlots.set(name, (injectedSlots.get(name) || 0) + 1)
+          factory()
+          return () => {
+            const next = (injectedSlots.get(name) || 1) - 1
+            if (next <= 0) injectedSlots.delete(name)
+            else injectedSlots.set(name, next)
+          }
+        },
+      },
+      sidebarRight: {},
+      sidebarRightTabs: { register: () => () => {} },
+    }
+
+    let tabFlag = false
+    const listeners = new Set()
+    const syncedRef = {
+      get: () => tabFlag,
+      getSnapshot: () => tabFlag,
+      subscribe(fn) {
+        listeners.add(fn)
+        return () => listeners.delete(fn)
+      },
+    }
+    const setCalls = []
+    const configFormsMock = {
+      get(id) {
+        assert.strictEqual(id, 'lark-workbench')
+        return {
+          getSnapshot: () => ({ status: 'ready', writable: true, value: { showInConversationTab: tabFlag } }),
+          subscribe: () => () => {},
+          set: async (k, v) => {
+            setCalls.push([k, v])
+            tabFlag = Boolean(v)
+            for (const fn of listeners) fn()
+            return true
+          },
+        }
+      },
+    }
+    mockCtx.get = (name) => (name === 'configForms' ? configFormsMock : undefined)
+    const allowedKeys = new Set([...loadedPlugin.inject, 'effect', 'get'])
+    const strictCtx = new Proxy(mockCtx, {
+      get(target, prop) {
+        if (typeof prop === 'string' && !allowedKeys.has(prop)) {
+          throw new Error(`Cordis isolation violation: direct access to uninjected ctx.${prop}`)
+        }
+        return target[prop]
+      },
+    })
+    loadedPlugin.apply(strictCtx, { showInConversationTab: syncedRef })
+    assert.strictEqual(injectedSlots.has('sidebar.panellist'), true, '左侧边栏入口应始终注入')
+    assert.strictEqual(injectedSlots.has('main'), true, '独立主视图应始终注入')
+    assert.strictEqual(injectedSlots.has('plugins.detail.section'), true, '插件详情配置区块应始终注入')
+    assert.strictEqual(injectedSlots.has('sidebar.right.pane.tab'), true, '右侧边栏标签页应始终注入')
+    assert.strictEqual(injectedSlots.has('conversation.view'), false, '默认关闭时不应注入 conversation.view')
+
+    // 验证 plugins.detail.section 对其他插件返回 null，对本插件渲染并能通过 onToggle 立即注入/注销 conversation.view
+    const detailSectionRender = registeredComponents.get('plugins.detail.section')
+    const otherEl = detailSectionRender({ subject: { kind: 'bundle', pkg: { name: 'other-plugin' } }, t: (k) => k })
+    assert.strictEqual(otherEl.type(otherEl.props), null, '其他插件详情页应返回 null')
+    const selfEl = detailSectionRender({ subject: { kind: 'bundle', pkg: { name: 'dsh-lark-studio' } }, t: (k) => k })
+    assert.ok(selfEl.type(selfEl.props) !== null, '本插件详情页应渲染设置区块')
+
+    await selfEl.props.onToggle(true)
+    assert.strictEqual(storage.get('dsh-lark-conv-tab'), 'true')
+    assert.strictEqual(injectedSlots.get('conversation.view'), 1, '通过开关开启后应立即注入 conversation.view')
+
+    await selfEl.props.onToggle(false)
+    assert.strictEqual(storage.get('dsh-lark-conv-tab'), 'false')
+    assert.strictEqual(injectedSlots.has('conversation.view'), false, '通过开关关闭后应立即注销 conversation.view')
+    assert.deepStrictEqual(setCalls, [['showInConversationTab', true], ['showInConversationTab', false]])
+  } finally {
+    globalThis.window = prevWindow
+    globalThis.document = prevDocument
+  }
 })
 
 test('15.3 DSH 原生能力可选注入全分支 (skills / storageDomain 落盘水合 / cliAccounts 完整状态机与降级)', async () => {

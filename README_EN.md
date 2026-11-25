@@ -10,6 +10,8 @@
 
 A Feishu / Lark plugin for DeepSeek Harness. Built on top of the official [`lark-cli`](https://www.npmjs.com/package/@larksuite/cli), it lets you create and edit Lark Bitables in plain language and dynamically run 25+ official Feishu skills—covering calendar, tasks, chats, mail, contacts, approvals, docs, sheets, and meeting notes—directly from chat or the workbench.
 
+![Lark Workbench](assets/workbench-en.png)
+
 ## What it does
 
 ### 1. Build a Bitable from a single sentence
@@ -193,6 +195,7 @@ Optional plugin settings available in DSH Plugins / Settings:
 | `larkCliPath` | Empty (auto) | Custom `lark-cli` executable path (or set `LARK_CLI_PATH`) |
 | `binDir` | Empty | Custom directory containing `lark-cli` (compatible with `@deepseek-ai/dsh-feishu`) |
 | `identity` | `auto` | Default Feishu API identity mode (`auto` / `user` / `bot`) |
+| `showInConversationTab` | `false` | Show the Lark Workbench tab in the conversation header (off by default; toggleable in plugin settings) |
 
 ## Agent tools & commands
 

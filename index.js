@@ -24,6 +24,7 @@ export const Config = z.object({
   larkCliPath: z.string().description('Custom lark-cli executable path / 自定义 lark-cli 可执行文件路径（留空则自动准备）'),
   binDir: z.string().description('Custom directory containing lark-cli / 自定义 lark-cli 所在目录（兼容官方飞书插件配置）'),
   identity: z.union(['auto', 'user', 'bot']).default('auto').description('Default Feishu API identity mode / 调用飞书 API 时的默认身份模式'),
+  showInConversationTab: z.boolean().default(false).volatile().description('Show Lark Workbench tab in conversation header / 是否在对话顶部标签页显示飞书工作台'),
 })
 
 function jsonResponse(status, body) {

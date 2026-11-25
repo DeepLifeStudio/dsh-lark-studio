@@ -6,7 +6,7 @@
 [![dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Feishu / Lark plugin for DeepSeek Harness. Built on top of the official [`lark-cli`](https://www.npmjs.com/package/@larksuite/cli), it lets you create and edit Lark Bitables in plain language and handle calendar, tasks, chats, mail, contacts, and approvals directly from chat or the sidebar workbench.
+A Feishu / Lark plugin for DeepSeek Harness. Built on top of the official [`lark-cli`](https://www.npmjs.com/package/@larksuite/cli), it lets you create and edit Lark Bitables in plain language and dynamically run 25+ official Feishu skills—covering calendar, tasks, chats, mail, contacts, approvals, docs, sheets, and meeting notes—directly from chat or the workbench.
 
 ## What it does
 
@@ -103,27 +103,24 @@ When a required Lark Open Platform scope is missing, the plugin tells you which 
 
 </details>
 
-## Sidebar Workbench
+## Lark Workbench
 
-The plugin adds a **Lark Workbench** tab to the DSH right sidebar:
+The plugin adds **Lark Workbench** to the DSH main sidebar, conversation view, and right sidebar:
 
-- **Setup wizard**: checks for `lark-cli`, helps bind your Lark app (`App ID` / `App Secret`), and runs browser OAuth login.
-- **Schema preview**: displays drafted columns, options, and sample rows before creating the table.
-- **Live thinking stream**: streams the model's reasoning during planning and edits so you can see how fields were chosen.
+- **Zero-install setup wizard**: automatically prepares `lark-cli` on first open (no manual Node.js or terminal install required; reuses `@deepseek-ai/dsh-feishu`'s CLI when present/newer), guides you through App linking and OAuth, and syncs with the account card on the DSH Plugins page.
+- **Schema preview & draft recovery**: inspect fields, options, and sample rows before creating; unfinished drafts stay accessible under **Draft**, with Undo toasts if closed, discarded, or cleared by mistake.
+- **Live thinking stream**: streams reasoning in real time during planning and assistant runs.
 - **Split-pane view**: chat on the left, live embedded Lark Bitable on the right.
-- **Scope inspector**: shows which Lark permission domains are granted and links directly to the developer console for missing ones.
+- **Full Chinese / English i18n**: UI copy, starter prompts, schema planning, and collaboration answers switch seamlessly with your DSH language setting.
+- **Scope inspector & write guards**: surfaces missing scope names with direct developer-console links, and pauses for confirmation before destructive Base changes or mutating skill commands.
 
 ## Installation
 
 ### Prerequisites
 
-- Node.js `>= 18.0.0`
 - DeepSeek Harness `>= 0.2.2-rc.1 < 0.3.0-0`
-- Official Lark CLI installed globally:
 
-```bash
-npm install -g @larksuite/cli
-```
+> No pre-installed Node.js or global `lark-cli` is required: the plugin bundles and bootstraps `@larksuite/cli` automatically on first open.
 
 ### Install the plugin
 
@@ -168,15 +165,36 @@ dsh plugin update
 
 ### First-time setup
 
-Open **Lark Workbench** from the DSH right sidebar and follow the three steps:
+Open **Lark Workbench** from the DSH left sidebar or right sidebar and follow three steps:
 
-1. Verify `lark-cli` is installed;
-2. Bind your Lark app's `App ID` and `App Secret` (or create one via the guided link);
-3. Complete OAuth login in your browser.
+1. **Auto-prepare component**: automatically detects or installs `lark-cli` (preferring an official `@deepseek-ai/dsh-feishu` CLI if newer/available); you can also connect from the DSH Plugins page account card;
+2. **Connect your Lark app**: create an app with one click or enter an existing `App ID` and `App Secret`;
+3. **Browser OAuth**: approve sign-in in the browser.
+
+<details>
+<summary>Manual CLI installation for restricted networks (optional)</summary>
+
+If automatic download is blocked in an offline or restricted environment, install globally and recheck:
+
+```bash
+npm install -g @larksuite/cli
+```
+
+</details>
+
+### Configuration (optional)
+
+Optional plugin settings available in DSH Plugins / Settings:
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `larkCliPath` | Empty (auto) | Custom `lark-cli` executable path (or set `LARK_CLI_PATH`) |
+| `binDir` | Empty | Custom directory containing `lark-cli` (compatible with `@deepseek-ai/dsh-feishu`) |
+| `identity` | `auto` | Default Feishu API identity mode (`auto` / `user` / `bot`) |
 
 ## Agent tools & commands
 
-If you prefer working from the main DSH chat, the plugin registers:
+If you prefer working from the main DSH chat, the plugin registers structured tools, the `/lark` command, system prompt guidance, and a unified `feishu` skill provider (yielding automatically when `@deepseek-ai/dsh-feishu` is installed):
 
 | Entry | Kind | Purpose |
 | :--- | :--- | :--- |
@@ -187,8 +205,8 @@ If you prefer working from the main DSH chat, the plugin registers:
 
 ## FAQ
 
-**Do I need to install `lark-cli`?**  
-Yes. The plugin never stores your Lark password; all API calls go through your local `lark-cli` using your own OAuth session.
+**Do I need to install Node.js or `lark-cli` manually?**  
+No. The plugin manages and auto-prepares `lark-cli` for you (and reuses `@deepseek-ai/dsh-feishu`'s CLI when newer). The plugin never stores your Feishu password; all API calls use your own OAuth session and system keychain credentials.
 
 **Where are created Bitables stored?**  
 In your own Lark account under **My Space** (private by default). Use the share button in Lark whenever you want to invite teammates.

@@ -27,6 +27,28 @@ const PROGRESS_COLORS = new Set([
   'Blue', 'Purple', 'DarkGreen', 'Green', 'Cyan', 'Orange', 'Red', 'Gray',
 ])
 
+export function resolveLang(lang, text = '') {
+  const explicit = String(lang || '').trim().toLowerCase()
+  if (explicit.startsWith('en')) return 'en'
+  if (explicit.startsWith('zh')) return 'zh'
+  const sample = String(text || '').trim()
+  if (sample && !/[\u4e00-\u9fff]/.test(sample) && /[a-zA-Z]{2,}/.test(sample)) return 'en'
+  return 'zh'
+}
+
+const EN_PLAN_DIRECTIVE = `
+
+IMPORTANT OUTPUT LANGUAGE RULE:
+The active UI/user language is English.
+Write ALL user-facing fields in natural, idiomatic English:
+- "baseName", "intro", "tables[].name", "fields[].name", "fields[].description", "options[].name", and "records" values MUST be in English.
+- Use concise business nouns for column names (e.g. "Deal Stage", "Next Follow-up", "Owner", "Estimated Value") and USD for currency unless the user specifies another currency.`
+
+const EN_REFINE_DIRECTIVE = `
+
+IMPORTANT OUTPUT LANGUAGE RULE:
+The active UI/user language is English. Keep existing fields consistent and write any newly added or modified column names, descriptions, options, or sample values in natural English.`
+
 const SYSTEM_PROMPT = `你在帮一个用户设计飞书多维表格（Bitable Base）。
 
 【重要意图判断】：
@@ -267,19 +289,24 @@ function sanitizeRecords(raw, fields) {
  * Constrain a model reply into a blueprint we can execute, or explain why it
  * is unusable. Returns `{ ok: true, plan }` or `{ ok: false, message }`.
  */
-export function sanitizePlan(raw) {
-  if (!raw || typeof raw !== 'object') return { ok: false, message: '模型没有返回 JSON 对象。' }
+export function sanitizePlan(raw, langInput = 'zh') {
+  const isEn = resolveLang(langInput) === 'en'
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, message: isEn ? 'The model did not return a valid JSON object.' : '模型没有返回 JSON 对象。' }
+  }
   if (raw.isTable === false) {
-    return { ok: false, isNotTable: true, message: raw.reason || '该指令非多维表格设计需求' }
+    return { ok: false, isNotTable: true, message: raw.reason || (isEn ? 'Not a Base design request' : '该指令非多维表格设计需求') }
   }
   const rawTables = Array.isArray(raw.tables) ? raw.tables : []
-  if (rawTables.length === 0) return { ok: false, message: '模型没有给出任何表。' }
+  if (rawTables.length === 0) {
+    return { ok: false, message: isEn ? 'The model did not return any tables.' : '模型没有给出任何表。' }
+  }
 
   const tables = []
   const usedNames = new Set()
   for (const rawTable of rawTables.slice(0, MAX_TABLES)) {
     if (!rawTable || typeof rawTable !== 'object') continue
-    let tableName = clip(rawTable.name, 30) || '表'
+    let tableName = clip(rawTable.name, 30) || (isEn ? 'Table' : '表')
     while (usedNames.has(tableName)) tableName = `${tableName}2`
     usedNames.add(tableName)
 
@@ -298,7 +325,7 @@ export function sanitizePlan(raw) {
     if (fields[0].type !== 'text') {
       const textish = fields.findIndex((field) => field.type === 'text')
       if (textish === -1) {
-        fields.unshift({ type: 'text', name: '名称' })
+        fields.unshift({ type: 'text', name: isEn ? 'Name' : '名称' })
       } else {
         const [promoted] = fields.splice(textish, 1)
         delete promoted.style
@@ -318,7 +345,9 @@ export function sanitizePlan(raw) {
     })
   }
 
-  if (tables.length === 0) return { ok: false, message: '模型给出的字段都不合法，没能组成一张表。' }
+  if (tables.length === 0) {
+    return { ok: false, message: isEn ? 'No valid fields were generated to form a table.' : '模型给出的字段都不合法，没能组成一张表。' }
+  }
   return {
     ok: true,
     plan: {
@@ -396,15 +425,21 @@ export function createPlanner({ ctx, config = {} }) {
     const provider = opts.provider || routed.provider
     const model = opts.model || routed.model
     const isRefine = Boolean(opts.currentPlan && typeof opts.currentPlan === 'object' && Array.isArray(opts.currentPlan.tables))
+    const lang = resolveLang(opts.lang, sentence)
+    const isEn = lang === 'en'
+    const baseSystem = isRefine ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT
+    const system = isEn ? `${baseSystem}${isRefine ? EN_REFINE_DIRECTIVE : EN_PLAN_DIRECTIVE}` : baseSystem
     const userPrompt = isRefine
-      ? `当前多维表格草稿 JSON：\n${JSON.stringify(opts.currentPlan, null, 2)}\n\n用户的本次修改意见：${sentence}`
+      ? (isEn
+          ? `Current Base draft JSON:\n${JSON.stringify(opts.currentPlan, null, 2)}\n\nRequested modification: ${sentence}`
+          : `当前多维表格草稿 JSON：\n${JSON.stringify(opts.currentPlan, null, 2)}\n\n用户的本次修改意见：${sentence}`)
       : sentence
     const messages = [{ role: 'user', content: [{ type: 'text', text: userPrompt }] }]
     const text = await collectText(
       ctx.llm.stream({
         provider,
         model,
-        system: isRefine ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT,
+        system,
         messages,
         temperature: isRefine ? 0.1 : 0.2,
         maxTokens: 2000,
@@ -424,6 +459,8 @@ export function createPlanner({ ctx, config = {} }) {
    */
   async function plan(sentence, signal, timeoutMs = PLAN_TIMEOUT_MS, opts = {}) {
     const text = String(sentence ?? '').trim()
+    const lang = resolveLang(opts.lang, text)
+    const isEn = lang === 'en'
     const currentPlan = opts.currentPlan && typeof opts.currentPlan === 'object' && Array.isArray(opts.currentPlan.tables)
       ? opts.currentPlan
       : null
@@ -439,27 +476,44 @@ export function createPlanner({ ctx, config = {} }) {
     }
 
     if (text.length < 2) {
-      return { ok: false, message: '请先用一句话描述你想要的表，例如「客户管理，记录公司、联系人、阶段和下次联系时间」。' }
+      return {
+        ok: false,
+        message: isEn
+          ? 'Please describe the table you want, e.g. "Customer leads with company, contact, deal stage, and follow-up date".'
+          : '请先用一句话描述你想要的表，例如「客户管理，记录公司、联系人、阶段和下次联系时间」。',
+      }
     }
 
     const guard = withTimeout(signal, timeoutMs)
     try {
-      let raw = parsePlanText(await ask(text, guard.signal, opts))
+      let raw = parsePlanText(await ask(text, guard.signal, { ...opts, lang }))
       if (!raw) {
         const routed = route()
         const provider = opts.provider || routed.provider
         const model = opts.model || routed.model
+        const baseSystem = currentPlan ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT
+        const system = isEn ? `${baseSystem}${currentPlan ? EN_REFINE_DIRECTIVE : EN_PLAN_DIRECTIVE}` : baseSystem
         const retryPrompt = currentPlan
-          ? `当前多维表格草稿 JSON：\n${JSON.stringify(currentPlan, null, 2)}\n\n用户的本次修改意见：${text}`
+          ? (isEn
+              ? `Current Base draft JSON:\n${JSON.stringify(currentPlan, null, 2)}\n\nRequested modification: ${text}`
+              : `当前多维表格草稿 JSON：\n${JSON.stringify(currentPlan, null, 2)}\n\n用户的本次修改意见：${text}`)
           : text
         const retry = await collectText(
           ctx.llm.stream({
             provider,
             model,
-            system: currentPlan ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT,
+            system,
             messages: [
               { role: 'user', content: [{ type: 'text', text: retryPrompt }] },
-              { role: 'user', content: [{ type: 'text', text: '上一次回复无法解析。请只输出一个 JSON 对象，不要任何其他文字。' }] },
+              {
+                role: 'user',
+                content: [{
+                  type: 'text',
+                  text: isEn
+                    ? 'The previous response could not be parsed. Output ONLY one valid JSON object with no extra text.'
+                    : '上一次回复无法解析。请只输出一个 JSON 对象，不要任何其他文字。',
+                }],
+              },
             ],
             temperature: 0,
             maxTokens: 2000,
@@ -469,11 +523,18 @@ export function createPlanner({ ctx, config = {} }) {
         )
         raw = parsePlanText(retry)
       }
-      if (!raw) return { ok: false, message: '模型没有返回可解析的表结构，请换一种说法再试。' }
+      if (!raw) {
+        return {
+          ok: false,
+          message: isEn
+            ? 'Could not parse the generated Base schema. Please try rephrasing.'
+            : '模型没有返回可解析的表结构，请换一种说法再试。',
+        }
+      }
       if (currentPlan && (raw.action === 'keep' || raw.action === 'build')) {
         return { ok: true, action: raw.action, plan: currentPlan, changedFields: [] }
       }
-      const checked = sanitizePlan(raw)
+      const checked = sanitizePlan(raw, lang)
       if (!checked.ok) return checked
       if (currentPlan) {
         return {
@@ -485,7 +546,12 @@ export function createPlanner({ ctx, config = {} }) {
       return checked
     } catch (error) {
       if (guard.timedOut()) {
-        return { ok: false, message: '想太久了，没出结果。再点一次试试，或者换一句更短的话。' }
+        return {
+          ok: false,
+          message: isEn
+            ? 'Planning timed out. Please try again or use a shorter description.'
+            : '想太久了，没出结果。再点一次试试，或者换一句更短的话。',
+        }
       }
       throw error
     } finally {

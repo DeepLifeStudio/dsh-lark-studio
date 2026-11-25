@@ -6,9 +6,16 @@
  * command" cost and executes a blueprint in one run.
  */
 
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { resolveLang } from './planner.js'
+
+const CLI_BIN_NAME = process.platform === 'win32' ? 'lark-cli.exe' : 'lark-cli'
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
+const requireFromModule = createRequire(import.meta.url)
 
 const MAX_STDOUT_BYTES = 4 * 1024 * 1024
 const MAX_STDERR_BYTES = 256 * 1024
@@ -173,28 +180,41 @@ const DESTRUCTIVE_OPS = new Set([
  *   ['删掉列「备注」', '从「状态」删掉选项：已取消']
  * Also used by the agent tool so both entrances warn the same way.
  */
-export function destructiveChanges(ops) {
+export function destructiveChanges(ops, langInput = 'zh') {
+  const isEn = resolveLang(langInput) === 'en'
   const lines = []
   for (const op of Array.isArray(ops) ? ops : []) {
     if (!op || !DESTRUCTIVE_OPS.has(op.op)) continue
     switch (op.op) {
       case 'delete_field':
-        lines.push(`删掉列「${op.field}」`)
+        lines.push(isEn ? `Delete column "${op.field}"` : `删掉列「${op.field}」`)
         break
       case 'delete_view':
-        lines.push(`删掉视图「${op.view}」`)
+        lines.push(isEn ? `Delete view "${op.view}"` : `删掉视图「${op.view}」`)
         break
       case 'delete_records':
-        lines.push(op.record_ids ? `删掉 ${op.record_ids.length} 条记录` : '删掉符合条件的记录')
+        lines.push(
+          op.record_ids
+            ? (isEn ? `Delete ${op.record_ids.length} record(s)` : `删掉 ${op.record_ids.length} 条记录`)
+            : (isEn ? 'Delete matching records' : '删掉符合条件的记录'),
+        )
         break
       case 'remove_options':
-        lines.push(`从「${op.field}」删掉选项：${op.options.join('、')}`)
+        lines.push(
+          isEn
+            ? `Remove option(s) from "${op.field}": ${op.options.join(', ')}`
+            : `从「${op.field}」删掉选项：${op.options.join('、')}`,
+        )
         break
       case 'disable_adv_perm':
-        lines.push('关闭多维表格高级权限（会导致已有自定义角色失效）')
+        lines.push(
+          isEn
+            ? 'Disable advanced permissions (invalidates existing custom roles)'
+            : '关闭多维表格高级权限（会导致已有自定义角色失效）',
+        )
         break
       case 'delete_role':
-        lines.push(`删掉角色「${op.role_name || op.role}」`)
+        lines.push(isEn ? `Delete role "${op.role_name || op.role}"` : `删掉角色「${op.role_name || op.role}」`)
         break
       default:
         break
@@ -204,46 +224,328 @@ export function destructiveChanges(ops) {
 }
 
 export function createOperations({ ctx, config = {}, planner }) {
-  // An explicit path wins over discovery: config first, then the environment,
-  // so a user with an unusual install location can fix it without code changes.
-  const configuredCli = typeof config.larkCliPath === 'string' && config.larkCliPath
-    ? config.larkCliPath
-    : (typeof process.env.LARK_CLI_PATH === 'string' && process.env.LARK_CLI_PATH
-        ? expandHome(process.env.LARK_CLI_PATH)
+  // An explicit path wins over discovery: config first (larkCliPath or dsh-feishu's
+  // binDir), then the environment, so a user with an unusual install location can
+  // fix it without code changes.
+  const configuredCli = typeof config.larkCliPath === 'string' && config.larkCliPath.trim()
+    ? expandHome(config.larkCliPath.trim())
+    : (typeof process.env.LARK_CLI_PATH === 'string' && process.env.LARK_CLI_PATH.trim()
+        ? expandHome(process.env.LARK_CLI_PATH.trim())
         : undefined)
+  const configuredBinDir = typeof config.binDir === 'string' && config.binDir.trim()
+    ? expandHome(config.binDir.trim())
+    : undefined
+  const onCliReady = typeof config.onCliReady === 'function' ? config.onCliReady : undefined
   const identity = typeof config.identity === 'string' && config.identity !== 'auto'
     ? config.identity
     : undefined
   const cwd = typeof config.cwd === 'string' && config.cwd ? config.cwd : process.cwd()
 
   let resolvedCli
+  let activeInstallPromise = null
+  const bootstrapState = {
+    status: 'idle', // 'idle' | 'installing' | 'ready' | 'error'
+    source: null,
+    error: null,
+    startedAt: 0,
+    finishedAt: 0,
+  }
+
+  function parseSemverTuple(raw) {
+    const clean = String(raw || '').trim().replace(/^v/, '')
+    const match = clean.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/)
+    if (!match) return { major: 0, minor: 0, patch: 0, pre: '' }
+    return {
+      major: Number(match[1]),
+      minor: Number(match[2]),
+      patch: Number(match[3]),
+      pre: match[4] || '',
+    }
+  }
+
+  function compareSemver(a, b) {
+    const va = parseSemverTuple(a)
+    const vb = parseSemverTuple(b)
+    if (va.major !== vb.major) return va.major - vb.major < 0 ? -1 : 1
+    if (va.minor !== vb.minor) return va.minor < vb.minor ? -1 : 1
+    if (va.patch !== vb.patch) return va.patch < vb.patch ? -1 : 1
+    if (va.pre === vb.pre) return 0
+    if (!va.pre) return 1
+    if (!vb.pre) return -1
+    return va.pre < vb.pre ? -1 : 1
+  }
+
+  function readCliPkgVersion(pkgRoot) {
+    if (!pkgRoot) return '0.0.0'
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(pkgRoot, 'package.json'), 'utf8'))
+      return typeof parsed?.version === 'string' ? parsed.version : '0.0.0'
+    } catch {
+      return '0.0.0'
+    }
+  }
+
+  function findBundledPackageInfo() {
+    let pkgRoot = typeof config.bundledCliRoot === 'string' && config.bundledCliRoot
+      ? expandHome(config.bundledCliRoot)
+      : undefined
+    if (!pkgRoot) {
+      try {
+        pkgRoot = path.dirname(requireFromModule.resolve('@larksuite/cli/package.json'))
+      } catch {
+        const fallbackPkg = path.join(MODULE_DIR, 'node_modules', '@larksuite', 'cli', 'package.json')
+        if (existsSync(fallbackPkg)) pkgRoot = path.dirname(fallbackPkg)
+      }
+    }
+    if (!pkgRoot) return { binaryPath: undefined, installerPath: undefined, version: '0.0.0' }
+    const binaryPath = path.join(pkgRoot, 'bin', CLI_BIN_NAME)
+    const installerPath = typeof config.cliInstallerPath === 'string' && config.cliInstallerPath
+      ? expandHome(config.cliInstallerPath)
+      : path.join(pkgRoot, 'scripts', 'install.js')
+    return {
+      pkgRoot,
+      binaryPath,
+      version: readCliPkgVersion(pkgRoot),
+      installerPath: existsSync(installerPath) ? installerPath : undefined,
+    }
+  }
+
+  function findFeishuPluginCliEntries() {
+    const roots = []
+    if (typeof config.feishuCliRoot === 'string' && config.feishuCliRoot) {
+      roots.push(expandHome(config.feishuCliRoot))
+    }
+    try {
+      const feishuPkg = requireFromModule.resolve('@deepseek-ai/dsh-feishu/package.json')
+      roots.push(path.join(path.dirname(feishuPkg), 'node_modules', '@larksuite', 'cli'))
+    } catch {}
+    roots.push(
+      path.resolve(MODULE_DIR, '..', '@deepseek-ai', 'dsh-feishu', 'node_modules', '@larksuite', 'cli'),
+      path.resolve(MODULE_DIR, '..', '..', '@deepseek-ai', 'dsh-feishu', 'node_modules', '@larksuite', 'cli'),
+    )
+    const seen = new Set()
+    const entries = []
+    for (const cliDir of roots) {
+      if (!cliDir || seen.has(cliDir)) continue
+      seen.add(cliDir)
+      const binaryPath = path.join(cliDir, 'bin', CLI_BIN_NAME)
+      if (existsSync(binaryPath)) {
+        entries.push({ source: 'feishu', binaryPath, version: readCliPkgVersion(cliDir) })
+      }
+    }
+    return entries
+  }
+
+  /**
+   * Pick whichever official/bundled @larksuite/cli package binary is newer;
+   * on identical versions, prefer the official `@deepseek-ai/dsh-feishu` binary.
+   */
+  function pickBestManagedCliPath() {
+    const candidates = [...findFeishuPluginCliEntries()]
+    const bundled = findBundledPackageInfo()
+    if (bundled.binaryPath && existsSync(bundled.binaryPath)) {
+      candidates.push({ source: 'bundled', binaryPath: bundled.binaryPath, version: bundled.version })
+    }
+    if (candidates.length === 0) return undefined
+    candidates.sort((left, right) => {
+      const diff = compareSemver(right.version, left.version)
+      if (diff !== 0) return diff
+      if (left.source === right.source) return 0
+      return left.source === 'feishu' ? -1 : 1
+    })
+    return candidates[0].binaryPath
+  }
+
+  function wellKnownCliCandidates() {
+    const extra = Array.isArray(config.extraCliCandidates)
+      ? config.extraCliCandidates.map((p) => expandHome(String(p)))
+      : []
+    const standard = [
+      path.join(homedir(), '.npm-global', 'bin', CLI_BIN_NAME),
+      '/opt/homebrew/bin/lark-cli',
+      '/usr/local/bin/lark-cli',
+      path.join(homedir(), '.local', 'bin', CLI_BIN_NAME),
+      path.join(homedir(), '.bun', 'bin', CLI_BIN_NAME),
+    ].map(expandHome)
+    if (process.platform === 'win32' && process.env.APPDATA) {
+      standard.push(
+        path.join(process.env.APPDATA, 'npm', 'lark-cli.exe'),
+        path.join(process.env.APPDATA, 'npm', 'lark-cli.cmd'),
+      )
+    }
+    return [...extra, ...standard]
+  }
+
+  /** Fast synchronous check across configured, latest official/bundled, and standard paths. */
+  function resolveCliSync() {
+    if (resolvedCli && existsSync(resolvedCli)) return resolvedCli
+    if (configuredCli) return existsSync(configuredCli) ? configuredCli : undefined
+    if (configuredBinDir) {
+      const candidate = path.join(configuredBinDir, CLI_BIN_NAME)
+      if (existsSync(candidate)) return candidate
+    }
+    const bestManaged = pickBestManagedCliPath()
+    if (bestManaged) return bestManaged
+    if (config.skipStandardCliCandidates !== true) {
+      return wellKnownCliCandidates().find((candidate) => existsSync(candidate))
+    }
+    return undefined
+  }
+
+  function getCanonicalBundledCliPath() {
+    const { binaryPath } = findBundledPackageInfo()
+    return binaryPath || path.join(MODULE_DIR, 'node_modules', '@larksuite', 'cli', 'bin', CLI_BIN_NAME)
+  }
+
+  function getCliBootstrapState() {
+    return { ...bootstrapState }
+  }
 
   async function resolveCli(signal) {
-    if (resolvedCli) return resolvedCli
+    if (resolvedCli && existsSync(resolvedCli)) return resolvedCli
+    resolvedCli = undefined
     if (configuredCli) {
       if (!existsSync(configuredCli)) throw new Error(`配置的 larkCliPath 不存在：${configuredCli}`)
       resolvedCli = configuredCli
       return resolvedCli
     }
-    try {
-      resolvedCli = await ctx.subprocess.resolveExecutable('lark-cli', { PATH: augmentedPath() }, signal)
+    if (configuredBinDir) {
+      const candidate = path.join(configuredBinDir, CLI_BIN_NAME)
+      if (!existsSync(candidate)) throw new Error(`配置的 binDir 中找不到 ${CLI_BIN_NAME}：${configuredBinDir}`)
+      resolvedCli = candidate
       return resolvedCli
-    } catch {
-      // fall through to well-known install locations
     }
-    const candidates = [
-      path.join(homedir(), '.npm-global', 'bin', 'lark-cli'),
-      '/opt/homebrew/bin/lark-cli',
-      '/usr/local/bin/lark-cli',
-      path.join(homedir(), '.local', 'bin', 'lark-cli'),
-      path.join(homedir(), '.bun', 'bin', 'lark-cli'),
-    ].map(expandHome)
-    const found = candidates.find((candidate) => existsSync(candidate))
+    const bestManaged = pickBestManagedCliPath()
+    if (bestManaged) {
+      resolvedCli = bestManaged
+      return resolvedCli
+    }
+    const { installerPath } = findBundledPackageInfo()
+    if (config.skipSystemCliLookup !== true) {
+      try {
+        resolvedCli = await ctx.subprocess.resolveExecutable('lark-cli', { PATH: augmentedPath() }, signal)
+        return resolvedCli
+      } catch {
+        // fall through to well-known install locations
+      }
+    }
+    const found = config.skipStandardCliCandidates === true
+      ? undefined
+      : wellKnownCliCandidates().find((candidate) => existsSync(candidate))
     if (!found) {
-      throw new Error('找不到 lark-cli。请先安装它，或在本插件配置里设置 larkCliPath。')
+      throw new Error(
+        installerPath
+          ? '飞书连接组件尚未下载完成，可点击自动准备或重试。'
+          : '找不到 lark-cli。可点击重试自动安装，或在插件设置里配置 larkCliPath。',
+      )
     }
     resolvedCli = found
     return resolvedCli
+  }
+
+  function readHandleOutput(handle, outcome) {
+    const stdout = handle.collected?.stdout ? handle.collected.stdout.readFrom(0).text : (outcome?.stdout || '')
+    const stderr = handle.collected?.stderr ? handle.collected.stderr.readFrom(0).text : (outcome?.stderr || '')
+    return { stdout, stderr }
+  }
+
+  /**
+   * Single-flight zero-install bootstrap: uses Electron/DSH's built-in Node runtime
+   * (`ELECTRON_RUN_AS_NODE=1`) to run `@larksuite/cli/scripts/install.js` and fetch
+   * the official standalone Go binary without requiring user-installed Node/npm.
+   */
+  async function installCli(signal) {
+    const existing = resolveCliSync()
+    if (existing) {
+      resolvedCli = existing
+      bootstrapState.status = 'ready'
+      bootstrapState.error = null
+      bootstrapState.finishedAt = bootstrapState.finishedAt || Date.now()
+      return { ok: true, path: existing, alreadyInstalled: true, bootstrap: getCliBootstrapState() }
+    }
+    try {
+      const systemFound = await resolveCli(signal)
+      bootstrapState.status = 'ready'
+      bootstrapState.error = null
+      return { ok: true, path: systemFound, alreadyInstalled: true, bootstrap: getCliBootstrapState() }
+    } catch {}
+
+    if (activeInstallPromise) return activeInstallPromise
+
+    const { pkgRoot, binaryPath, installerPath } = findBundledPackageInfo()
+    if (!installerPath) {
+      const msg = '内置飞书组件安装脚本缺失，请尝试重新安装插件或通过终端命令安装。'
+      bootstrapState.status = 'error'
+      bootstrapState.error = msg
+      bootstrapState.finishedAt = Date.now()
+      return { ok: false, canAutoInstall: false, error: msg, message: msg, installCommand: INSTALL_COMMAND, bootstrap: getCliBootstrapState() }
+    }
+
+    bootstrapState.status = 'installing'
+    bootstrapState.source = 'bundled'
+    bootstrapState.error = null
+    bootstrapState.startedAt = Date.now()
+    bootstrapState.finishedAt = 0
+
+    activeInstallPromise = (async () => {
+      try {
+        const nodeExec = typeof config.nodeExecPath === 'string' && config.nodeExecPath
+          ? config.nodeExecPath
+          : process.execPath
+        const installCwd = pkgRoot || path.dirname(path.dirname(installerPath))
+        const handle = ctx.subprocess.spawn({
+          argv: [nodeExec, installerPath],
+          cwd: installCwd,
+          stdio: {
+            stdin: 'ignore',
+            stdout: { maxBytes: MAX_STDOUT_BYTES },
+            stderr: { maxBytes: MAX_STDERR_BYTES },
+          },
+          graceMs: 5000,
+          env: {
+            ...process.env,
+            PATH: augmentedPath(),
+            ELECTRON_RUN_AS_NODE: '1',
+            CI: 'true',
+          },
+          signal,
+        })
+        const outcome = await handle.done
+        const { stdout, stderr } = readHandleOutput(handle, outcome)
+        resolvedCli = undefined
+        if (outcome.exitCode !== 0) {
+          const msg = tidyMessage(stderr || stdout, `组件自动下载失败（退出码 ${outcome.exitCode}），请检查网络后重试。`)
+          bootstrapState.status = 'error'
+          bootstrapState.error = msg
+          bootstrapState.finishedAt = Date.now()
+          return { ok: false, canAutoInstall: true, error: msg, message: msg, installCommand: INSTALL_COMMAND, bootstrap: getCliBootstrapState() }
+        }
+        const readyPath = (binaryPath && existsSync(binaryPath)) ? binaryPath : await resolveCli(signal).catch(() => undefined)
+        if (!readyPath) {
+          const msg = '下载完成但未找到可执行文件，请重试或改用手动安装。'
+          bootstrapState.status = 'error'
+          bootstrapState.error = msg
+          bootstrapState.finishedAt = Date.now()
+          return { ok: false, canAutoInstall: true, error: msg, message: msg, installCommand: INSTALL_COMMAND, bootstrap: getCliBootstrapState() }
+        }
+        resolvedCli = readyPath
+        bootstrapState.status = 'ready'
+        bootstrapState.error = null
+        bootstrapState.finishedAt = Date.now()
+        try { onCliReady && onCliReady(readyPath) } catch {}
+        return { ok: true, path: readyPath, bootstrap: getCliBootstrapState() }
+      } catch (error) {
+        const msg = tidyMessage(error instanceof Error ? error.message : String(error), '组件自动下载异常，请检查网络后重试。')
+        bootstrapState.status = 'error'
+        bootstrapState.error = msg
+        bootstrapState.finishedAt = Date.now()
+        return { ok: false, canAutoInstall: true, error: msg, message: msg, installCommand: INSTALL_COMMAND, bootstrap: getCliBootstrapState() }
+      } finally {
+        activeInstallPromise = null
+      }
+    })()
+
+    return activeInstallPromise
   }
 
   async function invoke(argv, signal) {
@@ -261,8 +563,7 @@ export function createOperations({ ctx, config = {}, planner }) {
       signal,
     })
     const outcome = await handle.done
-    const stdout = handle.collected?.stdout ? handle.collected.stdout.readFrom(0).text : (outcome?.stdout || '')
-    const stderr = handle.collected?.stderr ? handle.collected.stderr.readFrom(0).text : (outcome?.stderr || '')
+    const { stdout, stderr } = readHandleOutput(handle, outcome)
     return { exitCode: outcome.exitCode, stdout, stderr }
   }
 
@@ -315,9 +616,9 @@ export function createOperations({ ctx, config = {}, planner }) {
         ? error
         : (error && (error.message || error.msg))
           || tidyMessage(stderr || stdout, `lark-cli 退出码 ${exitCode}`)
-      return { ok: false, step: argv.slice(0, 2).join(' '), message, code: error && error.code }
+      return { ok: false, step: argv.slice(0, 2).join(' '), message, code: error && error.code, error }
     }
-    return { ok: true, value: payload }
+    return { ok: true, value: payload, rawText: trimmed }
   }
 
   const asArgs = () => (identity ? ['--as', identity] : [])
@@ -556,9 +857,15 @@ export function createOperations({ ctx, config = {}, planner }) {
     try {
       cliPath = await resolveCli(signal)
     } catch (error) {
+      const { installerPath } = findBundledPackageInfo()
       return {
         stage: 'no-cli',
-        cli: { available: false, message: error instanceof Error ? error.message : String(error) },
+        cli: {
+          available: false,
+          canAutoInstall: Boolean(installerPath),
+          bootstrap: getCliBootstrapState(),
+          message: error instanceof Error ? error.message : String(error),
+        },
         installCommand: INSTALL_COMMAND,
       }
     }
@@ -614,6 +921,7 @@ export function createOperations({ ctx, config = {}, planner }) {
         record.handle.terminate()
       }
     }, APP_INIT_TIMEOUT_MS)
+    record.timer?.unref?.()
 
     // The process blocks until the user finishes in the browser; the URL shows
     // up in its output within a second or two.
@@ -958,6 +1266,57 @@ export function createOperations({ ctx, config = {}, planner }) {
     return runJson(['wiki', '+space-list', '--json', ...asArgs()], signal)
   }
 
+  function escapeControlCharsInsideJsonStrings(raw) {
+    let out = ''
+    let inString = false
+    let escaped = false
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i]
+      if (escaped) {
+        out += ch
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        out += ch
+        if (inString) escaped = true
+        continue
+      }
+      if (ch === '"') {
+        inString = !inString
+        out += ch
+        continue
+      }
+      if (inString) {
+        if (ch === '\n') { out += '\\n'; continue }
+        if (ch === '\r') { out += '\\r'; continue }
+        if (ch === '\t') { out += '\\t'; continue }
+      }
+      out += ch
+    }
+    return out
+  }
+
+  function extractLooseAgentFields(raw) {
+    const actionMatch = raw.match(/"action"\s*:\s*"([^"]+)"/)
+    if (!actionMatch) return undefined
+    const res = { action: actionMatch[1] }
+    const skillMatch = raw.match(/"skill"\s*:\s*"([^"]+)"/)
+    if (skillMatch) res.skill = skillMatch[1]
+    const queryMatch = raw.match(/"query"\s*:\s*"([^"]*)"/)
+    if (queryMatch) res.query = queryMatch[1]
+    const replyMatch = raw.match(/"reply"\s*:\s*"([\s\S]*)"\s*\}?\s*$/)
+    if (replyMatch) {
+      res.reply = replyMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+    }
+    return res
+  }
+
   function parseModelJson(raw) {
     const text = typeof raw === 'string' ? raw : (raw?.text || raw?.content || '')
     if (!text || !text.trim()) return undefined
@@ -967,7 +1326,15 @@ export function createOperations({ ctx, config = {}, planner }) {
     try {
       return JSON.parse(target)
     } catch {}
-    return firstJsonObject(target)
+    const parsedDirect = firstJsonObject(target)
+    if (parsedDirect) return parsedDirect
+    const repaired = escapeControlCharsInsideJsonStrings(target)
+    try {
+      return JSON.parse(repaired)
+    } catch {}
+    const parsedRepaired = firstJsonObject(repaired)
+    if (parsedRepaired) return parsedRepaired
+    return extractLooseAgentFields(target)
   }
 
   async function callLlm({ system, messages = [], model, provider, temperature = 0.3, onDelta }, signal) {
@@ -1003,7 +1370,7 @@ export function createOperations({ ctx, config = {}, planner }) {
       const stream = ctx.llm.stream({
         provider: p,
         model: m,
-        system: system || '你是一个专业、高效的飞书协同助手。根据用户的要求和飞书协同数据，友好、专业、格式美观地回答。如果用户要求表格形式，请使用 Markdown 表格。',
+        system: system || 'You are a capable Feishu/Lark assistant. Respond concisely and clearly in the same language as the user (using Markdown lists or tables when helpful).',
         messages: formattedMessages,
         temperature,
         maxTokens: 2000,
@@ -1067,14 +1434,140 @@ export function createOperations({ ctx, config = {}, planner }) {
     }
   }
 
-  async function dispatchCollab({ instruction, history = [], model, provider, onDelta }, signal) {
+  // ---- Live Official Skills Catalog & Execution Helpers --------------------
+  let skillsCatalogCache = { cliPath: null, items: null }
+  const skillGuideCache = new Map()
+
+  function invalidateOfficialSkillsCache() {
+    skillsCatalogCache = { cliPath: null, items: null }
+    skillGuideCache.clear()
+  }
+
+  /**
+   * Read the live skill catalog shipped inside the active `lark-cli` binary so
+   * Workbench AI automatically inherits every domain added when `@larksuite/cli`
+   * or `@deepseek-ai/dsh-feishu` updates.
+   */
+  async function readOfficialSkillsCatalog(signal) {
+    const cliPath = await resolveCli(signal).catch(() => null)
+    if (!cliPath) return []
+    if (skillsCatalogCache.cliPath === cliPath && Array.isArray(skillsCatalogCache.items)) {
+      return skillsCatalogCache.items
+    }
+    const res = await runJson(['skills', 'list'], signal).catch(() => null)
+    const rawList = res?.ok ? (res.value?.skills || res.value?.data?.skills || res.value?.items) : null
+    if (!Array.isArray(rawList)) return []
+    const normalized = rawList
+      .filter((s) => s && typeof s.name === 'string' && /^[a-z0-9-]+$/.test(s.name))
+      .map((s) => ({
+        name: s.name,
+        description: String(s.description || '').replace(/\s+/g, ' ').trim(),
+        cliHelp: String(s.metadata?.cliHelp || '').trim(),
+      }))
+    skillsCatalogCache = { cliPath, items: normalized }
+    return normalized
+  }
+
+  async function readOfficialSkillGuide(skillName, signal, depth = 0) {
+    if (!skillName || !/^[a-z0-9-]+$/.test(skillName) || depth > 2) return null
+    const cliPath = await resolveCli(signal).catch(() => null)
+    if (!cliPath) return null
+    const cacheKey = `${cliPath}:${skillName}`
+    if (skillGuideCache.has(cacheKey)) return skillGuideCache.get(cacheKey)
+    const raw = await invoke(['skills', 'read', skillName], signal).catch(() => null)
+    if (!raw || raw.exitCode !== 0 || !raw.stdout?.trim()) return null
+    let text = raw.stdout.trim()
+    // Follow compatibility alias skills (e.g. `lark-note` defers to `../lark-meeting/SKILL.md`)
+    if (text.length < 900) {
+      const aliasMatch = text.match(/\.\.\/(lark-[a-z0-9-]+)\/SKILL\.md/)
+      if (aliasMatch && aliasMatch[1] !== skillName) {
+        const targetText = await readOfficialSkillGuide(aliasMatch[1], signal, depth + 1)
+        if (targetText) text = targetText
+      }
+    }
+    skillGuideCache.set(cacheKey, text)
+    return text
+  }
+
+  const OFFICIAL_SKILL_LABELS = {
+    'lark-approval': { zh: '飞书审批', en: 'Feishu Approvals' },
+    'lark-apps': { zh: '妙搭应用', en: 'Feishu Apps' },
+    'lark-attendance': { zh: '考勤打卡', en: 'Attendance' },
+    'lark-base': { zh: '飞书多维表格', en: 'Feishu Base' },
+    'lark-calendar': { zh: '飞书日历', en: 'Feishu Calendar' },
+    'lark-contact': { zh: '企业通讯录', en: 'Contacts' },
+    'lark-doc': { zh: '飞书云文档', en: 'Feishu Docs' },
+    'lark-drive': { zh: '飞书云盘', en: 'Feishu Drive' },
+    'lark-event': { zh: '实时事件', en: 'Live Events' },
+    'lark-im': { zh: '即时消息与群聊', en: 'Chats & Messages' },
+    'lark-mail': { zh: '飞书邮箱', en: 'Feishu Mail' },
+    'lark-markdown': { zh: '飞书文档', en: 'Feishu Docs' },
+    'lark-meeting': { zh: '飞书视频会议', en: 'Feishu Meetings' },
+    'lark-note': { zh: '会议纪要', en: 'Meeting Notes' },
+    'lark-okr': { zh: '飞书 OKR', en: 'Feishu OKR' },
+    'lark-openapi-explorer': { zh: '开放平台接口', en: 'Open Platform API' },
+    'lark-shared': { zh: '飞书账号与权限', en: 'Account & Scopes' },
+    'lark-sheets': { zh: '飞书电子表格', en: 'Feishu Sheets' },
+    'lark-skill-maker': { zh: '技能工具', en: 'Skill Maker' },
+    'lark-slides': { zh: '飞书幻灯片', en: 'Feishu Slides' },
+    'lark-task': { zh: '飞书任务与待办', en: 'Feishu Tasks' },
+    'lark-whiteboard': { zh: '文档画板', en: 'Whiteboard' },
+    'lark-wiki': { zh: '飞书知识库', en: 'Feishu Wiki' },
+    'lark-workflow-meeting-summary': { zh: '会议纪要汇总', en: 'Meeting Summary' },
+    'lark-workflow-standup-report': { zh: '日程待办摘要', en: 'Standup Digest' },
+  }
+
+  function skillLabel(skillName, lang = 'zh', fallbackZh = '飞书扩展能力', fallbackEn = 'Feishu Feature') {
+    const entry = OFFICIAL_SKILL_LABELS[skillName]
+    if (entry) return lang === 'en' ? entry.en : entry.zh
+    return lang === 'en' ? fallbackEn : fallbackZh
+  }
+
+  function isSafeSkillArgv(argv) {
+    if (!Array.isArray(argv) || argv.length === 0) return false
+    if (!argv.every((tok) => typeof tok === 'string' && tok.length > 0 && !/[\r\n\0]/.test(tok))) return false
+    const domain = argv[0].toLowerCase()
+    if (/^(config|auth|update|upgrade|skills)$/.test(domain)) return false
+    // Prevent blocking daemon event stream unless explicitly bounded by --max-events
+    if (domain === 'event' && argv[1] === 'consume' && !argv.some((t) => t === '--max-events' || t.startsWith('--max-events='))) {
+      return false
+    }
+    return /^[a-z0-9_-]+$/i.test(domain)
+  }
+
+  function looksMutatingArgv(argv) {
+    const commandTokens = []
+    for (let i = 0; i < argv.length; i++) {
+      const tok = String(argv[i])
+      if (tok === '--yes') return true
+      if (tok === '--method' || tok === '-X') {
+        const method = String(argv[i + 1] || '').toUpperCase()
+        if (method && method !== 'GET' && method !== 'HEAD') return true
+        i++
+        continue
+      }
+      if (tok.startsWith('-')) {
+        if (!tok.includes('=')) i++ // skip option value so user search text (e.g. --query "update") does not false-trigger
+        continue
+      }
+      commandTokens.push(tok)
+    }
+    const cmdHead = commandTokens.join(' ').toLowerCase()
+    return /\b(create|update|delete|remove|send|reply|reply-all|forward|edit|batch-create|batch-update|complete|approve|reject|bind|unbind|import|upload|grant|revoke|enable|disable|set|add|post|put|patch|triage-mark|archive|trash)\b/i.test(cmdHead)
+      || /(^|\s)\+[a-z0-9-]*(create|update|delete|remove|send|reply|edit|complete|approve|reject|upload|import|archive|move|copy)\b/i.test(cmdHead)
+  }
+
+  async function dispatchCollab({ instruction, history = [], model, provider, lang, onDelta }, signal) {
     const text = (instruction || '').trim()
+    const activeLang = resolveLang(lang, text)
+    const isEn = activeLang === 'en'
     const scopesInfo = await getScopes(signal)
     const appId = scopesInfo.appId || ''
     const consoleUrl = scopesInfo.consoleUrl || (appId ? `https://open.feishu.cn/app/${appId}/auth` : 'https://open.feishu.cn/app')
 
-    const scopeError = (domainKey, requiredScopes, domainTitle, categoryName) => {
-      const cat = categoryName || domainTitle
+    const scopeError = (domainKey, requiredScopes, domainTitleZh, categoryNameZh, domainTitleEn, categoryNameEn) => {
+      const domainTitle = isEn ? (domainTitleEn || domainTitleZh) : domainTitleZh
+      const cat = isEn ? (categoryNameEn || categoryNameZh || domainTitle) : (categoryNameZh || domainTitle)
       return {
         ok: false,
         type: 'missing_scope',
@@ -1083,8 +1576,10 @@ export function createOperations({ ctx, config = {}, planner }) {
         requiredScopes,
         categoryName: cat,
         consoleUrl,
-        reply: `需要授权访问您的「${domainTitle}」以获取相关数据。\n点击下方「立即授权并查询 ↗」按钮，在飞书完成一键授权后即可直接使用。`,
-        summary: `需要「${domainTitle}」访问授权`,
+        reply: isEn
+          ? `Authorization for "${domainTitle}" is required to load this data. Click "Authorize & continue" below.`
+          : `需要授权访问「${domainTitle}」以获取相关数据，请点击下方「授权并继续」。`,
+        summary: isEn ? `Permission required: ${domainTitle}` : `需要「${domainTitle}」访问授权`,
       }
     }
 
@@ -1099,10 +1594,27 @@ export function createOperations({ ctx, config = {}, planner }) {
         text: h.text,
       }))
 
+    let officialSkills = []
+    if (ctx.llm && typeof ctx.llm.stream === 'function') {
+      officialSkills = await readOfficialSkillsCatalog(signal).catch(() => [])
+    }
+    const hostFeishuSkill = typeof config.getHostFeishuSkill === 'function'
+      ? await Promise.resolve(config.getHostFeishuSkill()).catch(() => null)
+      : null
+    const extraSkillCatalogText = officialSkills.length > 0
+      ? `\n\n官方 lark-cli 动态技能目录（当上述常用动作不足以覆盖用户需求时，可选 action: "run_skill" 并填入对应 skill 名称）：\n${officialSkills.map((s) => `- ${s.name}: ${s.description.slice(0, 140)}`).join('\n')}`
+      : ''
+    const hostSkillNote = hostFeishuSkill?.content
+      ? '\n（已连接宿主原生 feishu 技能索引，可协同覆盖飞书全领域。）'
+      : ''
+
     let agentDecision = null
     let agentRaw = null
     try {
-      const agentSystem = `你是一个智能、专业的飞书全能协同助手。你的任务是分析用户的指令与历史对话，规划最精准的动作并返回 JSON。
+      const langInstruction = isEn
+        ? '\n\nIMPORTANT OUTPUT LANGUAGE RULE:\nThe active language is English. When "action" is "reply", write the "reply" content strictly in natural, concise English.'
+        : ''
+      const agentSystem = `你是一个智能、专业的飞书全能协同助手。你的任务是分析用户的指令与历史对话，规划最精准的动作并返回 JSON。${hostSkillNote}${langInstruction}
 
 可用 action 列表：
 1. "get_calendar": 查询日历日程、会议安排、今天/明天的安排或空闲时间。
@@ -1113,20 +1625,24 @@ export function createOperations({ ctx, config = {}, planner }) {
 6. "search_wiki": 搜索飞书团队知识库、云文档、在线规范、规章制度、文档内容。需提供 "query" 字段（关键词，如“规范”、“指南”等）。
 7. "list_spaces": 查询或列出团队拥有的知识库空间列表。
 8. "suggest_create_table": 用户明确想要“新建/创建”一张飞书多维表格（Bitable Base）或业务数据表、台账。
-9. "reply": 不需要调用飞书 API，直接基于上下文回答用户。场景包括：
+9. "run_skill": 调用官方飞书 Skill 处理扩展领域（例如审批 lark-approval、会议纪要 lark-meeting / lark-workflow-meeting-summary、站会汇报 lark-workflow-standup-report、电子表格 lark-sheets、幻灯片 lark-slides、云盘 lark-drive、OKR lark-okr、考勤 lark-attendance 等）；需同时提供 "skill" 字段。
+10. "reply": 不需要调用飞书 API，直接基于上下文回答用户。场景包括：
    - 正常问答交流、日常对话、寒暄、致谢（如用户说“谢谢”、“好的”、“你好”等，请自然友好地回应）；
    - 格式化与排版需求（如“以表格的形式给出”、“转成Markdown表格”、“排成表格”）：必须在 "reply" 字段中，将上文中的飞书数据整理为美观整洁的 Markdown 表格！
    - 上下文追问、提问与统计（如“第二封邮件讲了什么”、“哪个会议最早”、“帮我写个回复”）；
-   - 协作撰写建议、办公咨询等。
+   - 协作撰写建议、办公咨询等。${extraSkillCatalogText}
 
 核心推理规则：
+- 日常高频日程/待办/群聊/邮件/联系人/知识库搜索优先使用第 1-7 项快捷动作；
+- 只有当请求属于快捷动作之外的飞书能力（如审批、会议纪要、OKR、电子表格、幻灯片、云盘、考勤等），才选择 "run_skill"；
 - 如果用户是在追问、质疑或要求重查上一轮数据（例如“确定吗？你再重新查一次”、“刷新一下”、“再搜搜”、“没有吗”、“你不查了吗”），请回溯对话历史，选择上一轮查询对应的 action（如 get_chats/get_calendar/get_mails/get_tasks/search_wiki 等）！
 - 如果用户要求“以表格的形式给出”或类似排版指令，动作必须为 "reply"，并在 "reply" 字段中输出包含 Markdown 表格的回答，严禁选 suggest_create_table。
 - 如果用户只是在进行正常问答、对话或致谢，动作必须为 "reply"，直接给出自然对话回复，绝对不要调用任何飞书查询工具！
 
-请只输出合法的 JSON 对象，不要输出代码块外部的文字：
+请只输出合法的 JSON 对象（字符串内换行必须转义为 \\n），不要输出代码块外部的文字：
 {
-  "action": "get_calendar" | "get_tasks" | "get_chats" | "get_mails" | "search_contacts" | "search_wiki" | "list_spaces" | "suggest_create_table" | "reply",
+  "action": "get_calendar" | "get_tasks" | "get_chats" | "get_mails" | "search_contacts" | "search_wiki" | "list_spaces" | "suggest_create_table" | "run_skill" | "reply",
+  "skill": "当 action 为 run_skill 时的官方 skill 名称（例如 lark-approval）",
   "query": "搜索关键词（search_contacts 与 search_wiki 需要）",
   "reply": "当 action 为 reply 时的回答内容（支持 Markdown）"
 }`
@@ -1155,15 +1671,17 @@ export function createOperations({ ctx, config = {}, planner }) {
       if (agentDecision.action === 'suggest_create_table' || agentDecision.action === 'create_table') {
         if (planner && typeof planner.plan === 'function') {
           try {
-            const planned = await planner.plan(text, signal, undefined, { model, provider, onDelta })
+            const planned = await planner.plan(text, signal, undefined, { model, provider, lang: activeLang, onDelta })
             if (planned && planned.ok && planned.plan) {
               return {
                 ok: true,
                 type: 'table_plan',
                 plan: planned.plan,
                 sentence: text,
-                reply: `已为您规划好「${planned.plan.baseName}」！请在预览界面确认字段并一键建表。`,
-                summary: `已规划「${planned.plan.baseName}」`,
+                reply: isEn
+                  ? `Drafted "${planned.plan.baseName}". Review the fields in the preview screen and click Create Base.`
+                  : `已为您规划好「${planned.plan.baseName}」！请在预览界面确认字段并一键建表。`,
+                summary: isEn ? `Planned "${planned.plan.baseName}"` : `已规划「${planned.plan.baseName}」`,
                 reasoning: agentRaw?.reasoning || null,
               }
             }
@@ -1174,8 +1692,137 @@ export function createOperations({ ctx, config = {}, planner }) {
         return {
           ok: true,
           type: 'suggest_table',
-          reply: `检测到您想创建多维表格。请告诉我需要包含什么字段或业务场景，我直接为您规划生成！`,
-          summary: '建议前往多维表格模式',
+          reply: isEn
+            ? 'Looks like you want to create a Base. Tell me what columns or workflow you want to track and I will design it for you.'
+            : `检测到您想创建多维表格。请告诉我需要包含什么字段或业务场景，我直接为您规划生成！`,
+          summary: isEn ? 'Suggest creating a Base' : '建议前往多维表格模式',
+        }
+      }
+
+      if (agentDecision.action === 'run_skill' && typeof agentDecision.skill === 'string') {
+        const skillName = agentDecision.skill.trim()
+        const label = skillLabel(skillName, activeLang, skillName, skillName)
+        const guide = await readOfficialSkillGuide(skillName, signal)
+        if (guide) {
+          const skillPlanRaw = await callLlm({
+            system: `你是一名精通飞书 CLI 的智能执行器。请严格依据下面这份官方 Skill 文档，把用户请求翻译为安全、只读查询的 lark-cli 子命令参数（不含 lark-cli 本身与 --as 等全局参数）。
+- 若属于单一查询命令，填 "argv": ["subcommand", "..."]；
+- 若属于组合工作流（如站会摘要/会议纪要汇总需连续查多个接口），填 "steps": [["subcommand1", ...], ["subcommand2", ...]]；
+- 若该需求需要修改/新建/删除/发送等写操作，请把 "readonly" 设为 false 并说明影响；绝不可擅自执行写操作或认证管理命令。${isEn ? '\n- Always write confirmReason and reply in natural English.' : ''}
+
+官方 Skill（${skillName}）文档：
+${guide.slice(0, 28000)}
+
+仅返回 JSON：
+{
+  "argv": ["subcommand", "..."],
+  "steps": [["subcommand1", "..."], ["subcommand2", "..."]],
+  "readonly": true | false,
+  "confirmReason": "当 readonly=false 时向用户说明影响",
+  "reply": "当文档提示无法直接运行或需要用户在主对话/特定链接操作时的直接回答"
+}`,
+            messages: [
+              ...formattedHistory,
+              { role: 'user', text },
+            ],
+            model,
+            provider,
+            temperature: 0.1,
+          }, signal)
+          const skillPlan = skillPlanRaw ? parseModelJson(skillPlanRaw) : null
+          const plannedSteps = Array.isArray(skillPlan?.steps) && skillPlan.steps.length > 0
+            ? skillPlan.steps.filter((s) => isSafeSkillArgv(s))
+            : (skillPlan && isSafeSkillArgv(skillPlan.argv) ? [skillPlan.argv] : [])
+
+          if (plannedSteps.length > 0) {
+            if (skillPlan.readonly === false || plannedSteps.some((step) => looksMutatingArgv(step))) {
+              const firstCmd = plannedSteps.map((s) => `lark-cli ${s.join(' ')}`).join(' && ')
+              const reason = skillPlan.confirmReason || (isEn ? `Will run Feishu action: ${firstCmd}` : `将执行飞书操作：${firstCmd}`)
+              return {
+                ok: true,
+                type: 'answer',
+                domain: skillName,
+                needsConfirm: true,
+                confirmKind: 'skill_guard',
+                skill: skillName,
+                argv: plannedSteps[0],
+                steps: plannedSteps,
+                reply: isEn
+                  ? `Parsed action via official skill **${label}**:\n\n> ${reason}\n\nTo prevent unintended writes, Sidebar Assistant runs read-only queries automatically. Please confirm in the main chat or directly in Feishu to run write operations.`
+                  : `已依据官方技能 **${label}** 解析操作：\n\n> ${reason}\n\n为防止误操作，侧边栏自动协同模式默认仅自动执行只读查询；如需执行变更，请在主对话中授权运行或在飞书中直接确认。`,
+                summary: isEn ? `Confirmation needed (${label})` : `需要确认变更操作 (${label})`,
+              }
+            }
+
+            const stepOutputs = []
+            for (const stepArgv of plannedSteps.slice(0, 4)) {
+              const cliResult = await runJson([...stepArgv, ...asArgs()], signal)
+              if (!cliResult.ok) {
+                if (cliResult.error?.subtype === 'missing_scope' || /missing required scope/i.test(cliResult.message || '')) {
+                  return scopeError(
+                    skillName,
+                    cliResult.error?.missing_scopes || [],
+                    skillLabel(skillName, 'zh'),
+                    skillLabel(skillName, 'zh', '飞书服务', 'Feishu Service'),
+                    skillLabel(skillName, 'en'),
+                    skillLabel(skillName, 'en', '飞书服务', 'Feishu Service'),
+                  )
+                }
+                return {
+                  ok: false,
+                  type: 'answer',
+                  domain: skillName,
+                  reply: isEn
+                    ? `Failed to run ${skillName} query: ${cliResult.message || 'Unknown error'}`
+                    : `执行 ${skillName} 查询失败：${cliResult.message || '未知错误'}`,
+                }
+              }
+              stepOutputs.push({
+                command: stepArgv.slice(0, 2).join(' '),
+                data: cliResult.value !== undefined ? cliResult.value : (cliResult.rawText || ''),
+              })
+            }
+
+            const payloadForModel = stepOutputs.length === 1 ? stepOutputs[0].data : stepOutputs
+            const payloadText = typeof payloadForModel === 'string'
+              ? payloadForModel
+              : JSON.stringify(payloadForModel ?? {}, null, 2)
+            const summarized = await callLlm({
+              system: isEn
+                ? `Summarize the data returned by the official Feishu CLI (${skillName}) into a concise, clear, human-readable English answer (using Markdown lists or tables where helpful).`
+                : `请把官方飞书命令（${skillName}）返回的数据整理成简洁清晰、人类易读的中文回答（支持 Markdown 列表或表格）。`,
+              messages: [
+                { role: 'user', text: `${isEn ? 'User request' : '用户问题'}：${text}\n${isEn ? 'Returned data' : '返回数据'}：\n${payloadText.slice(0, 12000)}` },
+              ],
+              model,
+              provider,
+              onDelta,
+            }, signal)
+            return {
+              ok: true,
+              type: 'collab',
+              domain: skillName,
+              skill: skillName,
+              reply: summarized
+                ? (summarized.text || summarized)
+                : (isEn
+                    ? `Fetched via official skill **${label}**:\n${typeof payloadForModel === 'string' ? payloadText.slice(0, 2000) : `\`\`\`json\n${payloadText.slice(0, 2000)}\n\`\`\``}`
+                    : `已通过官方技能 **${skillName}** 获取数据：\n${typeof payloadForModel === 'string' ? payloadText.slice(0, 2000) : `\`\`\`json\n${payloadText.slice(0, 2000)}\n\`\`\``}`),
+              reasoning: summarized?.reasoning || null,
+              summary: isEn ? `Completed query via ${skillName}` : `已通过 ${skillName} 完成查询`,
+              data: payloadForModel,
+            }
+          }
+          if (skillPlan?.reply) {
+            return {
+              ok: true,
+              type: 'collab',
+              domain: skillName,
+              skill: skillName,
+              reply: skillPlan.reply,
+              summary: isEn ? `Checked ${skillName}` : `已参考 ${skillName}`,
+            }
+          }
         }
       }
 
@@ -1184,19 +1831,19 @@ export function createOperations({ ctx, config = {}, planner }) {
         return {
           ok: true,
           type: 'collab',
-          reply: replyText,
+          reply: String(replyText).trim(),
           reasoning: agentRaw?.reasoning || null,
-          summary: '已回复',
+          summary: isEn ? 'Replied' : '已回复',
         }
       }
-    } else if (agentRaw && agentRaw.text) {
-      // 模型返回了自然语言直接对话内容（非 JSON 或普通问答）
+    } else if (agentRaw && agentRaw.text && !/^\s*\{[\s\S]*"action"\s*:/.test(agentRaw.text)) {
+      // 仅当模型确实返回了纯自然语言（而非内部 action JSON）时才直接透传
       return {
         ok: true,
         type: 'collab',
-        reply: agentRaw.text,
+        reply: String(agentRaw.text).trim(),
         reasoning: agentRaw.reasoning || null,
-        summary: '已回复',
+        summary: isEn ? 'Replied' : '已回复',
       }
     }
 
@@ -1206,23 +1853,30 @@ export function createOperations({ ctx, config = {}, planner }) {
     const isOffline = !agentRaw
 
     // 多维表格建表引导（离线降级）
-    if (isOffline && /(新建|创建|建一张|建个|想建一张|想建个|我要建).*(多维表格|多维表|业务表|数据表|台账|表格)/i.test(text)) {
+    if (isOffline && /(新建|创建|建一张|建个|想建一张|想建个|我要建|create|build|make).*(多维表格|多维表|业务表|数据表|台账|表格|base|table|bitable)/i.test(text)) {
       return {
         ok: true,
         type: 'suggest_table',
-        reply: `检测到您想创建多维表格。您可以点击左上角「← 返回」在首页输入需求一键建表，或者告诉我需要包含什么字段，我为您规划生成！`,
-        summary: '建议前往多维表格模式',
+        reply: isEn
+          ? 'Looks like you want to create a Base. Go back to the home view to generate one from a single sentence, or tell me which columns you need.'
+          : `检测到您想创建多维表格。您可以点击左上角「← 返回」在首页输入需求一键建表，或者告诉我需要包含什么字段，我为您规划生成！`,
+        summary: isEn ? 'Suggest creating a Base' : '建议前往多维表格模式',
       }
     }
 
     // 日程与会议查询
-    if (chosenAction === 'get_calendar' || (isOffline && /日程|日历|会议|议程|空闲|今天有什么事/i.test(text))) {
+    if (chosenAction === 'get_calendar' || (isOffline && /日程|日历|会议|议程|空闲|今天有什么事|agenda|calendar|meeting|schedule/i.test(text))) {
       const res = await calendarList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
-          return scopeError('calendar', res.error?.missing_scopes || ['calendar:calendar.event:read'], '飞书日历与日程', '日历')
+          return scopeError('calendar', res.error?.missing_scopes || ['calendar:calendar.event:read'], '飞书日历与日程', '日历', 'Feishu Calendar', 'Calendar')
         }
-        return { ok: false, type: 'answer', domain: 'calendar', reply: `查询日程失败：${res.message || '未知错误'}` }
+        return {
+          ok: false,
+          type: 'answer',
+          domain: 'calendar',
+          reply: isEn ? `Failed to load calendar: ${res.message || 'Unknown error'}` : `查询日程失败：${res.message || '未知错误'}`,
+        }
       }
       const events = res.value?.events || res.value?.data?.events || res.value?.data?.items || res.value?.items || []
       if (!Array.isArray(events) || events.length === 0) {
@@ -1230,29 +1884,36 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'calendar',
-          reply: '今日日程安排：\n\n今天暂无待进行的日程或会议，可以专注处理其他工作。',
-          summary: '今日暂无日程安排',
+          reply: isEn
+            ? 'Today’s Agenda:\n\nNo upcoming events or meetings scheduled for today.'
+            : '今日日程安排：\n\n今天暂无待进行的日程或会议，可以专注处理其他工作。',
+          summary: isEn ? 'No events today' : '今日暂无日程安排',
         }
       }
-      const lines = events.map((ev, i) => `${i + 1}. ${ev.summary || '未命名会议'} (${ev.start_time || '时间待定'})`)
+      const lines = events.map((ev, i) => `${i + 1}. ${ev.summary || (isEn ? 'Untitled meeting' : '未命名会议')} (${ev.start_time || (isEn ? 'TBD' : '时间待定')})`)
       return {
         ok: true,
         type: 'collab',
         domain: 'calendar',
-        reply: `为您找到以下日程安排：\n\n${lines.join('\n')}`,
-        summary: `已查询到 ${events.length} 项日程`,
+        reply: isEn ? `Today’s events:\n\n${lines.join('\n')}` : `为您找到以下日程安排：\n\n${lines.join('\n')}`,
+        summary: isEn ? `Found ${events.length} event(s)` : `已查询到 ${events.length} 项日程`,
         data: events,
       }
     }
 
     // 5. 任务与待办清单
-    if (chosenAction === 'get_tasks' || (isOffline && /待办|任务|清单|todo|还有什么没做/i.test(text))) {
+    if (chosenAction === 'get_tasks' || (isOffline && /待办|任务|清单|todo|还有什么没做|task/i.test(text))) {
       const res = await taskList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
-          return scopeError('task', res.error?.missing_scopes || ['task:task:read'], '飞书任务与待办', '任务')
+          return scopeError('task', res.error?.missing_scopes || ['task:task:read'], '飞书任务与待办', '任务', 'Feishu Tasks', 'Tasks')
         }
-        return { ok: false, type: 'answer', domain: 'task', reply: `查询待办失败：${res.message || '未知错误'}` }
+        return {
+          ok: false,
+          type: 'answer',
+          domain: 'task',
+          reply: isEn ? `Failed to load tasks: ${res.message || 'Unknown error'}` : `查询待办失败：${res.message || '未知错误'}`,
+        }
       }
       const tasks = res.value?.tasks || res.value?.data?.tasks || res.value?.data?.items || res.value?.items || []
       if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -1260,29 +1921,33 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'task',
-          reply: '我的待办清单：\n\n当前没有未完成的待办事项。',
-          summary: '暂无未完成待办',
+          reply: isEn ? 'My Tasks:\n\nYou have no open tasks right now.' : '我的待办清单：\n\n当前没有未完成的待办事项。',
+          summary: isEn ? 'No open tasks' : '暂无未完成待办',
         }
       }
-      const lines = tasks.map((tk, i) => `${i + 1}. [ ] ${tk.summary || tk.title || '待办事项'}`)
+      const lines = tasks.map((tk, i) => `${i + 1}. [ ] ${tk.summary || tk.title || (isEn ? 'Untitled task' : '待办事项')}`)
       return {
         ok: true,
         type: 'collab',
         domain: 'task',
-        reply: `为您找到以下待办事项：\n\n${lines.join('\n')}`,
-        summary: `已查询到 ${tasks.length} 项待办`,
+        reply: isEn ? `Open tasks:\n\n${lines.join('\n')}` : `为您找到以下待办事项：\n\n${lines.join('\n')}`,
+        summary: isEn ? `Found ${tasks.length} task(s)` : `已查询到 ${tasks.length} 项待办`,
         data: tasks,
       }
     }
 
     // 6. 即时消息与群聊检索
-    if (chosenAction === 'get_chats' || (isOffline && /群聊|群组|chat|群列表|聊天群|群/i.test(text))) {
+    if (chosenAction === 'get_chats' || (isOffline && /群聊|群组|chat|群列表|聊天群|群|group/i.test(text))) {
       const res = await chatList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
-          return scopeError('im', res.error?.missing_scopes || ['im:chat:read'], '即时消息与群聊', '消息与群聊')
+          return scopeError('im', res.error?.missing_scopes || ['im:chat:read'], '即时消息与群聊', '消息与群聊', 'Chats & Messages', 'Chats')
         }
-        return { ok: false, type: 'answer', reply: `查询群聊失败：${res.message || '未知错误'}` }
+        return {
+          ok: false,
+          type: 'answer',
+          reply: isEn ? `Failed to load chats: ${res.message || 'Unknown error'}` : `查询群聊失败：${res.message || '未知错误'}`,
+        }
       }
       const chats = res.value?.data?.chats || res.value?.chats || res.value?.items || res.value?.data?.items || []
       if (!Array.isArray(chats) || chats.length === 0) {
@@ -1290,29 +1955,36 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'im',
-          reply: '群聊列表：\n\n未检索到您加入的公开群聊。如果您所在的群聊为私密群，需先将飞书机器人拉入该群。',
-          summary: '暂无群聊',
+          reply: isEn
+            ? 'Group Chats:\n\nNo accessible chats found. For private chats, add the Feishu app bot to the group first.'
+            : '群聊列表：\n\n未检索到您加入的公开群聊。如果您所在的群聊为私密群，需先将飞书机器人拉入该群。',
+          summary: isEn ? 'No chats found' : '暂无群聊',
         }
       }
-      const lines = chats.slice(0, 10).map((c, i) => `${i + 1}. ${c.name || '未命名群聊'}`)
+      const lines = chats.slice(0, 10).map((c, i) => `${i + 1}. ${c.name || (isEn ? 'Untitled group' : '未命名群聊')}`)
       return {
         ok: true,
         type: 'collab',
         domain: 'im',
-        reply: `为您找到以下飞书群聊：\n\n${lines.join('\n')}`,
-        summary: `已查询到 ${chats.length} 个群聊`,
+        reply: isEn ? `Feishu group chats:\n\n${lines.join('\n')}` : `为您找到以下飞书群聊：\n\n${lines.join('\n')}`,
+        summary: isEn ? `Found ${chats.length} chat(s)` : `已查询到 ${chats.length} 个群聊`,
         data: chats,
       }
     }
 
     // 7. 邮件速览
-    if (chosenAction === 'get_mails' || (isOffline && /邮件|email|收件箱|发件箱|未读邮件/i.test(text))) {
+    if (chosenAction === 'get_mails' || (isOffline && /邮件|email|mail|inbox|收件箱|发件箱|未读邮件/i.test(text))) {
       const res = await mailList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
-          return scopeError('mail', res.error?.missing_scopes || ['mail:user_mailbox.messages:readonly'], '飞书邮箱', '邮箱')
+          return scopeError('mail', res.error?.missing_scopes || ['mail:user_mailbox.messages:readonly'], '飞书邮箱', '邮箱', 'Feishu Mail', 'Mail')
         }
-        return { ok: false, type: 'answer', domain: 'mail', reply: `查询邮件失败：${res.message || '未知错误'}` }
+        return {
+          ok: false,
+          type: 'answer',
+          domain: 'mail',
+          reply: isEn ? `Failed to load mail: ${res.message || 'Unknown error'}` : `查询邮件失败：${res.message || '未知错误'}`,
+        }
       }
       const mails = res.value?.messages || res.value?.data?.messages || []
       if (!Array.isArray(mails) || mails.length === 0) {
@@ -1320,16 +1992,21 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'mail',
-          reply: '飞书邮件速览：\n\n最近暂无新邮件。',
-          summary: '暂无新邮件',
+          reply: isEn ? 'Inbox:\n\nNo recent messages found.' : '飞书邮件速览：\n\n最近暂无新邮件。',
+          summary: isEn ? 'No recent mail' : '暂无新邮件',
         }
       }
 
       // 如果用户直接在提问中要求了表格形式，使用 LLM 输出表格
-      if (/表格|排版/i.test(text)) {
+      if (/表格|排版|table|markdown/i.test(text)) {
         const mailTable = await callLlm({
-          system: '你是一个飞书协同助手。请将查询到的邮件列表整理为标准的 Markdown 表格。列包含：序号、主题、发件人。',
-          messages: [{ role: 'user', content: `请将以下邮件整理成表格：\n${JSON.stringify(mails, null, 2)}` }],
+          system: isEn
+            ? 'Format the fetched Feishu mail list as a clean Markdown table with columns: #, Subject, Sender.'
+            : '你是一个飞书协同助手。请将查询到的邮件列表整理为标准的 Markdown 表格。列包含：序号、主题、发件人。',
+          messages: [{
+            role: 'user',
+            content: `${isEn ? 'Format these messages as a Markdown table' : '请将以下邮件整理成表格'}：\n${JSON.stringify(mails, null, 2)}`,
+          }],
           model,
           provider,
         }, signal)
@@ -1338,34 +2015,39 @@ export function createOperations({ ctx, config = {}, planner }) {
             ok: true,
             type: 'collab',
             domain: 'mail',
-            reply: `为您找到以下近期邮件：\n\n${mailTable.text || mailTable}`,
+            reply: isEn ? `Recent mail:\n\n${mailTable.text || mailTable}` : `为您找到以下近期邮件：\n\n${mailTable.text || mailTable}`,
             reasoning: mailTable.reasoning || null,
-            summary: `已查询到 ${mails.length} 封邮件`,
+            summary: isEn ? `Found ${mails.length} message(s)` : `已查询到 ${mails.length} 封邮件`,
             data: mails,
           }
         }
       }
 
-      const lines = mails.slice(0, 5).map((m, i) => `${i + 1}. ${m.subject || '无主题'} (发件人: ${m.from || '未知'})`)
+      const lines = mails.slice(0, 5).map((m, i) => `${i + 1}. ${m.subject || (isEn ? '(No subject)' : '无主题')} (${isEn ? 'From' : '发件人'}: ${m.from || (isEn ? 'Unknown' : '未知')})`)
       return {
         ok: true,
         type: 'collab',
         domain: 'mail',
-        reply: `为您找到以下近期邮件：\n\n${lines.join('\n')}`,
-        summary: `已查询到 ${mails.length} 封邮件`,
+        reply: isEn ? `Recent mail:\n\n${lines.join('\n')}` : `为您找到以下近期邮件：\n\n${lines.join('\n')}`,
+        summary: isEn ? `Found ${mails.length} message(s)` : `已查询到 ${mails.length} 封邮件`,
         data: mails,
       }
     }
 
     // 8. 通讯录联系人检索
-    if (chosenAction === 'search_contacts' || (isOffline && /通讯录|联系人|搜人|查同事|找同事|联系方式|电话/i.test(text))) {
+    if (chosenAction === 'search_contacts' || (isOffline && /通讯录|联系人|搜人|查同事|找同事|联系方式|电话|contact/i.test(text))) {
       const q = agentDecision?.query || text.replace(/帮我|查一下|查|搜一下|搜|找一下|找|的联系方式|联系人|通讯录|同事/g, '').trim() || 'me'
       const res = await contactSearch(q, signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
-          return scopeError('contact', res.error?.missing_scopes || ['contact:contact:readonly'], '飞书通讯录', '通讯录')
+          return scopeError('contact', res.error?.missing_scopes || ['contact:contact:readonly'], '飞书通讯录', '通讯录', 'Contacts', 'Contacts')
         }
-        return { ok: false, type: 'answer', domain: 'contact', reply: `查询通讯录失败：${res.message || '未知错误'}` }
+        return {
+          ok: false,
+          type: 'answer',
+          domain: 'contact',
+          reply: isEn ? `Failed to search contacts: ${res.message || 'Unknown error'}` : `查询通讯录失败：${res.message || '未知错误'}`,
+        }
       }
       const users = res.value?.data?.users || res.value?.users || []
       if (!Array.isArray(users) || users.length === 0) {
@@ -1373,31 +2055,36 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'contact',
-          reply: `通讯录检索：\n\n未检索到与「${q}」相关的联系人。`,
-          summary: '未找到联系人',
+          reply: isEn ? `Contacts:\n\nNo contacts matched "${q}".` : `通讯录检索：\n\n未检索到与「${q}」相关的联系人。`,
+          summary: isEn ? 'No contacts found' : '未找到联系人',
         }
       }
-      const lines = users.slice(0, 5).map((u, i) => `${i + 1}. ${u.localized_name || u.name || '未知姓名'}${u.department ? ` · ${u.department}` : ''}${u.enterprise_email || u.email ? ` (${u.enterprise_email || u.email})` : ''}`)
+      const lines = users.slice(0, 5).map((u, i) => `${i + 1}. ${u.localized_name || u.name || (isEn ? 'Unknown' : '未知姓名')}${u.department ? ` · ${u.department}` : ''}${u.enterprise_email || u.email ? ` (${u.enterprise_email || u.email})` : ''}`)
       return {
         ok: true,
         type: 'collab',
         domain: 'contact',
-        reply: `为您找到以下飞书联系人：\n\n${lines.join('\n')}`,
-        summary: `已找到 ${users.length} 位联系人`,
+        reply: isEn ? `Matching contacts:\n\n${lines.join('\n')}` : `为您找到以下飞书联系人：\n\n${lines.join('\n')}`,
+        summary: isEn ? `Found ${users.length} contact(s)` : `已找到 ${users.length} 位联系人`,
         data: users,
       }
     }
 
     // 9. 知识库与云文档检索
-    if (chosenAction === 'search_wiki' || (isOffline && /知识库|文档|wiki|规范|指南|手册|制度/i.test(text))) {
+    if (chosenAction === 'search_wiki' || (isOffline && /知识库|文档|wiki|规范|指南|手册|制度|docs/i.test(text))) {
       let q = agentDecision?.query || text.replace(/在团队知识库中搜索|在知识库中搜索|知识库|搜索|查一下|查找|查|搜/g, '').trim()
-      if (!q) q = '规范'
+      if (!q) q = isEn ? 'guide' : '规范'
       const res = await docsSearch(q, signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
-          return scopeError('docs', res.error?.missing_scopes || ['wiki:space:read', 'search:docs:read'], '知识库与云文档', '文档')
+          return scopeError('docs', res.error?.missing_scopes || ['wiki:space:read', 'search:docs:read'], '知识库与云文档', '文档', 'Docs & Wiki', 'Docs')
         }
-        return { ok: false, type: 'answer', domain: 'wiki', reply: `检索知识库与文档失败：${res.message || '未知错误'}` }
+        return {
+          ok: false,
+          type: 'answer',
+          domain: 'wiki',
+          reply: isEn ? `Failed to search docs & wiki: ${res.message || 'Unknown error'}` : `检索知识库与文档失败：${res.message || '未知错误'}`,
+        }
       }
       const results = res.value?.data?.results || res.value?.results || []
       if (!Array.isArray(results) || results.length === 0) {
@@ -1405,38 +2092,42 @@ export function createOperations({ ctx, config = {}, planner }) {
           ok: true,
           type: 'collab',
           domain: 'wiki',
-          reply: `知识库与文档检索：\n\n未检索到与「${q}」相关的文档或知识库内容。建议更换关键词重试。`,
-          summary: '未找到相关文档',
+          reply: isEn
+            ? `Docs & Wiki:\n\nNo results found for "${q}". Try another keyword.`
+            : `知识库与文档检索：\n\n未检索到与「${q}」相关的文档或知识库内容。建议更换关键词重试。`,
+          summary: isEn ? 'No docs found' : '未找到相关文档',
         }
       }
       const lines = results.slice(0, 5).map((item, i) => {
-        const title = (item.title_highlighted || item.result_meta?.title || '未命名文档').replace(/<\/?h>/g, '')
+        const title = (item.title_highlighted || item.result_meta?.title || (isEn ? 'Untitled doc' : '未命名文档')).replace(/<\/?h>/g, '')
         const url = item.result_meta?.url || ''
         const summary = (item.summary_highlighted || '').replace(/<\/?h>/g, '')
         const link = url ? `[${title}](${url})` : title
-        return `${i + 1}. **${link}**\n   ${summary || '暂无摘要'}`
+        return `${i + 1}. **${link}**\n   ${summary || (isEn ? 'No preview available' : '暂无摘要')}`
       })
       return {
         ok: true,
         type: 'collab',
         domain: 'wiki',
-        reply: `为您在飞书知识库与云文档中找到以下与「${q}」相关的内容：\n\n${lines.join('\n\n')}`,
-        summary: `已找到 ${results.length} 篇相关文档`,
+        reply: isEn
+          ? `Found in Feishu Docs & Wiki for "${q}":\n\n${lines.join('\n\n')}`
+          : `为您在飞书知识库与云文档中找到以下与「${q}」相关的内容：\n\n${lines.join('\n\n')}`,
+        summary: isEn ? `Found ${results.length} doc(s)` : `已找到 ${results.length} 篇相关文档`,
         data: results,
       }
     }
 
-    if (chosenAction === 'list_spaces' || (isOffline && /知识库列表|有哪些知识库|知识库空间/i.test(text))) {
+    if (chosenAction === 'list_spaces' || (isOffline && /知识库列表|有哪些知识库|知识库空间|wiki space/i.test(text))) {
       const res = await wikiSpaceList(signal)
       if (res.ok && res.value?.data?.spaces) {
         const spaces = res.value.data.spaces
-        const lines = spaces.map((sp, i) => `${i + 1}. **${sp.name}** (${sp.space_type === 'team' ? '团队知识库' : '个人知识库'})`)
+        const lines = spaces.map((sp, i) => `${i + 1}. **${sp.name}** (${sp.space_type === 'team' ? (isEn ? 'Team Wiki' : '团队知识库') : (isEn ? 'Personal Wiki' : '个人知识库')})`)
         return {
           ok: true,
           type: 'collab',
           domain: 'wiki',
-          reply: `为您找到以下飞书知识库空间：\n\n${lines.join('\n')}`,
-          summary: `已查询到 ${spaces.length} 个知识库`,
+          reply: isEn ? `Feishu Wiki spaces:\n\n${lines.join('\n')}` : `为您找到以下飞书知识库空间：\n\n${lines.join('\n')}`,
+          summary: isEn ? `Found ${spaces.length} space(s)` : `已查询到 ${spaces.length} 个知识库`,
           data: spaces,
         }
       }
@@ -1444,10 +2135,14 @@ export function createOperations({ ctx, config = {}, planner }) {
 
     // 10. 通用上下文追问 / 协同答疑 / 自然对话（彻底告别复读机）
     const generalLlmReply = await callLlm({
-      system: `你是一个专业、贴心、高效的飞书全能协同助手。
+      system: isEn
+        ? `You are a helpful, concise Feishu/Lark assistant.
+You help users check calendar events, manage tasks, search group chats, triage mail, look up contacts, and collaborate across Feishu.
+Always answer in natural, friendly English using Markdown lists or tables when helpful. Never output raw internal JSON.`
+        : `你是一个专业、贴心、高效的飞书全能协同助手。
 你可以协助用户查阅日程、整理待办任务、检索飞书群聊、速览邮件、查找企业通讯录，或提供办公协作建议。
 请结合上下文中的飞书数据和用户的最新提问，给出亲切、准确、高情商的回答。
-如果用户要求表格呈现，请输出标准的 Markdown 表格。严禁给出机械重复的套话。`,
+如果用户要求表格呈现，请输出标准的 Markdown 表格。严禁输出内部 JSON 结构，严禁给出机械重复的套话。`,
       messages: [
         ...formattedHistory,
         { role: 'user', text },
@@ -1461,17 +2156,19 @@ export function createOperations({ ctx, config = {}, planner }) {
       return {
         ok: true,
         type: 'collab',
-        reply: generalLlmReply.text || generalLlmReply,
+        reply: String(generalLlmReply.text || generalLlmReply).trim(),
         reasoning: generalLlmReply.reasoning || null,
-        summary: '已回复',
+        summary: isEn ? 'Replied' : '已回复',
       }
     }
 
     return {
       ok: true,
       type: 'collab',
-      reply: `已收到您的指令：「${text}」。\n您可以告诉我具体的需求，例如「查今天日程」、「列出待办清单」、「搜我加入的群聊」或「速览近期邮件」。`,
-      summary: '已处理协同指令',
+      reply: isEn
+        ? `Received "${text}". Ask me to check today’s agenda, list open tasks, search chats, or summarize recent mail.`
+        : `已收到您的指令：「${text}」。\n您可以告诉我具体的需求，例如「查今天日程」、「列出待办清单」、「搜我加入的群聊」或「速览近期邮件」。`,
+      summary: isEn ? 'Processed request' : '已处理协同指令',
     }
   }
 
@@ -2561,10 +3258,13 @@ export function createOperations({ ctx, config = {}, planner }) {
 
     const allOk = results.every((entry) => entry.ok)
     const onlyDescribe = results.length === 1 && results[0].op === 'describe'
+    const isEn = resolveLang(options.lang) === 'en'
     const summary = onlyDescribe
       ? results[0].text
       : [
-          `${allOk ? '改好了' : '改好了一部分'}${baseName ? `：「${baseName}」` : ''}`,
+          isEn
+            ? `${allOk ? 'Updated' : 'Partially updated'}${baseName ? `: "${baseName}"` : ''}`
+            : `${allOk ? '改好了' : '改好了一部分'}${baseName ? `：「${baseName}」` : ''}`,
           ...results.map((entry) => `${entry.ok ? '·' : '×'} ${entry.text}`),
         ].join('\n')
 
@@ -2588,6 +3288,14 @@ export function createOperations({ ctx, config = {}, planner }) {
     resolveBase,
     ensureKanban,
     resolveCli,
+    resolveCliSync,
+    getCanonicalBundledCliPath,
+    installCli,
+    getCliBootstrapState,
+    readOfficialSkillsCatalog,
+    readOfficialSkillGuide,
+    invalidateOfficialSkillsCache,
+    compareSemver,
     connectStatus,
     startAppInit,
     pollAppInit,

@@ -3,7 +3,14 @@
  * Supports full multi-turn conversation history and dynamic model routing.
  */
 
-import { collectText, parsePlanText, withTimeout } from './planner.js'
+import { collectText, parsePlanText, resolveLang, withTimeout } from './planner.js'
+
+const EN_ADJUST_DIRECTIVE = `
+
+IMPORTANT OUTPUT LANGUAGE RULE:
+The active UI/user language is English.
+- Always write the "reply" field in natural, helpful English.
+- Write any newly added or modified column names, view names, option names, and record examples in English (matching the existing table language if editing a Chinese table unless instructed otherwise).`
 
 const MAX_OPS = 8
 const PLAN_TIMEOUT_MS = 45000
@@ -168,9 +175,13 @@ function sanitizeWhere(raw) {
   return pairs.length > 0 ? pairs : undefined
 }
 
-export function sanitizeOps(raw, instruction = '', history = []) {
+export function sanitizeOps(raw, instruction = '', history = [], langInput = 'zh') {
+  const isEn = resolveLang(langInput, instruction) === 'en'
   if (!raw || typeof raw !== 'object') {
-    return { ok: false, message: '模型返回格式不对，请换一种说法再试。' }
+    return {
+      ok: false,
+      message: isEn ? 'The model response format was invalid. Please try rephrasing.' : '模型返回格式不对，请换一种说法再试。',
+    }
   }
 
   const replyText = String(
@@ -182,7 +193,7 @@ export function sanitizeOps(raw, instruction = '', history = []) {
     return {
       ok: true,
       type: 'answer',
-      reply: replyText || '已为您查询完成。',
+      reply: replyText || (isEn ? 'Done.' : '已为您查询完成。'),
       ops: [],
     }
   }
@@ -195,27 +206,40 @@ export function sanitizeOps(raw, instruction = '', history = []) {
       return { ok: true, type: 'answer', reply: replyText, ops: [] }
     }
     // Intelligent fallback for query questions like "总结", "加了什么", "刚才"
-    const isQuery = /总结|加了什么|刚才|刚刚|是什么|有哪些|列出|说明|为什么/i.test(instruction)
+    const isQuery = /总结|加了什么|刚才|刚刚|是什么|有哪些|列出|说明|为什么|summary|what|which|list|explain|why/i.test(instruction)
     if (isQuery && Array.isArray(history) && history.length > 0) {
       const lastAiMsg = [...history].reverse().find((m) => m && (m.role === 'assistant' || m.role === 'model') && m.text)
       if (lastAiMsg) {
         return {
           ok: true,
           type: 'answer',
-          reply: `回顾上一轮操作结果：\n${lastAiMsg.text}`,
+          reply: isEn ? `Previous result:\n${lastAiMsg.text}` : `回顾上一轮操作结果：\n${lastAiMsg.text}`,
           ops: [],
         }
       }
     }
-    return { ok: false, message: '没听出要改哪里，可以说得具体一点，例如「再加一列负责人」。' }
+    return {
+      ok: false,
+      message: isEn
+        ? 'Could not determine what to modify. Try specifying an action, e.g. "Add an Owner column".'
+        : '没听出要改哪里，可以说得具体一点，例如「再加一列负责人」。',
+    }
   }
 
   if (!entries) {
-    return { ok: false, message: '模型没有返回改动方案，换一种说法再试。' }
+    return {
+      ok: false,
+      message: isEn ? 'No changes returned by the model. Please try rephrasing.' : '模型没有返回改动方案，换一种说法再试。',
+    }
   }
 
   if (entries.length > MAX_OPS) {
-    return { ok: false, message: `一次改太多了，最多 ${MAX_OPS} 处，分几次说吧。` }
+    return {
+      ok: false,
+      message: isEn
+        ? `Too many changes at once (max ${MAX_OPS}). Please split them into smaller steps.`
+        : `一次改太多了，最多 ${MAX_OPS} 处，分几次说吧。`,
+    }
   }
 
   const ops = []
@@ -490,13 +514,14 @@ export function createAdjustPlanner({ ctx, config = {} }) {
     return `表格结构定义：\n${JSON.stringify({ tables }, null, 2)}${liveRecordsText}`
   }
 
-  async function ask(messages, signal, temperature = 0.2, customRoute) {
+  async function ask(messages, signal, temperature = 0.2, customRoute, lang = 'zh') {
     const { provider, model } = route(customRoute)
+    const system = lang === 'en' ? `${SYSTEM_PROMPT}${EN_ADJUST_DIRECTIVE}` : SYSTEM_PROMPT
     return collectText(
       ctx.llm.stream({
         provider,
         model,
-        system: SYSTEM_PROMPT,
+        system,
         messages,
         temperature,
         maxTokens: 1500,
@@ -523,13 +548,20 @@ export function createAdjustPlanner({ ctx, config = {} }) {
     const options = typeof input === 'string' ? { instruction: input } : (input || {})
     const instruction = clip(options.instruction || '', 500)
     const history = Array.isArray(options.history) ? options.history : []
+    const lang = resolveLang(options.lang, instruction)
+    const isEn = lang === 'en'
     const customRoute = {
       model: options.model,
       provider: options.provider,
     }
 
     if (instruction.length < 1) {
-      return { ok: false, message: '说一下想改哪里或想问什么，例如「再加一列负责人」或「刚刚加了什么」。' }
+      return {
+        ok: false,
+        message: isEn
+          ? 'Describe what to change or ask a question, e.g. "Add an Owner column".'
+          : '说一下想改哪里或想问什么，例如「再加一列负责人」或「刚刚加了什么」。',
+      }
     }
 
     const { provider, model } = route(customRoute)
@@ -539,12 +571,22 @@ export function createAdjustPlanner({ ctx, config = {} }) {
     const messages = []
     messages.push({
       role: 'user',
-      content: [{ type: 'text', text: `表格当前结构与真实数据状态：\n${context(schema, live)}` }],
+      content: [{
+        type: 'text',
+        text: isEn
+          ? `Current Base schema & live records:\n${context(schema, live)}`
+          : `表格当前结构与真实数据状态：\n${context(schema, live)}`,
+      }],
     })
     messages.push({
       role: 'assistant',
       source: assistantSource,
-      content: [{ type: 'text', text: '{"type":"answer","reply":"已掌握当前飞书表格结构与真实数据内容。请告诉我你的改动要求或疑问。"}' }],
+      content: [{
+        type: 'text',
+        text: isEn
+          ? '{"type":"answer","reply":"I have the current Base schema and live records. What would you like to change or analyze?"}'
+          : '{"type":"answer","reply":"已掌握当前飞书表格结构与真实数据内容。请告诉我你的改动要求或疑问。"}',
+      }],
     })
 
     // Inject history (up to last 10 turns)
@@ -564,9 +606,9 @@ export function createAdjustPlanner({ ctx, config = {} }) {
       content: [{ type: 'text', text: instruction }],
     })
 
-    const guard = withTimeout(signal, timeoutMs)
+    const guard = withTimeout(signal, actualTimeout)
     try {
-      const replyRawText = await ask(messages, guard.signal, 0.2, customRoute)
+      const replyRawText = await ask(messages, guard.signal, 0.2, customRoute, lang)
       let raw = parsePlanText(replyRawText)
       if (!raw && replyRawText && replyRawText.trim() && !replyRawText.trim().startsWith('{')) {
         return {
@@ -580,11 +622,20 @@ export function createAdjustPlanner({ ctx, config = {} }) {
         const retryText = await ask(
           [
             ...messages,
-            { role: 'user', content: [{ type: 'text', text: '上一次回复无法解析为 JSON。请只输出合法的 JSON 对象，不要输出任何代码块或多余文字。' }] },
+            {
+              role: 'user',
+              content: [{
+                type: 'text',
+                text: isEn
+                  ? 'The previous response was not valid JSON. Output ONLY one valid JSON object with no code blocks or extra prose.'
+                  : '上一次回复无法解析为 JSON。请只输出合法的 JSON 对象，不要输出任何代码块或多余文字。',
+              }],
+            },
           ],
           guard.signal,
           0,
           customRoute,
+          lang,
         )
         raw = parsePlanText(retryText)
         if (!raw && retryText && retryText.trim() && !retryText.trim().startsWith('{')) {
@@ -596,11 +647,19 @@ export function createAdjustPlanner({ ctx, config = {} }) {
           }
         }
       }
-      if (!raw) return { ok: false, message: '模型没有返回有效结果，请换一种说法再试。' }
-      return sanitizeOps(raw, instruction, history)
+      if (!raw) {
+        return {
+          ok: false,
+          message: isEn ? 'The model did not return a valid result. Please try rephrasing.' : '模型没有返回有效结果，请换一种说法再试。',
+        }
+      }
+      return sanitizeOps(raw, instruction, history, lang)
     } catch (error) {
       if (guard.timedOut()) {
-        return { ok: false, message: '想太久了，没出结果。再试一次，或者说得更短一点。' }
+        return {
+          ok: false,
+          message: isEn ? 'Request timed out. Please retry with a shorter prompt.' : '想太久了，没出结果。再试一次，或者说得更短一点。',
+        }
       }
       throw error
     } finally {

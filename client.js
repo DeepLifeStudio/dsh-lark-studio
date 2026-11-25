@@ -27,6 +27,7 @@ window.__ModuleLoader__.load({
     const API = 'api/dsh-lark'
     const NS = 'dsh-lark-studio'
     const RECENT_KEY = 'dsh-lark-recent'
+    const DRAFT_KEY = 'dsh-lark-draft'
     const STYLE_ID = 'dsh-lark-studio-styles'
 
     let currentDshSessionId = ''
@@ -261,7 +262,7 @@ window.__ModuleLoader__.load({
         type: 'base',
         icon: 'table',
         titleKey: 'scene.crm',
-        prompt: '我想记客户往来：公司、联系人、现在谈到哪一步、下次什么时候联系',
+        promptKey: 'scene.crm.prompt',
         primary: true,
       },
       {
@@ -269,7 +270,7 @@ window.__ModuleLoader__.load({
         type: 'base',
         icon: 'checkSquare',
         titleKey: 'scene.task',
-        prompt: '我想记工作任务：任务、负责人、做到哪一步了、截止时间',
+        promptKey: 'scene.task.prompt',
         primary: true,
       },
       {
@@ -277,7 +278,7 @@ window.__ModuleLoader__.load({
         type: 'collab',
         icon: 'calendar',
         titleKey: 'scene.calendar',
-        prompt: '查一下我今天的日程安排与会议',
+        promptKey: 'scene.calendar.prompt',
         primary: true,
       },
       {
@@ -285,7 +286,7 @@ window.__ModuleLoader__.load({
         type: 'collab',
         icon: 'checkSquare',
         titleKey: 'scene.todo',
-        prompt: '列出我所有未完成的待办事项',
+        promptKey: 'scene.todo.prompt',
         primary: true,
       },
       {
@@ -293,7 +294,7 @@ window.__ModuleLoader__.load({
         type: 'base',
         icon: 'layout',
         titleKey: 'scene.content',
-        prompt: '我想排内容：选题、发在哪个平台、什么状态、什么时候发',
+        promptKey: 'scene.content.prompt',
         primary: false,
       },
       {
@@ -301,7 +302,7 @@ window.__ModuleLoader__.load({
         type: 'base',
         icon: 'receipt',
         titleKey: 'scene.expense',
-        prompt: '我想记报销：花在什么事上、金额、日期、报销到哪一步',
+        promptKey: 'scene.expense.prompt',
         primary: false,
       },
       {
@@ -309,7 +310,7 @@ window.__ModuleLoader__.load({
         type: 'collab',
         icon: 'people',
         titleKey: 'scene.chat',
-        prompt: '搜索我加入的飞书群聊',
+        promptKey: 'scene.chat.prompt',
         primary: false,
       },
       {
@@ -317,7 +318,7 @@ window.__ModuleLoader__.load({
         type: 'collab',
         icon: 'mail',
         titleKey: 'scene.mail',
-        prompt: '查一下我最近收到的重要邮件',
+        promptKey: 'scene.mail.prompt',
         primary: false,
       },
     ]
@@ -342,17 +343,28 @@ window.__ModuleLoader__.load({
       'pick.stop': '停止',
 
       'scene.crm': '建客户表',
+      'scene.crm.prompt': '我想记客户往来：公司、联系人、现在谈到哪一步、下次什么时候联系',
       'scene.task': '建任务表',
+      'scene.task.prompt': '我想记工作任务：任务、负责人、做到哪一步了、截止时间',
       'scene.calendar': '今日日程',
+      'scene.calendar.prompt': '查一下我今天的日程安排与会议',
       'scene.todo': '我的待办',
+      'scene.todo.prompt': '列出我所有未完成的待办事项',
       'scene.content': '建排期表',
+      'scene.content.prompt': '我想排内容：选题、发在哪个平台、什么状态、什么时候发',
       'scene.expense': '建报销表',
+      'scene.expense.prompt': '我想记报销：花在什么事上、金额、日期、报销到哪一步',
       'scene.chat': '搜索群聊',
+      'scene.chat.prompt': '搜索我加入的飞书群聊',
       'scene.mail': '近期邮件',
+      'scene.mail.prompt': '查一下我最近收到的重要邮件',
 
       'recent.title': '最近',
       'recent.delete': '从最近移除',
       'recent.removed': '已移除「%s」',
+      'draft.title': '草稿',
+      'draft.delete': '丢弃草稿',
+      'draft.discarded': '已丢弃草稿',
 
       'toast.undo': '撤销',
       'toast.copied': '已复制链接',
@@ -362,7 +374,7 @@ window.__ModuleLoader__.load({
       'toast.stopped': '已停止',
       'toast.built': '表格已创建',
       'toast.refined': '已更新方案',
-      'toast.planReady': '方案已就绪，点击右上角「确认建表」即可生成',
+      'toast.draftCleared': '已收起刚才的设计草稿',
 
       'model.label': '切换模型',
       'model.loading': '加载模型…',
@@ -384,10 +396,6 @@ window.__ModuleLoader__.load({
       'preview.tweakPlaceholder': '想怎么改？如：加一列来源，或去掉金额…',
       'preview.build': '确认建表',
       'preview.back': '返回',
-      'preview.chipOwner': '+ 负责人',
-      'preview.chipPriority': '+ 优先级',
-      'preview.chipNotes': '+ 备注',
-      'preview.chipSamples': '补充示例',
 
       'view.back': '返回',
       'view.collabTitle': '飞书协同',
@@ -423,26 +431,50 @@ window.__ModuleLoader__.load({
       'view.scopeConsole': '开放平台',
 
       'starter.analyze': '统计分析',
+      'starter.analyze.prompt': '帮我对当前表格数据进行统计分析，提取关键洞察与数据分布',
       'starter.kanban': '创建看板',
+      'starter.kanban.prompt': '为当前表创建一个按状态分组的看板视图',
       'starter.form': '收集表单',
+      'starter.form.prompt': '针对当前表格搭建一个数据收集表单，方便录入数据',
       'starter.batch': '检查空缺项',
+      'starter.batch.prompt': '帮我检查当前表格数据，列出缺失字段或需要补齐的记录',
       'starter.calendar': '今日日程',
+      'starter.calendar.prompt': '查一下我今天的日程安排与会议',
       'starter.todo': '未完成待办',
+      'starter.todo.prompt': '列出我所有未完成的待办事项',
       'starter.chat': '我的群聊',
+      'starter.chat.prompt': '搜索我加入的飞书群聊',
       'starter.mail': '近期邮件',
+      'starter.mail.prompt': '查一下我最近收到的重要邮件',
 
       'error.title': '操作未完成',
       'error.retry': '重试',
+      'err.empty': '暂无响应，请重试',
+      'err.noCli': '尚未完成飞书组件准备',
+      'err.codeInvalid': '授权链接已失效，请重新获取',
+      'err.codeExpired': '授权链接已过期，请重新获取',
+      'err.pending': '授权正在等待管理员审批，通过后重试',
+      'err.rateLimit': '请求过于频繁，请稍后再试',
+      'err.scope': '飞书权限不足，请在连接设置中补充授权',
+      'err.auth': '飞书登录已过期，请重新授权',
+      'err.timeout': '飞书响应超时，请检查网络或重试',
+      'err.network': '网络连接异常，请检查网络后重试',
+      'err.plan': '未能理解需求，换个说法或点击下方场景试试',
+      'err.incomplete': '表格信息不完整，建议在飞书中查看',
 
-      'gate.step.tool': '安装工具',
+      'gate.step.tool': '准备组件',
       'gate.step.app': '关联应用',
       'gate.step.auth': '授权',
-      'gate.noTool.title': '安装连接工具',
-      'gate.noTool.body': '在终端执行以下命令即可连接飞书',
-      'gate.noTool.copy': '复制',
+      'gate.noTool.title': '正在准备飞书连接',
+      'gate.noTool.body': '首次使用正在自动准备飞书连接，无需任何手动配置。',
+      'gate.noTool.installing': '正在自动下载并配置连接组件…',
+      'gate.noTool.retry': '重试自动准备',
+      'gate.noTool.manualToggle': '网络受限？查看手动安装方式',
+      'gate.noTool.manualHide': '收起手动安装',
+      'gate.noTool.copy': '复制命令',
       'gate.noTool.copied': '已复制',
-      'gate.noTool.done': '已安装，继续',
-      'gate.noTool.hint': '若安装后仍未识别，重启应用即可',
+      'gate.noTool.done': '已手动装好，继续',
+      'gate.noTool.hint': '组件自动下载完成后将直接进入下一步。',
       'gate.noApp.title': '关联你的飞书',
       'gate.noApp.body': '在飞书页面填个名称并确认默认权限（约 1 分钟）',
       'gate.noApp.cta': '前往飞书创建',
@@ -497,6 +529,7 @@ window.__ModuleLoader__.load({
       'scope.im': '消息群聊',
       'scope.mail': '飞书邮箱',
       'scope.contact': '通讯录',
+      'scope.defaultDomain': '飞书功能',
 
       'kind.text': '文本',
       'kind.number': '数字',
@@ -524,17 +557,28 @@ window.__ModuleLoader__.load({
       'pick.stop': 'Stop',
 
       'scene.crm': 'Client Base',
+      'scene.crm.prompt': 'Track customer leads with company, contact, deal stage, and next follow-up date',
       'scene.task': 'Task Base',
+      'scene.task.prompt': 'Track team tasks with task name, owner, status, priority, and due date',
       'scene.calendar': 'Today Agenda',
+      'scene.calendar.prompt': 'Check my agenda and meetings for today',
       'scene.todo': 'My Tasks',
+      'scene.todo.prompt': 'List all my open tasks and to-dos',
       'scene.content': 'Content Base',
+      'scene.content.prompt': 'Plan content calendar with topic, platform, status, and publish date',
       'scene.expense': 'Expense Base',
+      'scene.expense.prompt': 'Track expense claims with item, amount, date, and approval status',
       'scene.chat': 'Group Chats',
+      'scene.chat.prompt': 'Search the Feishu group chats I have joined',
       'scene.mail': 'Recent Mail',
+      'scene.mail.prompt': 'Check my recent important emails',
 
       'recent.title': 'Recent',
       'recent.delete': 'Remove from recent',
       'recent.removed': 'Removed “%s”',
+      'draft.title': 'Draft',
+      'draft.delete': 'Discard draft',
+      'draft.discarded': 'Draft discarded',
 
       'toast.undo': 'Undo',
       'toast.copied': 'Link copied',
@@ -544,7 +588,7 @@ window.__ModuleLoader__.load({
       'toast.stopped': 'Stopped',
       'toast.built': 'Base created',
       'toast.refined': 'Blueprint updated',
-      'toast.planReady': 'Ready — click Create Base to build it',
+      'toast.draftCleared': 'Draft closed',
 
       'model.label': 'Switch model',
       'model.loading': 'Loading…',
@@ -566,10 +610,6 @@ window.__ModuleLoader__.load({
       'preview.tweakPlaceholder': 'Refine structure… e.g. add a Source column or remove Amount',
       'preview.build': 'Create Base',
       'preview.back': 'Back',
-      'preview.chipOwner': '+ Owner',
-      'preview.chipPriority': '+ Priority',
-      'preview.chipNotes': '+ Notes',
-      'preview.chipSamples': 'More samples',
 
       'view.back': 'Back',
       'view.collabTitle': 'Lark Assistant',
@@ -605,26 +645,50 @@ window.__ModuleLoader__.load({
       'view.scopeConsole': 'Console',
 
       'starter.analyze': 'Analyze data',
+      'starter.analyze.prompt': 'Analyze the current table data and summarize key insights and distributions',
       'starter.kanban': 'Create Kanban',
+      'starter.kanban.prompt': 'Add a Kanban view grouped by the status column',
       'starter.form': 'Intake form',
+      'starter.form.prompt': 'Create an intake form for this table to collect new entries',
       'starter.batch': 'Check gaps',
+      'starter.batch.prompt': 'Check the current records and list rows with missing or incomplete fields',
       'starter.calendar': 'Today agenda',
+      'starter.calendar.prompt': 'Check my agenda and meetings for today',
       'starter.todo': 'Open tasks',
+      'starter.todo.prompt': 'List all my open tasks and to-dos',
       'starter.chat': 'Group chats',
+      'starter.chat.prompt': 'Search the Feishu group chats I have joined',
       'starter.mail': 'Recent mail',
+      'starter.mail.prompt': 'Check my recent important emails',
 
       'error.title': 'Something went wrong',
       'error.retry': 'Retry',
+      'err.empty': 'No response received. Please try again.',
+      'err.noCli': 'Feishu connector setup is incomplete.',
+      'err.codeInvalid': 'Authorization link is invalid. Please request a new one.',
+      'err.codeExpired': 'Authorization link expired. Please request a new one.',
+      'err.pending': 'Waiting for workspace admin approval. Retry once approved.',
+      'err.rateLimit': 'Too many requests. Please try again in a moment.',
+      'err.scope': 'Missing Feishu permissions. Please grant access in settings.',
+      'err.auth': 'Feishu sign-in expired. Please re-authorize.',
+      'err.timeout': 'Request timed out. Check your network and try again.',
+      'err.network': 'Network error. Check your connection and try again.',
+      'err.plan': 'Could not understand the request. Try rephrasing or pick a starter.',
+      'err.incomplete': 'Table data is incomplete. Please inspect it in Feishu.',
 
-      'gate.step.tool': 'Install CLI',
+      'gate.step.tool': 'Setup',
       'gate.step.app': 'Connect App',
       'gate.step.auth': 'Authorize',
-      'gate.noTool.title': 'Install the bridge CLI',
-      'gate.noTool.body': 'Run this command in your terminal to connect Feishu.',
+      'gate.noTool.title': 'Preparing Feishu connection',
+      'gate.noTool.body': 'Setting up your Feishu connection automatically — no manual steps required.',
+      'gate.noTool.installing': 'Downloading and preparing component…',
+      'gate.noTool.retry': 'Retry setup',
+      'gate.noTool.manualToggle': 'Network restricted? Manual install',
+      'gate.noTool.manualHide': 'Hide manual install',
       'gate.noTool.copy': 'Copy',
       'gate.noTool.copied': 'Copied',
       'gate.noTool.done': 'Installed, continue',
-      'gate.noTool.hint': 'If still undetected after install, restart the app.',
+      'gate.noTool.hint': 'Proceeds automatically once download finishes.',
       'gate.noApp.title': 'Connect your Feishu app',
       'gate.noApp.body': 'Name your app and accept default permissions (~1 min).',
       'gate.noApp.cta': 'Open Feishu',
@@ -679,6 +743,7 @@ window.__ModuleLoader__.load({
       'scope.im': 'Chats',
       'scope.mail': 'Mail',
       'scope.contact': 'Contacts',
+      'scope.defaultDomain': 'Feishu Feature',
 
       'kind.text': 'Text',
       'kind.number': 'Number',
@@ -832,6 +897,13 @@ window.__ModuleLoader__.load({
 .lw-stage-in { animation: lwStageIn var(--dur-view) var(--ease-out) both; }
 .lw-spin { animation: lwSpin 760ms linear infinite; }
 .lw-pop-in { animation: lwPopIn 180ms var(--ease-spring) both; }
+.lw-boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 180px;
+}
 
 /* ── Layout Shell ─────────────────────────────────────────────────────── */
 .lw-col {
@@ -1117,14 +1189,14 @@ window.__ModuleLoader__.load({
   font: inherit;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 11px;
-  border-radius: var(--r-sm);
-  border: 0.5px solid var(--lw-line);
-  background: transparent;
-  color: var(--lw-ink-2);
-  font-size: 12.5px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 0.5px solid transparent;
+  background: color-mix(in srgb, var(--lw-ink) 3.5%, transparent);
+  color: var(--lw-ink-3);
+  font-size: 12px;
   font-weight: 400;
   line-height: 1;
   cursor: pointer;
@@ -1135,8 +1207,8 @@ window.__ModuleLoader__.load({
 .lw-chip:active:not(:disabled) { transform: scale(0.97); }
 .lw-chip:focus-visible { outline: none; border-color: var(--lw-accent); box-shadow: 0 0 0 2px var(--lw-accent-soft); }
 .lw-chip:disabled { opacity: 0.45; cursor: default; }
-.lw-chip-ico { color: var(--lw-ink-3); transition: color var(--dur-micro) var(--ease-io); }
-.lw-chip.is-muted { border-color: transparent; color: var(--lw-ink-3); padding: 0 8px; }
+.lw-chip-ico { color: var(--lw-ink-3); opacity: 0.85; transition: color var(--dur-micro) var(--ease-io); }
+.lw-chip.is-muted { border-color: transparent; background: transparent; color: var(--lw-ink-3); padding: 0 8px; }
 
 /* Smooth Grid-Row Collapse (Interruptible, Zero Jitter, Non-Focusable When Closed) */
 .lw-collapse {
@@ -2438,30 +2510,42 @@ body:has(.lw) [class*="viewArea"] {
       }
     }
 
+    function detectFallbackDict() {
+      try {
+        const docLang = typeof document !== 'undefined' ? document.documentElement?.lang : ''
+        const navLang = typeof navigator !== 'undefined' ? navigator.language : ''
+        const candidate = String(docLang || navLang || '').trim().toLowerCase()
+        if (candidate.startsWith('en')) return EN
+      } catch {}
+      return ZH
+    }
+
     function translator(props) {
+      const fallbackDict = detectFallbackDict()
       if (typeof props.t === 'function') {
         return (key) => {
           const value = props.t(key)
-          return value === key ? (ZH[key] ?? key) : value
+          return value === key ? (fallbackDict[key] ?? ZH[key] ?? key) : value
         }
       }
-      return (key) => ZH[key] ?? key
+      return (key) => fallbackDict[key] ?? ZH[key] ?? key
     }
 
-    function humanize(message) {
+    function humanize(message, t) {
+      const pick = (key, fallback) => (typeof t === 'function' ? t(key) : fallback)
       const text = String(message ?? '').trim()
-      if (!text) return '暂无响应，请重试'
-      if (/找不到 lark-cli|没找到 lark-cli|lark-cli 不可用/i.test(text)) return '尚未安装飞书连接工具'
-      if (/device_code is invalid|device code.*invalid/i.test(text)) return '授权链接已失效，请重新获取'
-      if (/expired|过期/i.test(text) && /device|code|授权/i.test(text)) return '授权链接已过期，请重新获取'
-      if (/pending|audit|审核|审批|not approved/i.test(text)) return '授权正在等待管理员审批，通过后重试'
-      if (/429|too many|rate limit|frequency|限流|频率/i.test(text)) return '请求过于频繁，请稍后再试'
-      if (/forbidden|permission|scope|403|权限/i.test(text)) return '飞书权限不足，请在连接设置中补充授权'
-      if (/auth|授权|登录|token .*(expired|invalid)|needs_refresh/i.test(text)) return '飞书登录已过期，请重新授权'
-      if (/timeout|超时|aborted|ETIMEDOUT|想太久了/i.test(text)) return '飞书响应超时，请重试'
-      if (/ENOTFOUND|ECONNREFUSED|network|网络/i.test(text)) return '网络连接异常，请检查网络'
-      if (/模型没有|无法解析|没能组成/.test(text)) return '未能理解需求，换个说法或点击下方场景试试'
-      if (/required flag|missing required|is required/i.test(text)) return '表格信息不完整，建议在飞书中查看'
+      if (!text) return pick('err.empty', '暂无响应，请重试')
+      if (/找不到 lark-cli|没找到 lark-cli|lark-cli 不可用/i.test(text)) return pick('err.noCli', '尚未完成飞书组件准备')
+      if (/device_code is invalid|device code.*invalid/i.test(text)) return pick('err.codeInvalid', '授权链接已失效，请重新获取')
+      if (/expired|过期/i.test(text) && /device|code|授权/i.test(text)) return pick('err.codeExpired', '授权链接已过期，请重新获取')
+      if (/pending|audit|审核|审批|not approved/i.test(text)) return pick('err.pending', '授权正在等待管理员审批，通过后重试')
+      if (/429|too many|rate limit|frequency|限流|频率/i.test(text)) return pick('err.rateLimit', '请求过于频繁，请稍后再试')
+      if (/forbidden|permission|scope|403|权限/i.test(text)) return pick('err.scope', '飞书权限不足，请在连接设置中补充授权')
+      if (/auth|授权|登录|token .*(expired|invalid)|needs_refresh/i.test(text)) return pick('err.auth', '飞书登录已过期，请重新授权')
+      if (/timeout|超时|aborted|ETIMEDOUT|想太久了/i.test(text)) return pick('err.timeout', '飞书响应超时，请检查网络或重试')
+      if (/ENOTFOUND|ECONNREFUSED|network|网络/i.test(text)) return pick('err.network', '网络连接异常，请检查网络后重试')
+      if (/模型没有|无法解析|没能组成/.test(text)) return pick('err.plan', '未能理解需求，换个说法或点击下方场景试试')
+      if (/required flag|missing required|is required/i.test(text)) return pick('err.incomplete', '表格信息不完整，建议在飞书中查看')
       return text
     }
 
@@ -3070,6 +3154,69 @@ body:has(.lw) [class*="viewArea"] {
       }
     }
 
+    function readSavedDraft() {
+      try {
+        const raw = window.localStorage.getItem(DRAFT_KEY)
+        const parsed = raw ? JSON.parse(raw) : null
+        return parsed && parsed.plan && Array.isArray(parsed.plan.tables) ? parsed : null
+      } catch {
+        return null
+      }
+    }
+
+    function saveSavedDraft(draft) {
+      if (!draft || !draft.plan) return null
+      try {
+        window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      } catch {}
+      return draft
+    }
+
+    function clearSavedDraft() {
+      try { window.localStorage.removeItem(DRAFT_KEY) } catch {}
+    }
+
+    function DraftEntry({ draft, t, onResume, onDiscard, disabled }) {
+      if (!draft || !draft.plan) return null
+      const title = draft.plan.baseName || t('preview.title')
+      return h(
+        'div',
+        { className: 'lw-recent' },
+        h('span', { className: 'lw-recent-label' }, t('draft.title')),
+        h(
+          'div',
+          { className: 'lw-recent-list' },
+          h(
+            'div',
+            { className: 'lw-recent-item' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'lw-recent-open',
+                disabled: Boolean(disabled),
+                title,
+                onClick: () => onResume(draft),
+              },
+              h(Icon, { name: 'table', size: 12, style: { color: 'var(--lw-accent)' } }),
+              h('span', { className: 'lw-recent-name' }, title),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'lw-recent-del',
+                'aria-label': `${t('draft.delete')} ${title}`,
+                title: t('draft.delete'),
+                onClick: onDiscard,
+              },
+              h(Icon, { name: 'close', size: 11, strokeWidth: 1.8 }),
+            ),
+          ),
+        ),
+      )
+    }
+
     function Recent({ items, t, onOpen, onForget, disabled }) {
       if (!items || items.length === 0) return null
       const visible = items.slice(0, 3)
@@ -3124,10 +3271,12 @@ body:has(.lw) [class*="viewArea"] {
       const [link, setLink] = useState(null)
       const [deviceCode, setDeviceCode] = useState(null)
       const [copied, setCopied] = useState(false)
+      const [showManualCli, setShowManualCli] = useState(false)
       const [showTeam, setShowTeam] = useState(false)
       const [teamId, setTeamId] = useState('')
       const [teamSecret, setTeamSecret] = useState('')
       const [autoChecking, setAutoChecking] = useState(false)
+      const autoInstallStartedRef = useRef(false)
 
       const busy = Boolean(busyAction)
 
@@ -3140,6 +3289,46 @@ body:has(.lw) [class*="viewArea"] {
         const timer = setInterval(() => setWaited(Math.round((Date.now() - startedAt) / 1000)), 500)
         return () => clearInterval(timer)
       }, [busy])
+
+      const post = useCallback(async (path, body) => {
+        const response = await authFetch(`${API}${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body ?? {}),
+        })
+        const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }))
+        if (data && !data.message && data.error) data.message = data.error
+        return data
+      }, [])
+
+      const triggerAutoInstall = useCallback(async () => {
+        setBusyAction('install')
+        setError(null)
+        try {
+          const payload = await post('/connect/cli/install')
+          if (payload.ok) {
+            onRecheck()
+          } else {
+            setError(humanize(payload.message || payload.error || t('error.title'), t))
+          }
+        } catch (failure) {
+          setError(humanize(String(failure), t))
+        } finally {
+          setBusyAction(null)
+        }
+      }, [post, onRecheck, t])
+
+      // Zero-install onboarding: auto-download @larksuite/cli via host Node runtime on first open
+      useEffect(() => {
+        if (stage !== 'no-cli') {
+          autoInstallStartedRef.current = false
+          return
+        }
+        if (health.cli && health.cli.canAutoInstall === false) return
+        if (autoInstallStartedRef.current) return
+        autoInstallStartedRef.current = true
+        triggerAutoInstall()
+      }, [stage, health.cli, triggerAutoInstall])
 
       // Silent background readiness detection for Step 2 & Step 3
       useEffect(() => {
@@ -3179,17 +3368,6 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [stage, link, deviceCode, onRecheck])
 
-      const post = useCallback(async (path, body) => {
-        const response = await authFetch(`${API}${path}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body ?? {}),
-        })
-        const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }))
-        if (data && !data.message && data.error) data.message = data.error
-        return data
-      }, [])
-
       const copyInstall = useCallback(() => {
         const command = health.installCommand || 'npm i -g @larksuite/cli'
         const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
@@ -3211,14 +3389,14 @@ body:has(.lw) [class*="viewArea"] {
             setLink(payload.url)
             window.open(payload.url, '_blank', 'noopener')
           } else {
-            setError(humanize(payload.message))
+            setError(humanize(payload.message, t))
           }
         } catch (failure) {
-          setError(humanize(String(failure)))
+          setError(humanize(String(failure), t))
         } finally {
           setBusyAction(null)
         }
-      }, [post])
+      }, [post, t])
 
       const startAuth = useCallback(async () => {
         setBusyAction('start')
@@ -3230,14 +3408,14 @@ body:has(.lw) [class*="viewArea"] {
             setDeviceCode(payload.deviceCode)
             window.open(payload.url, '_blank', 'noopener')
           } else {
-            setError(humanize(payload.message))
+            setError(humanize(payload.message, t))
           }
         } catch (failure) {
-          setError(humanize(String(failure)))
+          setError(humanize(String(failure), t))
         } finally {
           setBusyAction(null)
         }
-      }, [post])
+      }, [post, t])
 
       const finishAuth = useCallback(async () => {
         setBusyAction('finish')
@@ -3258,7 +3436,7 @@ body:has(.lw) [class*="viewArea"] {
           const text = String(payload.message || '')
           if (/expired|过期|invalid|失效/i.test(text) && /device|code|授权/i.test(text)) {
             setDeviceCode(null)
-            setError(humanize(text))
+            setError(humanize(text, t))
             await startAuth()
             return
           }
@@ -3271,16 +3449,16 @@ body:has(.lw) [class*="viewArea"] {
               const state = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
               if (state && state.ok) { onRecheck(); return }
               if (state && state.done && !state.ok) {
-                setError(humanize(state.message || t('gate.pending')))
+                setError(humanize(state.message || t('gate.pending'), t))
                 return
               }
             }
             setError(t('gate.pending'))
             return
           }
-          setError(humanize(text))
+          setError(humanize(text, t))
         } catch (failure) {
-          setError(humanize(String(failure)))
+          setError(humanize(String(failure), t))
         } finally {
           setBusyAction(null)
         }
@@ -3295,22 +3473,29 @@ body:has(.lw) [class*="viewArea"] {
             setTeamSecret('')
             onRecheck()
           } else {
-            setError(humanize(payload.message))
+            setError(humanize(payload.message, t))
           }
         } catch (failure) {
-          setError(humanize(String(failure)))
+          setError(humanize(String(failure), t))
         } finally {
           setBusyAction(null)
         }
-      }, [teamId, teamSecret, onRecheck, post])
+      }, [teamId, teamSecret, onRecheck, post, t])
 
       const title = stage === 'no-cli' ? t('gate.noTool.title') : stage === 'no-app' ? t('gate.noApp.title') : t('gate.noAuth.title')
       const bodyText = stage === 'no-cli' ? t('gate.noTool.body') : stage === 'no-app' ? t('gate.noApp.body') : t('gate.noAuth.body')
 
       // Progressive actions: show ONLY what is actionable right now
+      const canAutoInstall = !(health.cli && health.cli.canAutoInstall === false)
       const actions = []
       if (stage === 'no-cli') {
-        actions.push(h(Button, { key: 'check', variant: 'primary', onClick: onRecheck }, t('gate.noTool.done')))
+        if (busyAction !== 'install') {
+          if (canAutoInstall) {
+            actions.push(h(Button, { key: 'retryInstall', variant: 'primary', onClick: triggerAutoInstall }, t('gate.noTool.retry')))
+          } else {
+            actions.push(h(Button, { key: 'check', variant: 'primary', onClick: onRecheck }, t('gate.noTool.done')))
+          }
+        }
       } else if (stage === 'no-app') {
         if (!link) {
           actions.push(
@@ -3366,7 +3551,7 @@ body:has(.lw) [class*="viewArea"] {
 
       return h(
         'section',
-        { className: 'lw-card lw-stage-in', 'aria-labelledby': 'lw-gate-title' },
+        { key: stage, className: 'lw-card lw-stage-in', 'aria-labelledby': 'lw-gate-title' },
         h(Steps, { labels: [t('gate.step.tool'), t('gate.step.app'), t('gate.step.auth')], current }),
         h(
           'div',
@@ -3374,20 +3559,15 @@ body:has(.lw) [class*="viewArea"] {
           h('h2', { className: 'lw-h lw-h-lg', id: 'lw-gate-title' }, title),
           h('p', { className: 'lw-p' }, bodyText),
         ),
-        stage === 'no-cli'
+        stage === 'no-cli' && busyAction === 'install'
           ? h(
               'div',
-              { className: 'lw-cmd' },
-              h('code', null, health.installCommand || 'npm i -g @larksuite/cli'),
-              h(
-                Button,
-                { size: 'sm', onClick: copyInstall },
-                h(Icon, { name: copied ? 'check' : 'copy', size: 12, className: copied ? 'lw-pop-in' : undefined, style: copied ? { color: 'var(--lw-ok)' } : undefined }),
-                copied ? t('gate.noTool.copied') : t('gate.noTool.copy'),
-              ),
+              { className: 'lw-wait', role: 'status', 'aria-live': 'polite' },
+              h('span', { className: 'lw-dot is-busy' }),
+              `${t('gate.noTool.installing')}${waited > 0 ? ` (${waited}s)` : ''}`,
             )
           : null,
-        h('div', { className: 'lw-actions' }, actions),
+        actions.length > 0 ? h('div', { className: 'lw-actions' }, actions) : null,
         autoChecking
           ? h(
               'div',
@@ -3401,8 +3581,59 @@ body:has(.lw) [class*="viewArea"] {
               tone: 'error',
               title: t('error.title'),
               children: error,
-              action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (stage === 'no-auth' && deviceCode ? finishAuth() : onRecheck()) }, t('error.retry')),
+              action: stage === 'no-cli' && canAutoInstall
+                ? null
+                : h(
+                    Button,
+                    {
+                      variant: 'ghost',
+                      size: 'sm',
+                      onClick: () => (stage === 'no-auth' && deviceCode ? finishAuth() : onRecheck()),
+                    },
+                    t('error.retry'),
+                  ),
             })
+          : null,
+        stage === 'no-cli'
+          ? h(
+              'div',
+              { className: 'lw-field', style: { borderTop: '0.5px solid var(--lw-line)', paddingTop: 10 } },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'lw-details-toggle',
+                  'aria-expanded': showManualCli,
+                  onClick: () => setShowManualCli((v) => !v),
+                },
+                h(Icon, { name: 'chevronRight', size: 12, className: `lw-details-chevron${showManualCli ? ' is-open' : ''}` }),
+                showManualCli ? t('gate.noTool.manualHide') : t('gate.noTool.manualToggle'),
+              ),
+              h(
+                AnimatedCollapse,
+                { open: showManualCli },
+                h(
+                  'div',
+                  { className: 'lw-field', style: { paddingTop: 8 } },
+                  h(
+                    'div',
+                    { className: 'lw-cmd' },
+                    h('code', null, health.installCommand || 'npm i -g @larksuite/cli'),
+                    h(
+                      Button,
+                      { size: 'sm', onClick: copyInstall },
+                      h(Icon, { name: copied ? 'check' : 'copy', size: 12, className: copied ? 'lw-pop-in' : undefined, style: copied ? { color: 'var(--lw-ok)' } : undefined }),
+                      copied ? t('gate.noTool.copied') : t('gate.noTool.copy'),
+                    ),
+                  ),
+                  h(
+                    'div',
+                    { className: 'lw-actions' },
+                    h(Button, { size: 'sm', variant: 'ghost', onClick: onRecheck }, t('gate.noTool.done')),
+                  ),
+                ),
+              ),
+            )
           : null,
         stage === 'no-app'
           ? h(
@@ -4092,6 +4323,7 @@ body:has(.lw) [class*="viewArea"] {
       const isNarrow = containerWidth < 480
 
       const t = useMemo(() => translator(props), [props.t])
+      const activeLang = useMemo(() => (t('app.name') === 'Lark Workbench' ? 'en' : 'zh'), [t])
       const theme = useHostTheme()
 
       const [stage, setStage] = useState('pick')
@@ -4102,6 +4334,7 @@ body:has(.lw) [class*="viewArea"] {
       const [adjustError, setAdjustError] = useState(null)
       const [liveReasoning, setLiveReasoning] = useState('')
       const [confirmPlan, setConfirmPlan] = useState(null)
+      const [savedDraft, setSavedDraft] = useState(readSavedDraft)
       const [history, setHistory] = useState([])
       const [syncingAuth, setSyncingAuth] = useState(false)
       const [syncingTable, setSyncingTable] = useState(false)
@@ -4341,6 +4574,13 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [stage, active && active.url])
 
+      // Auto-persist active preview draft so accidental back/tab-switch never loses work
+      useEffect(() => {
+        if (stage === 'preview' && plan && Array.isArray(plan.tables)) {
+          setSavedDraft(saveSavedDraft({ plan, sentence, at: Date.now() }))
+        }
+      }, [stage, plan, sentence])
+
       // Escape cancels destructive confirm card
       useEffect(() => {
         if (!confirmPlan) return undefined
@@ -4357,14 +4597,17 @@ body:has(.lw) [class*="viewArea"] {
       const toolOk = !health || !health.cli || health.cli.available !== false
 
       const post = useCallback(async (path, body, signal) => {
+        const payload = body && typeof body === 'object' && !Array.isArray(body)
+          ? { lang: activeLang, ...body }
+          : body
         const response = await authFetch(`${API}${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
           signal,
         })
         return response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }))
-      }, [])
+      }, [activeLang])
 
       const stopActiveRequest = useCallback(() => {
         if (activeRequestAbortRef.current) {
@@ -4381,6 +4624,8 @@ body:has(.lw) [class*="viewArea"] {
           activeRequestAbortRef.current.abort()
           activeRequestAbortRef.current = null
         }
+        const savedPlan = stage === 'preview' && plan ? plan : null
+        const savedSentence = sentence
         setStage('pick')
         setPlan(null)
         setActive(null)
@@ -4394,7 +4639,17 @@ body:has(.lw) [class*="viewArea"] {
         setShowDetails(false)
         setCopiedView(false)
         setCompactPane('chat')
-      }, [])
+        if (savedPlan) {
+          showToast({
+            message: t('toast.draftCleared'),
+            onUndo: () => {
+              setPlan(savedPlan)
+              setSentence(savedSentence)
+              setStage('preview')
+            },
+          })
+        }
+      }, [stage, plan, sentence, showToast, t])
 
       const build = useCallback(async () => {
         if (!plan || busy) return
@@ -4412,6 +4667,8 @@ body:has(.lw) [class*="viewArea"] {
               table: payload.tables && payload.tables[0] ? payload.tables[0].name : undefined,
             }
             setRecent(rememberRecent(item))
+            clearSavedDraft()
+            setSavedDraft(null)
             setActive(item)
             setHistory([])
             setStage('view')
@@ -4474,6 +4731,21 @@ body:has(.lw) [class*="viewArea"] {
           return
         }
         if (payload.needsConfirm) {
+          const hasTableConfirm = (Array.isArray(payload.destructive) && payload.destructive.length > 0)
+            || (Array.isArray(payload.ops) && payload.ops.length > 0)
+          if (payload.confirmKind === 'skill_guard' || payload.skill || !hasTableConfirm) {
+            setConfirmPlan(null)
+            setAdjustError(null)
+            setHistory((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                text: payload.reply || payload.summary || '',
+                warn: true,
+              },
+            ])
+            return
+          }
           setConfirmPlan({ ops: payload.ops ?? [], destructive: payload.destructive ?? [] })
           return
         }
@@ -4485,7 +4757,7 @@ body:has(.lw) [class*="viewArea"] {
             {
               role: 'assistant',
               missingScope: true,
-              domainTitle: payload.domainTitle || '飞书功能',
+              domainTitle: payload.domainTitle || t('scope.defaultDomain'),
               requiredScopes: payload.requiredScopes || [],
               consoleUrl: payload.consoleUrl,
               text: payload.reply || payload.message || '',
@@ -4505,7 +4777,7 @@ body:has(.lw) [class*="viewArea"] {
         }
         if (!payload.ok && !payload.summary && !payload.reply) {
           const msg = payload.message || payload.error || t('error.title')
-          setHistory((prev) => [...prev, { role: 'assistant', text: humanize(msg), error: true }])
+          setHistory((prev) => [...prev, { role: 'assistant', text: humanize(msg, t), error: true }])
           return
         }
         setConfirmPlan(null)
@@ -4585,6 +4857,7 @@ body:has(.lw) [class*="viewArea"] {
                 instruction: text,
                 table: (active && active.table) || '',
                 history: recentHistory,
+                lang: activeLang,
                 model: selectedModel ? selectedModel.id : undefined,
                 provider: selectedModel ? selectedModel.provider : undefined,
                 stream: true,
@@ -4647,7 +4920,7 @@ body:has(.lw) [class*="viewArea"] {
           if (controller.signal.aborted) return
           const errMsg = failure instanceof Error ? failure.message : String(failure)
           if (alive.current) {
-            setHistory((prev) => [...prev, { role: 'assistant', text: humanize(errMsg), error: true }])
+            setHistory((prev) => [...prev, { role: 'assistant', text: humanize(errMsg, t), error: true }])
           }
         } finally {
           if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
@@ -4726,7 +4999,6 @@ body:has(.lw) [class*="viewArea"] {
 
           if (payload && payload.ok && payload.action === 'keep') {
             setTweakText('')
-            showToast({ message: t('toast.planReady') })
             if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current)
             setNudgeBuild(true)
             nudgeTimerRef.current = setTimeout(() => { if (alive.current) setNudgeBuild(false) }, 1600)
@@ -4929,9 +5201,10 @@ body:has(.lw) [class*="viewArea"] {
 
       if (!health) {
         content = h(
-          'section',
-          { className: 'lw-planning' },
-          h(TableSkeleton),
+          'div',
+          { className: 'lw-boot', role: 'status', 'aria-live': 'polite' },
+          h('span', { className: 'lw-dot is-busy' }),
+          h('span', { className: 'lw-meta' }, t('status.checking')),
         )
       } else if (health.stage === 'unknown') {
         content = h(
@@ -4947,13 +5220,39 @@ body:has(.lw) [class*="viewArea"] {
         const primaryScenes = SCENARIOS.filter((s) => s.primary)
         const extraScenes = SCENARIOS.filter((s) => !s.primary)
 
+        const openDraft = (draft) => {
+          if (!draft || !draft.plan) return
+          setPlan(draft.plan)
+          setSentence(draft.sentence || '')
+          setTweakText('')
+          setShowDetails(false)
+          setError(null)
+          setStage('preview')
+        }
+
+        const discardDraft = () => {
+          const prev = savedDraft
+          clearSavedDraft()
+          setSavedDraft(null)
+          showToast({
+            message: t('draft.discarded'),
+            onUndo: prev
+              ? () => {
+                  saveSavedDraft(prev)
+                  setSavedDraft(prev)
+                }
+              : undefined,
+          })
+        }
+
         const runScenario = (scenario) => {
+          const promptText = t(scenario.promptKey)
           if (scenario.type === 'collab') {
             openCollab('')
-            setTimeout(() => { applyAdjust(scenario.prompt, { collab: true }) }, 0)
+            setTimeout(() => { applyAdjust(promptText, { collab: true }) }, 0)
           } else {
-            setSentence(scenario.prompt)
-            planFor(scenario.prompt)
+            setSentence(promptText)
+            planFor(promptText)
           }
         }
 
@@ -4987,7 +5286,7 @@ body:has(.lw) [class*="viewArea"] {
             ? h(Banner, {
                 tone: 'error',
                 title: t('error.title'),
-                children: humanize(error),
+                children: humanize(error, t),
                 action: h(Button, { variant: 'ghost', size: 'sm', onClick: () => (sentence ? planFor(sentence) : restart()) }, t('error.retry')),
               })
             : null,
@@ -5052,6 +5351,13 @@ body:has(.lw) [class*="viewArea"] {
                     ),
                   ),
                 ),
+                h(DraftEntry, {
+                  draft: savedDraft,
+                  t,
+                  onResume: openDraft,
+                  onDiscard: discardDraft,
+                  disabled: Boolean(busy) || !toolOk,
+                }),
                 h(Recent, {
                   items: recent,
                   t,
@@ -5115,7 +5421,7 @@ body:has(.lw) [class*="viewArea"] {
                 ? h(Banner, {
                     tone: 'error',
                     title: t('error.title'),
-                    children: humanize(error),
+                    children: humanize(error, t),
                     action: h(
                       Button,
                       {
@@ -5184,39 +5490,6 @@ body:has(.lw) [class*="viewArea"] {
             h(
               'div',
               { className: 'lw-composer-wrap', style: { maxWidth: 900 } },
-              h(
-                'div',
-                { className: 'lw-scenes' },
-                (() => {
-                  const existingNames = (primaryTable?.fields || []).map((f) => String(f.name || ''))
-                  const hasField = (re) => existingNames.some((n) => re.test(n))
-                  const candidates = [
-                    !hasField(/负责人|跟进人|经办人|owner|assignee/i)
-                      ? { label: t('preview.chipOwner'), prompt: '增加一列「负责人」，关联团队成员' }
-                      : null,
-                    !hasField(/优先级|紧急|重要|priority/i)
-                      ? { label: t('preview.chipPriority'), prompt: '增加一列「优先级」，单选：高/中/低' }
-                      : null,
-                    !hasField(/备注|说明|notes?|remark/i)
-                      ? { label: t('preview.chipNotes'), prompt: '增加一列「备注」，文本类型' }
-                      : null,
-                    { label: t('preview.chipSamples'), prompt: '再帮我补充 3 条真实的业务示例记录' },
-                  ].filter(Boolean).slice(0, 3)
-                  return candidates.map((item) =>
-                    h(
-                      'button',
-                      {
-                        key: item.label,
-                        type: 'button',
-                        className: 'lw-chip',
-                        disabled: Boolean(busy),
-                        onClick: () => refine(item.prompt),
-                      },
-                      item.label,
-                    ),
-                  )
-                })(),
-              ),
               h(UnifiedComposer, {
                 value: tweakText,
                 onChange: setTweakText,
@@ -5245,16 +5518,16 @@ body:has(.lw) [class*="viewArea"] {
 
         const starters = isTableMode
           ? [
-              { icon: 'chart', label: t('starter.analyze'), prompt: '帮我对当前表格数据进行统计分析，提取关键洞察与数据分布' },
-              { icon: 'layout', label: t('starter.kanban'), prompt: '为当前表创建一个按状态分组的看板视图' },
-              { icon: 'table', label: t('starter.form'), prompt: '针对当前表格搭建一个数据收集表单，方便录入数据' },
-              { icon: 'checkSquare', label: t('starter.batch'), prompt: '帮我检查当前表格数据，列出缺失字段或需要补齐的记录' },
+              { icon: 'chart', label: t('starter.analyze'), prompt: t('starter.analyze.prompt') },
+              { icon: 'layout', label: t('starter.kanban'), prompt: t('starter.kanban.prompt') },
+              { icon: 'table', label: t('starter.form'), prompt: t('starter.form.prompt') },
+              { icon: 'checkSquare', label: t('starter.batch'), prompt: t('starter.batch.prompt') },
             ]
           : [
-              { icon: 'calendar', label: t('starter.calendar'), prompt: '查一下我今天的日程安排与会议' },
-              { icon: 'checkSquare', label: t('starter.todo'), prompt: '列出我所有未完成的待办事项' },
-              { icon: 'people', label: t('starter.chat'), prompt: '搜索我加入的飞书群聊' },
-              { icon: 'mail', label: t('starter.mail'), prompt: '查一下我最近收到的重要邮件' },
+              { icon: 'calendar', label: t('starter.calendar'), prompt: t('starter.calendar.prompt') },
+              { icon: 'checkSquare', label: t('starter.todo'), prompt: t('starter.todo.prompt') },
+              { icon: 'people', label: t('starter.chat'), prompt: t('starter.chat.prompt') },
+              { icon: 'mail', label: t('starter.mail'), prompt: t('starter.mail.prompt') },
             ]
 
         const emptyState = h(
@@ -5443,7 +5716,7 @@ body:has(.lw) [class*="viewArea"] {
             : h(
                 'div',
                 { className: 'lw-composer-wrap' },
-                adjustError ? h(Banner, { tone: 'error', title: t('error.title'), children: humanize(adjustError) }) : null,
+                adjustError ? h(Banner, { tone: 'error', title: t('error.title'), children: humanize(adjustError, t) }) : null,
                 h(UnifiedComposer, {
                   value: adjustText,
                   onChange: setAdjustText,
@@ -5681,8 +5954,7 @@ body:has(.lw) [class*="viewArea"] {
     return {
       inject: ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs'],
       apply(ctx) {
-        ctx.effect(() => ctx.locale.register(NS, 'zh', ZH))
-        ctx.effect(() => ctx.locale.register(NS, 'en', EN))
+        ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }))
         const t = ctx.locale.bind(NS)
         const realTable = hostBrowser(ctx)
 
@@ -5706,9 +5978,8 @@ body:has(.lw) [class*="viewArea"] {
           ctx.effect(() =>
             ctx.sidebarRightTabs.register({
               id: 'lark-workbench',
-              label: () => t('app.name'),
-              icon: 'table',
-              order: 20,
+              kind: 'lark-workbench',
+              title: () => t('app.name'),
             }),
           )
           ctx.slots.inject('sidebar.right.pane.tab', () =>
@@ -5719,8 +5990,8 @@ body:has(.lw) [class*="viewArea"] {
           )
           ctx.slots.inject('sidebar.right.pane.tab.title', () =>
             ctx.slots.register(
-              { name: 'sidebar.right.pane.tab.title', key: 'lark-workbench' },
-              () => h('span', null, t('app.name')),
+              { name: 'sidebar.right.pane.tab.title', key: 'lark-workbench', locale: NS },
+              (props) => h('span', null, (props && typeof props.t === 'function' ? props.t : t)('app.name')),
             ),
           )
         }

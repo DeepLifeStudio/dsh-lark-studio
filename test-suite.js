@@ -6,6 +6,7 @@ import assert from 'node:assert'
 import { spawn } from 'node:child_process'
 import { sanitizeOps, createAdjustPlanner } from './adjust-planner.js'
 import { destructiveChanges, createOperations } from './ops.js'
+import { createPlanner, resolveLang, sanitizePlan } from './planner.js'
 import { inject } from './index.js'
 
 console.log('🚀 开始执行飞书工作台多维表格全功能自动化测试...\n')
@@ -689,7 +690,7 @@ test('10.1 旧 /dsh-lark/api HTTP 路由与固定 desktop-workbench 绕过已彻
   apply(mockCtx)
 
   assert.strictEqual(webServerRegisterCalled, false, '不应注册任何旧版 webServer /dsh-lark/api 路由')
-  assert.strictEqual(registeredRoutes.size, 16, '全部 16 个端点应仅通过 DSH Connection Fetch 注册')
+  assert.strictEqual(registeredRoutes.size, 18, '全部 18 个端点应仅通过 DSH Connection Fetch 注册')
 })
 
 test('10.4 DSH Connection Fetch 路由注册与调用测试 (官方 Connection 机制)', async () => {
@@ -724,6 +725,8 @@ test('10.4 DSH Connection Fetch 路由注册与调用测试 (官方 Connection �
     '/api/dsh-lark/build',
     '/api/dsh-lark/adjust',
     '/api/dsh-lark/connect/scopes',
+    '/api/dsh-lark/connect/cli/install',
+    '/api/dsh-lark/connect/cli/state',
     '/api/dsh-lark/connect/app/start',
     '/api/dsh-lark/connect/app/poll',
     '/api/dsh-lark/connect/app/manual',
@@ -1314,6 +1317,25 @@ test('14.1 全源码零 Emoji、CSS 变量完整、深浅色宿主同步与无�
   assert.ok(zhBlock && enBlock, '应同时存在 ZH 与 EN 词典')
   const extractKeys = (block) => [...block.matchAll(/'([^']+)':/g)].map((m) => m[1]).sort()
   assert.deepStrictEqual(extractKeys(zhBlock[1]), extractKeys(enBlock[1]), 'ZH 与 EN 词典键位必须完全对齐')
+  // 7. 全部 humanize(...) 调用必须传入语言函数 t，避免英文模式下泄露中文错误文案
+  const humanizeLines = clientSrc
+    .split('\n')
+    .filter((line) => line.includes('humanize(') && !line.includes('function humanize('))
+  assert.ok(humanizeLines.length > 0)
+  for (const line of humanizeLines) {
+    assert.ok(/humanize\(.*,\s*t\s*\)/.test(line), `humanize 调用必须传入 t 以支持双语错误提示: ${line.trim()}`)
+  }
+  // 8. 极简 UX 与防呆防错契约：首屏探测不使用 TableSkeleton、区分 skill_guard 写确认与删表确认、退回保留撤销草稿、无 48MB/Node.js 噪音
+  assert.strictEqual(clientSrc.includes("showToast({ message: t('toast.planReady') })"), false, '不应在已有按钮动效提示时再弹多余指路 toast')
+  assert.ok(clientSrc.includes("toast.draftCleared"), '预览返回首页应保留可撤销草稿提示')
+  assert.ok(clientSrc.includes("dsh-lark-draft") && clientSrc.includes("'draft.title'"), '首页应提供持久化的未建表草稿恢复入口')
+  assert.strictEqual(
+    [...clientSrc.matchAll(/showToast\(\{[\s\S]*?\}\)/g)].some((m) => m[0].includes('action:')),
+    false,
+    '所有 showToast 撤销按钮必须使用 ToastStack 约定的 onUndo 而非未消费的 action',
+  )
+  assert.ok(clientSrc.includes("confirmKind === 'skill_guard'"), 'Skill 写操作安全提示不应误触发删表确认框')
+  assert.strictEqual(/gate\.noTool\.body['"]:\s*[^,\n]*(48 MB|Node\.js)/.test(clientSrc), false, '首次自动准备文案不应向小白暴露体积或技术栈噪音')
 })
 
 test('14.2 预览增量微调、认可/确认意图分流与变更列识别 (planner.plan + currentPlan)', async () => {
@@ -1397,11 +1419,906 @@ test('14.2 预览增量微调、认可/确认意图分流与变更列识别 (pla
   assert.strictEqual(updateRes.plan.tables[0].records[0]['公司名称'], '杭州云栖智能科技')
 })
 
+// -------------------------------------------------------------
+// 15. 开箱即用零安装机制 + DSH 原生能力集成校验
+// -------------------------------------------------------------
+test('15.1 resolveCli 多源优先级、缓存失效重探、单飞自动安装与全部失败边界', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const pathMod = await import('node:path')
+  const root = mkdtempSync(pathMod.join(tmpdir(), 'dsh-lark-cli-test-'))
+  const prevEnvCli = process.env.LARK_CLI_PATH
+  try {
+    const cliRoot = pathMod.join(root, 'fake-cli')
+    const binDir = pathMod.join(cliRoot, 'bin')
+    const customDir = pathMod.join(root, 'custom-bin')
+    const binName = process.platform === 'win32' ? 'lark-cli.exe' : 'lark-cli'
+    const installerPath = pathMod.join(cliRoot, 'scripts', 'install.js')
+    mkdirSync(pathMod.dirname(installerPath), { recursive: true })
+    mkdirSync(customDir, { recursive: true })
+    writeFileSync(installerPath, '// stub installer\n')
+
+    const makeExe = (targetPath) => {
+      mkdirSync(pathMod.dirname(targetPath), { recursive: true })
+      writeFileSync(targetPath, '#!/bin/sh\necho ok\n')
+      chmodSync(targetPath, 0o755)
+      return targetPath
+    }
+
+    // 1. config.larkCliPath 最高优先级 + 缺失显式报错
+    const explicitExe = makeExe(pathMod.join(root, 'explicit', binName))
+    const binDirExe = makeExe(pathMod.join(customDir, binName))
+    const opsExplicit = createOperations({
+      ctx: { subprocess: realSubprocess },
+      config: { larkCliPath: explicitExe, binDir: customDir },
+    })
+    assert.strictEqual(await opsExplicit.resolveCli(), explicitExe)
+
+    const opsBadExplicit = createOperations({
+      ctx: { subprocess: realSubprocess },
+      config: { larkCliPath: pathMod.join(root, 'nonexistent', binName) },
+    })
+    await assert.rejects(() => opsBadExplicit.resolveCli(), /配置的 larkCliPath 不存在/)
+
+    // 2. 环境变量 LARK_CLI_PATH 次优，config.binDir 可兼容 dsh-feishu
+    process.env.LARK_CLI_PATH = explicitExe
+    const opsEnv = createOperations({ ctx: { subprocess: realSubprocess }, config: { binDir: customDir } })
+    assert.strictEqual(await opsEnv.resolveCli(), explicitExe)
+    delete process.env.LARK_CLI_PATH
+
+    const opsFromBinDir = createOperations({ ctx: { subprocess: realSubprocess }, config: { binDir: customDir } })
+    assert.strictEqual(await opsFromBinDir.resolveCli(), binDirExe)
+
+    const opsBadBinDir = createOperations({
+      ctx: { subprocess: realSubprocess },
+      config: { binDir: pathMod.join(root, 'empty-bindir') },
+    })
+    await assert.rejects(() => opsBadBinDir.resolveCli(), /配置的 binDir 中找不到/)
+
+    // 3. 删除已缓存文件后，resolveCliSync 与 resolveCli 不应返回失效缓存路径
+    const ephemeralExe = makeExe(pathMod.join(root, 'ephemeral', binName))
+    const opsEphemeral = createOperations({
+      ctx: { subprocess: realSubprocess },
+      config: { larkCliPath: ephemeralExe },
+    })
+    assert.strictEqual(await opsEphemeral.resolveCli(), ephemeralExe)
+    rmSync(ephemeralExe, { force: true })
+    assert.strictEqual(opsEphemeral.resolveCliSync(), undefined)
+    await assert.rejects(() => opsEphemeral.resolveCli(), /不存在/)
+
+    // 4. 按版本号自动择优复用官方 @deepseek-ai/dsh-feishu 与内置 @larksuite/cli
+    const feishuNewerRoot = pathMod.join(root, 'feishu-newer')
+    const bundledOlderRoot = pathMod.join(root, 'bundled-older')
+    const feishuNewerExe = makeExe(pathMod.join(feishuNewerRoot, 'bin', binName))
+    const bundledOlderExe = makeExe(pathMod.join(bundledOlderRoot, 'bin', binName))
+    writeFileSync(pathMod.join(feishuNewerRoot, 'package.json'), JSON.stringify({ name: '@larksuite/cli', version: '1.0.120' }))
+    writeFileSync(pathMod.join(bundledOlderRoot, 'package.json'), JSON.stringify({ name: '@larksuite/cli', version: '1.0.100' }))
+    const opsPreferOfficialNewer = createOperations({
+      ctx: { subprocess: { async resolveExecutable() { throw new Error('missing') } } },
+      config: { feishuCliRoot: feishuNewerRoot, bundledCliRoot: bundledOlderRoot, skipSystemCliLookup: true, skipStandardCliCandidates: true },
+    })
+    assert.strictEqual(await opsPreferOfficialNewer.resolveCli(), feishuNewerExe, '官方 dsh-feishu CLI 版本更新时应优先复用官方')
+
+    // 同版本时也优先复用官方 dsh-feishu
+    writeFileSync(pathMod.join(feishuNewerRoot, 'package.json'), JSON.stringify({ name: '@larksuite/cli', version: '1.0.100' }))
+    const opsPreferOfficialTie = createOperations({
+      ctx: { subprocess: { async resolveExecutable() { throw new Error('missing') } } },
+      config: { feishuCliRoot: feishuNewerRoot, bundledCliRoot: bundledOlderRoot, skipSystemCliLookup: true, skipStandardCliCandidates: true },
+    })
+    assert.strictEqual(await opsPreferOfficialTie.resolveCli(), feishuNewerExe, '版本相同时应优先复用官方 dsh-feishu CLI')
+
+    // 若插件内置版本更新（例如官方尚停在 1.0.97），自动选择更新的内置版本
+    writeFileSync(pathMod.join(feishuNewerRoot, 'package.json'), JSON.stringify({ name: '@larksuite/cli', version: '1.0.97' }))
+    const opsPreferNewerBundled = createOperations({
+      ctx: { subprocess: { async resolveExecutable() { throw new Error('missing') } } },
+      config: { feishuCliRoot: feishuNewerRoot, bundledCliRoot: bundledOlderRoot, skipSystemCliLookup: true, skipStandardCliCandidates: true },
+    })
+    assert.strictEqual(await opsPreferNewerBundled.resolveCli(), bundledOlderExe, '当内置版本更新时应自动使用更新版本')
+
+    // extraCliCandidates 发现
+    const extraExe = makeExe(pathMod.join(root, 'feishu-like', binName))
+    const opsExtra = createOperations({
+      ctx: { subprocess: { async resolveExecutable() { throw new Error('missing') } } },
+      config: {
+        bundledCliRoot: pathMod.join(root, 'no-bin-pkg'),
+        extraCliCandidates: [extraExe],
+        skipSystemCliLookup: true,
+      },
+    })
+    assert.strictEqual(await opsExtra.resolveCli(), extraExe)
+
+    // 5. 二进制缺失时，connectStatus 返回 no-cli + canAutoInstall=true；单飞自动安装 + 已安装快速跳过
+    let spawnCount = 0
+    let seenElectronFlag = null
+    let readyCallbackPath = null
+    const mockSubprocess = {
+      async resolveExecutable() { throw new Error('not on PATH') },
+      spawn({ env }) {
+        spawnCount++
+        seenElectronFlag = env?.ELECTRON_RUN_AS_NODE
+        makeExe(pathMod.join(binDir, binName))
+        return {
+          done: new Promise((resolve) => setTimeout(() => resolve({ exitCode: 0, stdout: 'installed\n', stderr: '' }), 40)),
+          terminate() {},
+        }
+      },
+    }
+    const opsAuto = createOperations({
+      ctx: { subprocess: mockSubprocess },
+      config: {
+        bundledCliRoot: cliRoot,
+        cliInstallerPath: installerPath,
+        skipSystemCliLookup: true,
+        skipStandardCliCandidates: true,
+        onCliReady: (p) => { readyCallbackPath = p },
+      },
+    })
+
+    const beforeStatus = await opsAuto.connectStatus()
+    assert.strictEqual(beforeStatus.stage, 'no-cli')
+    assert.strictEqual(beforeStatus.cli.canAutoInstall, true)
+    assert.strictEqual(opsAuto.resolveCliSync(), undefined)
+
+    // 并发调用 installCli 必须合并为单次下载任务（single-flight）
+    const [r1, r2] = await Promise.all([opsAuto.installCli(), opsAuto.installCli()])
+    assert.strictEqual(r1.ok, true)
+    assert.strictEqual(r2.ok, true)
+    assert.strictEqual(spawnCount, 1, '并发 installCli 必须保持单飞，避免重复下载')
+    assert.strictEqual(seenElectronFlag, '1', '必须通过 ELECTRON_RUN_AS_NODE=1 复用宿主 Electron/Node 运行时')
+    assert.strictEqual(readyCallbackPath, pathMod.join(binDir, binName))
+    assert.strictEqual(opsAuto.resolveCliSync(), pathMod.join(binDir, binName))
+    assert.strictEqual(opsAuto.getCliBootstrapState().status, 'ready')
+
+    // 再次调用 installCli 应命中已安装快速分支，不再 spawn
+    const r3 = await opsAuto.installCli()
+    assert.strictEqual(r3.ok, true)
+    assert.strictEqual(r3.alreadyInstalled, true)
+    assert.strictEqual(spawnCount, 1)
+
+    // 6. 缺少 install.js 脚本 -> ok=false, canAutoInstall=false, status=error
+    const noScriptOps = createOperations({
+      ctx: { subprocess: { async resolveExecutable() { throw new Error('missing') } } },
+      config: {
+        bundledCliRoot: pathMod.join(root, 'empty-pkg-no-script'),
+        skipSystemCliLookup: true,
+        skipStandardCliCandidates: true,
+      },
+    })
+    const noScriptRes = await noScriptOps.installCli()
+    assert.strictEqual(noScriptRes.ok, false)
+    assert.strictEqual(noScriptRes.canAutoInstall, false)
+    assert.strictEqual(noScriptOps.getCliBootstrapState().status, 'error')
+
+    // 7. 脚本退出码 0 但未生成二进制 -> ok=false, status=error
+    const ghostOps = createOperations({
+      ctx: {
+        subprocess: {
+          async resolveExecutable() { throw new Error('missing') },
+          spawn() {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'done', stderr: '' }), terminate() {} }
+          },
+        },
+      },
+      config: {
+        bundledCliRoot: pathMod.join(root, 'ghost-cli'),
+        cliInstallerPath: installerPath,
+        skipSystemCliLookup: true,
+        skipStandardCliCandidates: true,
+      },
+    })
+    const ghostRes = await ghostOps.installCli()
+    assert.strictEqual(ghostRes.ok, false)
+    assert.strictEqual(ghostOps.getCliBootstrapState().status, 'error')
+
+    // 8. 下载失败应干净记录 error 状态而非崩溃
+    const failOps = createOperations({
+      ctx: {
+        subprocess: {
+          async resolveExecutable() { throw new Error('missing') },
+          spawn() {
+            return {
+              done: Promise.resolve({ exitCode: 2, stdout: '', stderr: 'curl network error' }),
+              terminate() {},
+            }
+          },
+        },
+      },
+      config: {
+        bundledCliRoot: pathMod.join(root, 'empty-cli'),
+        cliInstallerPath: installerPath,
+        skipSystemCliLookup: true,
+        skipStandardCliCandidates: true,
+      },
+    })
+    const failedRes = await failOps.installCli()
+    assert.strictEqual(failedRes.ok, false)
+    assert.strictEqual(failOps.getCliBootstrapState().status, 'error')
+    assert.ok(failedRes.message.includes('curl network error'))
+  } finally {
+    if (prevEnvCli === undefined) delete process.env.LARK_CLI_PATH
+    else process.env.LARK_CLI_PATH = prevEnvCli
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('15.2 包清单、声明式 Config 与无冗余静态 SKILL 资产', async () => {
+  const { readFileSync } = await import('node:fs')
+  const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+  assert.ok(pkg.dependencies && pkg.dependencies['@larksuite/cli'], 'package.json 必须声明 @larksuite/cli 依赖以实现零安装')
+  assert.ok(pkg.dependencies['@deepseek-ai/schemastery'], 'package.json 必须声明 @deepseek-ai/schemastery 依赖以支持声明式 Config')
+  assert.strictEqual(Array.isArray(pkg.files) && pkg.files.includes('skills/**'), false, '不再随包硬塞第二个冗余静态 SKILL 文件')
+
+  const { Config, inject: topInject } = await import('./index.js')
+  assert.deepStrictEqual(topInject, ['tools', 'subprocess', 'llm', 'agentDefaultModel', 'commands', 'connection'], '顶层 inject 不应包含非核心可选服务')
+  assert.strictEqual(typeof Config, 'function', 'index.js 必须导出 Schemastery Config')
+  const defaults = Config({})
+  assert.strictEqual(defaults.identity, 'auto')
+  const customCfg = Config({ larkCliPath: '/opt/bin/lark-cli', binDir: '/opt/bin', identity: 'user' })
+  assert.strictEqual(customCfg.larkCliPath, '/opt/bin/lark-cli')
+  assert.strictEqual(customCfg.binDir, '/opt/bin')
+  assert.strictEqual(customCfg.identity, 'user')
+})
+
+test('15.3 DSH 原生能力可选注入全分支 (skills / storageDomain 落盘水合 / cliAccounts 完整状态机与降级)', async () => {
+  const { apply } = await import('./index.js')
+  const { mkdtempSync, writeFileSync, mkdirSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const pathMod = await import('node:path')
+  const root = mkdtempSync(pathMod.join(tmpdir(), 'dsh-lark-native-test-'))
+  try {
+    const cliRoot = pathMod.join(root, 'fake-cli')
+    const binDir = pathMod.join(cliRoot, 'bin')
+    const installerPath = pathMod.join(cliRoot, 'scripts', 'install.js')
+    const binName = process.platform === 'win32' ? 'lark-cli.exe' : 'lark-cli'
+    mkdirSync(pathMod.dirname(installerPath), { recursive: true })
+    writeFileSync(installerPath, '// stub\n')
+
+    const registeredTools = []
+    const registeredCommands = []
+    const registeredSkillProviders = []
+    const registeredPromptSections = []
+    const registeredCliAccounts = []
+    let skillInvalidateCount = 0
+    const registeredRoutes = new Map()
+    let storedGlobal = {
+      name: '持久化台账',
+      baseName: '持久化台账',
+      url: 'https://feishu.cn/base/app_persisted',
+      token: 'app_persisted',
+      updatedAt: 123456,
+    }
+    const domainSetCalls = []
+    let domainOpenedSpec = null
+    let domainClosed = false
+    let accountRefreshCount = 0
+    let spawnShouldBuildBase = false
+    const disposers = []
+
+    const mockCtx = {
+      tools: { register: (t) => { registeredTools.push(t); return () => {} } },
+      commands: { register: (c) => { registeredCommands.push(c); return () => {} } },
+      connection: {
+        fetch: {
+          register: (route) => {
+            registeredRoutes.set(route.path, route)
+            return () => { registeredRoutes.delete(route.path) }
+          },
+        },
+      },
+      llm: {},
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      subprocess: {
+        async resolveExecutable() { throw new Error('missing') },
+        spawn({ argv }) {
+          if (argv[1] === installerPath) {
+            mkdirSync(binDir, { recursive: true })
+            writeFileSync(pathMod.join(binDir, binName), 'bin')
+            return { done: Promise.resolve({ exitCode: 0, stdout: '[]', stderr: '' }), terminate() {} }
+          }
+          if (spawnShouldBuildBase && argv.includes('+base-create')) {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({ data: { app: { app_token: 'app_built_99', url: 'https://feishu.cn/base/app_built_99' } } }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({
+                  skills: [
+                    { name: 'lark-base', description: 'Feishu Base', metadata: { cliHelp: 'lark-cli base --help' } },
+                    { name: 'lark-approval', description: 'Feishu Approval', metadata: { cliHelp: 'lark-cli approval --help' } },
+                  ],
+                  count: 2,
+                }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('config') && argv.includes('show')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '[]', stderr: '' }), terminate() {} }
+        },
+      },
+      effect(fn) {
+        const d = fn()
+        if (typeof d === 'function') disposers.push(d)
+      },
+      inject(deps, cb) {
+        const scoped = {}
+        if (deps.includes('systemPrompt')) {
+          scoped.systemPrompt = {
+            getSectionOrder: () => 550,
+            section: (sec) => { registeredPromptSections.push(sec); return () => {} },
+          }
+        }
+        if (deps.includes('skills')) {
+          scoped.skills = {
+            get: async () => undefined,
+            registerProvider: (factory) => {
+              const p = factory({ signal: new AbortController().signal, invalidate: () => { skillInvalidateCount++ } })
+              registeredSkillProviders.push(p)
+              return () => {}
+            },
+          }
+        }
+        if (deps.includes('storageDomain')) {
+          scoped.storageDomain = {
+            async open(spec) {
+              domainOpenedSpec = spec
+              assert.ok(/^[a-z][a-z0-9_]*$/.test(spec.name), 'domain name 必须匹配 DSH UNIT_NAME_RE')
+              assert.throws(() => spec.global.schema.parse(null), 'global schema 必须拒绝 null')
+              assert.throws(() => spec.global.schema.parse([]), 'global schema 必须拒绝数组')
+              return {
+                global: {
+                  get: () => storedGlobal,
+                  async set(v) {
+                    domainSetCalls.push(v)
+                    storedGlobal = v
+                  },
+                },
+                async close() { domainClosed = true },
+              }
+            },
+          }
+        }
+        if (deps.includes('cliAccounts')) {
+          scoped.cliAccounts = {
+            register: (reg) => {
+              registeredCliAccounts.push(reg)
+              return {
+                refresh() { accountRefreshCount++ },
+                publish() {},
+                snapshot() {},
+                async dispose() {},
+              }
+            },
+          }
+        }
+        const d = cb(scoped)
+        if (typeof d === 'function') disposers.push(d)
+      },
+    }
+
+    apply(mockCtx, {
+      bundledCliRoot: cliRoot,
+      cliInstallerPath: installerPath,
+      skipSystemCliLookup: true,
+      skipStandardCliCandidates: true,
+    })
+
+    await new Promise((r) => setTimeout(r, 20))
+
+    assert.strictEqual(registeredTools.length, 3, '应注册 3 个结构化飞书工具')
+    assert.strictEqual(registeredCommands.length, 1, '应注册 /lark 斜杠指令')
+    assert.strictEqual(registeredPromptSections.length, 1, '应通过原生 systemPrompt.section 注入工具路由指引')
+    assert.ok(registeredPromptSections[0].text.includes('lark_base_build'))
+    assert.strictEqual(registeredSkillProviders.length, 1, '应注册统一官方 feishu 兜底 SkillProvider')
+    const skillObs = await registeredSkillProviders[0].list()
+    assert.strictEqual(skillObs.candidates.length, 1)
+    assert.strictEqual(skillObs.candidates[0].name, 'feishu', '主对话应统一为官方 feishu 技能名，避免出现两个重样飞书 skill')
+    assert.ok(skillObs.candidates[0].rank > 600, '兜底 rank 必须低于官方 dsh-feishu (600)，确保官方安装时自动优先官方')
+
+    // 1. /lark 命令未连接 CLI 时应引导打开侧边栏自动准备，不再让小白去终端敲 npm i -g
+    const buildTool = registeredTools.find((t) => t.name === 'lark_base_build')
+    const larkCmd = registeredCommands[0]
+    const cmdNoCli = await larkCmd.handler({ rawInput: '建个客户表', signal: undefined })
+    assert.strictEqual(cmdNoCli.kind, 'error')
+    assert.ok(cmdNoCli.text.includes('飞书工作台') && !cmdNoCli.text.includes('npm i -g'), '未装 CLI 引导不应让用户敲 npm i -g')
+
+    // 2. storageDomain 启动水合 + preview 不覆盖持久状态 + build 正式建表写回持久域
+    assert.ok(domainOpenedSpec, '应打开 storageDomain 持久化域')
+    const activeRoute = registeredRoutes.get('/api/dsh-lark/active')
+    assert.ok(activeRoute, '应注册 /api/dsh-lark/active 路由')
+    const activeRes = await activeRoute.fetch(new Request('http://local/api/dsh-lark/active', { method: 'GET' }))
+    const activeJson = await activeRes.json()
+    assert.strictEqual(activeJson.active.url, 'https://feishu.cn/base/app_persisted', '应自动水合重启前的活跃台账')
+
+    // preview=true 不应覆盖 storageDomain 里持久化保存过的已建表格
+    const mockPlan = {
+      baseName: '新预览表',
+      intro: '测试',
+      tables: [{ name: '主表', fields: [{ name: '标题', type: 'text' }], records: [] }],
+    }
+    const previewRes = await buildTool.execute({ plan: mockPlan, preview: true }, { signal: undefined })
+    assert.strictEqual(previewRes.preview, true)
+    assert.strictEqual(domainSetCalls.length, 0, 'preview 不应覆盖已持久化的正式台账')
+
+    // 未安装 CLI 时直接执行建表会明确给出组件准备提示（不崩溃）
+    await assert.rejects(
+      () => buildTool.execute({ plan: mockPlan, preview: false }, { signal: undefined }),
+      /飞书连接组件尚未下载完成/,
+    )
+
+    // 3. cliAccounts 完整状态机与动作分支检验
+    assert.strictEqual(registeredCliAccounts.length, 1, '应注册唯一的 lark-workbench cliAccount')
+    const reg = registeredCliAccounts[0]
+    assert.strictEqual(reg.name, 'lark-workbench')
+    assert.strictEqual(reg.packageName, 'dsh-lark-studio')
+    assert.strictEqual(reg.cli.ready(), false)
+
+    // 校验字典、copy、operations、present 全状态输出
+    const makeText = (lang) => (key, vars = {}) => {
+      let s = reg.dictionaries[lang][key]
+      assert.ok(typeof s === 'string' && s.length > 0, `缺少词典键 ${lang}.${key}`)
+      for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v))
+      return s
+    }
+    assert.deepStrictEqual(Object.keys(reg.dictionaries.zh).sort(), Object.keys(reg.dictionaries.en).sort(), 'cliAccounts 中英文字典键必须对齐')
+    for (const lang of ['zh', 'en']) {
+      const tFn = makeText(lang)
+      assert.strictEqual(reg.operations(tFn).length, 4)
+      assert.ok(reg.copy(tFn).title && reg.copy(tFn).activation.connect)
+      assert.strictEqual(reg.present({ account: { state: 'unchecked' } }, tFn).phase, 'checking')
+      assert.strictEqual(reg.present({ account: { state: 'unchecked' }, operation: { kind: 'check', phase: 'downloading', cancellable: true } }, tFn).status, reg.dictionaries[lang]['step.downloading'])
+      assert.strictEqual(reg.present({ account: { state: 'no-app' }, operation: { kind: 'link-app', phase: 'configuring', authorizationUrl: 'https://open.feishu.cn/app', cancellable: true } }, tFn).buttons.length, 2)
+      assert.strictEqual(reg.present({ account: { state: 'signed-out', appId: 'cli_x' }, operation: { kind: 'sign-in', phase: 'authorizing', authorizationUrl: 'https://accounts.feishu.cn/login', cancellable: true } }, tFn).phase, 'connecting')
+      assert.strictEqual(reg.present({ account: { state: 'not-installed' }, result: { outcome: 'failed' } }, tFn).failure.text, reg.dictionaries[lang].failed)
+      assert.strictEqual(reg.present({ account: { state: 'unverified', appId: 'cli_x' } }, tFn).phase, 'unavailable')
+      assert.strictEqual(reg.present({ account: { state: 'no-app' } }, tFn).connect.operation, 'link-app')
+      assert.strictEqual(reg.present({ account: { state: 'signed-out', appId: 'cli_x' } }, tFn).connect.operation, 'sign-in')
+      assert.ok(reg.present({ account: { state: 'connected', appId: 'cli_x', userName: 'Alice' } }, tFn).detail.includes('Alice'))
+    }
+
+    // 通过 HTTP 路由触发自动安装后，cliAccount.cli.ready() 变为 true，且调用 handle.refresh()
+    const installRoute = registeredRoutes.get('/api/dsh-lark/connect/cli/install')
+    assert.ok(installRoute, '应注册 /api/dsh-lark/connect/cli/install 路由')
+    const installRes = await installRoute.fetch(new Request('http://local/api/dsh-lark/connect/cli/install', { method: 'POST' }))
+    const installJson = await installRes.json()
+    assert.strictEqual(installJson.ok, true)
+    assert.strictEqual(reg.cli.ready(), true)
+    assert.ok(accountRefreshCount >= 1, 'CLI 安装就绪后应刷新 cliAccounts 状态')
+    assert.ok(skillInvalidateCount >= 1, 'CLI 安装就绪后应失效重建 feishu Skill 目录缓存')
+    const loadedFallbackSkill = await registeredSkillProviders[0].get(skillObs.candidates[0], {})
+    assert.ok(loadedFallbackSkill.content.includes('lark-approval'), '兜底 feishu skill 应动态反映 lark-cli 最新能力列表')
+
+    // 验证 build 正式建表会落盘写入 storageDomain
+    spawnShouldBuildBase = true
+    const realBuildRes = await buildTool.execute({ plan: mockPlan, preview: false }, { signal: undefined })
+    assert.strictEqual(realBuildRes.ok, true)
+    assert.strictEqual(domainSetCalls.length, 1, '正式建表后必须写入 storageDomain 持久化')
+    assert.strictEqual(domainSetCalls[0].url, 'https://feishu.cn/base/app_built_99')
+
+    // 验证 perform() 四种操作流程与 URL 捕获
+    const makeControl = (responder) => {
+      const stages = []
+      const offers = []
+      const published = []
+      return {
+        stages,
+        offers,
+        published,
+        stage: (p) => stages.push(p),
+        offer: (u) => offers.push(u),
+        publish: (a) => published.push(a),
+        async run(cmd, args, _sig, opts) {
+          return responder(cmd, args, opts)
+        },
+      }
+    }
+
+    const ctrlCheckNoApp = makeControl((cmd) => {
+      if (cmd === 'config-show') return { exitCode: 0, stdout: '{}', stderr: '' }
+      return { exitCode: 0, stdout: '{}', stderr: '' }
+    })
+    await reg.perform('check', ctrlCheckNoApp, new AbortController().signal)
+    assert.strictEqual(ctrlCheckNoApp.published.at(-1).state, 'no-app')
+
+    const ctrlCheckSignedOut = makeControl((cmd) => {
+      if (cmd === 'config-show') return { exitCode: 0, stdout: '{"appId":"cli_123"}', stderr: '' }
+      return { exitCode: 0, stdout: '{"userReady":false}', stderr: '' }
+    })
+    await reg.perform('check', ctrlCheckSignedOut, new AbortController().signal)
+    assert.strictEqual(ctrlCheckSignedOut.published.at(-1).state, 'signed-out')
+
+    const ctrlLinkApp = makeControl((cmd, _args, opts) => {
+      if (cmd === 'config-init') {
+        opts?.onLine?.('stdout', 'Open https://open.feishu.cn/create-app.')
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      if (cmd === 'config-show') return { exitCode: 0, stdout: '{"appId":"cli_123"}', stderr: '' }
+      return { exitCode: 0, stdout: '{"userReady":true,"userName":"Bob"}', stderr: '' }
+    })
+    await reg.perform('link-app', ctrlLinkApp, new AbortController().signal)
+    assert.deepStrictEqual(ctrlLinkApp.offers, ['https://open.feishu.cn/create-app'])
+    assert.deepStrictEqual(ctrlLinkApp.published.at(-1), { state: 'connected', appId: 'cli_123', userName: 'Bob' })
+
+    const ctrlSignIn = makeControl((cmd, _args, opts) => {
+      if (cmd === 'auth-login') {
+        opts?.onLine?.('stderr', '  https://accounts.feishu.cn/device?code=abc  ')
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      if (cmd === 'config-show') return { exitCode: 0, stdout: '{"appId":"cli_123"}', stderr: '' }
+      return { exitCode: 0, stdout: '{"userReady":true,"userName":"Bob"}', stderr: '' }
+    })
+    await reg.perform('sign-in', ctrlSignIn, new AbortController().signal)
+    assert.deepStrictEqual(ctrlSignIn.offers, ['https://accounts.feishu.cn/device?code=abc'])
+
+    const ctrlSignOut = makeControl((cmd) => {
+      if (cmd === 'config-show') return { exitCode: 0, stdout: '{"appId":"cli_123"}', stderr: '' }
+      if (cmd === 'auth-status') return { exitCode: 0, stdout: '{"userReady":false}', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    })
+    await reg.perform('sign-out', ctrlSignOut, new AbortController().signal)
+    assert.ok(ctrlSignOut.stages.includes('signing-out'))
+    assert.strictEqual(ctrlSignOut.published.at(-1).state, 'signed-out')
+
+    const cliStateRoute = registeredRoutes.get('/api/dsh-lark/connect/cli/state')
+    assert.ok(cliStateRoute, '应注册 /api/dsh-lark/connect/cli/state 路由')
+    const cliStateRes = await cliStateRoute.fetch(new Request('http://local/api/dsh-lark/connect/cli/state', { method: 'GET' }))
+    const cliStateJson = await cliStateRes.json()
+    assert.strictEqual(cliStateJson.ready, true)
+
+    // 插件卸载释放资源
+    for (const d of disposers) d()
+    await new Promise((r) => setTimeout(r, 10))
+    assert.strictEqual(domainClosed, true, '卸载时必须释放 storageDomain 句柄')
+
+    // 4. 无 ctx.inject 及可选服务异常时的容错降级校验
+    const minimalCtx = {
+      tools: { register: () => () => {} },
+      commands: { register: () => () => {} },
+      connection: { fetch: { register: () => () => {} } },
+      subprocess: { async resolveExecutable() { throw new Error('missing') } },
+      effect: (fn) => fn(),
+      inject(_deps, cb) {
+        cb({
+          skills: { register: () => () => {} },
+          storageDomain: { open: async () => { throw new Error('storage down') } },
+          cliAccounts: { register: () => { throw new Error('duplicate registration') } },
+        })
+      },
+    }
+    assert.doesNotThrow(() => apply(minimalCtx, {}))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读取、执行与写操作确认拦截)', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const pathMod = await import('node:path')
+  const root = mkdtempSync(pathMod.join(tmpdir(), 'dsh-lark-skill-collab-'))
+  try {
+    const cliExe = pathMod.join(root, process.platform === 'win32' ? 'lark-cli.exe' : 'lark-cli')
+    writeFileSync(cliExe, '#!/bin/sh\necho ok\n')
+    chmodSync(cliExe, 0o755)
+
+    let mode = 'readonly' // readonly | missing_scope | mutating
+    const seenArgs = []
+    let readSkillGuideCalled = false
+
+    const opsSkill = createOperations({
+      ctx: {
+        agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-chat' }) },
+        llm: {
+          stream({ system, messages }) {
+            const promptText = `${system}\n${messages.map((m) => (Array.isArray(m.content) ? m.content.map((c) => c.text).join('') : m.content || '')).join('')}`
+            return (async function* () {
+              if (promptText.includes('可用 action 列表')) {
+                yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
+              } else if (promptText.includes('精通飞书 CLI 的智能执行器')) {
+                if (mode === 'mutating') {
+                  yield {
+                    type: 'text-delta',
+                    text: JSON.stringify({ argv: ['approval', '+instance-create', '--code', 'LEAVE'], readonly: false, confirmReason: '将发起请假审批实例' }),
+                  }
+                } else {
+                  yield {
+                    type: 'text-delta',
+                    text: JSON.stringify({ argv: ['approval', '+task-list'], readonly: true }),
+                  }
+                }
+              } else {
+                yield { type: 'text-delta', text: '当前共有 1 条待处理审批（年假申请）。' }
+              }
+            })()
+          },
+        },
+        subprocess: {
+          spawn({ argv }) {
+            seenArgs.push(argv.slice(1))
+            if (argv.includes('config') && argv.includes('show')) {
+              return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_a', brand: 'feishu' }), stderr: '' }), terminate() {} }
+            }
+            if (argv.includes('skills') && argv.includes('list')) {
+              return {
+                done: Promise.resolve({
+                  exitCode: 0,
+                  stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Feishu Approval: tasks and instances' }], count: 1 }),
+                  stderr: '',
+                }),
+                terminate() {},
+              }
+            }
+            if (argv.includes('skills') && argv.includes('read') && argv.includes('lark-approval')) {
+              readSkillGuideCalled = true
+              return {
+                done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\nUse `lark-cli approval +task-list` to query pending approvals.', stderr: '' }),
+                terminate() {},
+              }
+            }
+            if (argv.includes('approval') && argv.includes('+task-list')) {
+              if (mode === 'missing_scope') {
+                return {
+                  done: Promise.resolve({
+                    exitCode: 1,
+                    stdout: JSON.stringify({ ok: false, error: { message: 'missing required scope approval:approval:readonly', code: 99991679 } }),
+                    stderr: '',
+                  }),
+                  terminate() {},
+                }
+              }
+              return {
+                done: Promise.resolve({
+                  exitCode: 0,
+                  stdout: JSON.stringify({ ok: true, data: { tasks: [{ title: '年假申请' }] } }),
+                  stderr: '',
+                }),
+                terminate() {},
+              }
+            }
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          },
+        },
+      },
+      config: { larkCliPath: cliExe },
+    })
+
+    // 1. 只读动态 Skill 执行（读取 skills list -> 读取 lark-approval 文档 -> 执行 approval +task-list -> 摘要回复）
+    const res1 = await opsSkill.dispatchCollab({ instruction: '帮我查一下待我处理的飞书审批' })
+    assert.strictEqual(res1.ok, true)
+    assert.strictEqual(res1.skill, 'lark-approval')
+    assert.strictEqual(readSkillGuideCalled, true, '必须按官方规范先读取对应 skill 指南再规划命令')
+    assert.ok(res1.reply.includes('待处理审批'))
+
+    // 2. 动态 Skill 遇到权限不足时走统一 scopeError 授权卡片，且展示人类可读中文领域名（不暴露 lark-approval 代码名）
+    mode = 'missing_scope'
+    const res2 = await opsSkill.dispatchCollab({ instruction: '帮我查一下待我处理的飞书审批' })
+    assert.strictEqual(res2.ok, false)
+    assert.strictEqual(res2.type, 'missing_scope')
+    assert.strictEqual(res2.domain, 'lark-approval')
+    assert.strictEqual(res2.domainTitle, '飞书审批')
+
+    // 3. 写入/变更型动态 Skill 命令必须被拦截为 needsConfirm + skill_guard，绝不静默直接运行
+    mode = 'mutating'
+    const prevCmdCount = seenArgs.length
+    const res3 = await opsSkill.dispatchCollab({ instruction: '帮我提交一个请假审批' })
+    assert.strictEqual(res3.ok, true)
+    assert.strictEqual(res3.needsConfirm, true)
+    assert.strictEqual(res3.confirmKind, 'skill_guard')
+    assert.ok(res3.reply.includes('将发起请假审批实例'))
+    assert.strictEqual(
+      seenArgs.slice(prevCmdCount).some((a) => a.includes('+instance-create')),
+      false,
+      '未确认的变更型 CLI 命令绝不能自动执行',
+    )
+
+    // 4. 多步骤工作流 (steps)、纯文本表格输出 (rawText) 以及 --query 包含 update 字样不误判写操作
+    let sawRawTextInSummarizer = false
+    const opsWorkflow = createOperations({
+      ctx: {
+        agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+        llm: {
+          stream({ system, messages }) {
+            const p = `${system}\n${messages.map((m) => (Array.isArray(m.content) ? m.content.map((c) => c.text).join('') : m.content || '')).join('')}`
+            return (async function* () {
+              if (p.includes('可用 action 列表')) {
+                yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-workflow-standup-report' }) }
+              } else if (p.includes('精通飞书 CLI 的智能执行器')) {
+                yield {
+                  type: 'text-delta',
+                  text: JSON.stringify({
+                    steps: [['calendar', '+agenda'], ['docs', '+search', '--query', 'update']],
+                    readonly: true,
+                  }),
+                }
+              } else {
+                if (p.includes('plain text agenda row')) sawRawTextInSummarizer = true
+                yield { type: 'text-delta', text: '早报汇总已完成' }
+              }
+            })()
+          },
+        },
+        subprocess: {
+          spawn({ argv }) {
+            if (argv.includes('skills') && argv.includes('list')) {
+              return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-workflow-standup-report', description: 'Standup' }] }), stderr: '' }), terminate() {} }
+            }
+            if (argv.includes('skills') && argv.includes('read')) {
+              return { done: Promise.resolve({ exitCode: 0, stdout: '# Standup Workflow\nRuns calendar +agenda and docs +search', stderr: '' }), terminate() {} }
+            }
+            if (argv.includes('calendar') && argv.includes('+agenda')) {
+              return { done: Promise.resolve({ exitCode: 0, stdout: 'plain text agenda row', stderr: '' }), terminate() {} }
+            }
+            if (argv.includes('docs') && argv.includes('+search')) {
+              return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { items: ['doc1'] } }), stderr: '' }), terminate() {} }
+            }
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          },
+        },
+      },
+      config: { larkCliPath: cliExe },
+    })
+    const wfRes = await opsWorkflow.dispatchCollab({ instruction: '给我生成今天的晨会待办摘要' })
+    assert.strictEqual(wfRes.ok, true)
+    assert.strictEqual(sawRawTextInSummarizer, true, '纯文本输出（非 JSON）与多步骤 steps 必须完整喂给摘要模型')
+
+    // 5. 真机内置 @larksuite/cli 全部 25 份 Skill 实测与别名解析校验
+    const realCliOps = createOperations({ ctx: { subprocess: realSubprocess }, config: { skipSystemCliLookup: true } })
+    if (realCliOps.resolveCliSync()) {
+      const realCatalog = await realCliOps.readOfficialSkillsCatalog()
+      assert.strictEqual(realCatalog.length, 25, '真机内置 lark-cli 应列出全部 25 份官方 Skill')
+      for (const item of realCatalog) {
+        const body = await realCliOps.readOfficialSkillGuide(item.name)
+        assert.ok(body && body.length > 50, `真实官方 Skill ${item.name} 读取不能为空`)
+      }
+      const noteGuide = await realCliOps.readOfficialSkillGuide('lark-note')
+      assert.ok(noteGuide && noteGuide.length > 2000, '兼容别名 lark-note 应自动跟随解析到完整 lark-meeting 指南')
+    }
+
+    // 6. 模型返回含未转义换行的畸形 action JSON 时，绝不能把 {"action":"reply"} 原样裸露给用户，同时保留 AI 正常自然语言表达
+    const opsBrokenJson = createOperations({
+      ctx: {
+        agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+        llm: {
+          stream() {
+            return (async function* () {
+              yield {
+                type: 'text-delta',
+                text: '{"action": "reply", "reply": "你好！👋\n\n我可以帮你：\n- 日历日程"}',
+              }
+            })()
+          },
+        },
+        subprocess: {
+          spawn() {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{"skills":[]}', stderr: '' }), terminate() {} }
+          },
+        },
+      },
+      config: { larkCliPath: cliExe },
+    })
+    const brokenRes = await opsBrokenJson.dispatchCollab({ instruction: 'hello' })
+    assert.strictEqual(brokenRes.ok, true)
+    assert.strictEqual(brokenRes.reply.includes('"action"'), false, '畸形 action JSON 绝不能裸露在回复气泡中')
+    assert.ok(brokenRes.reply.includes('你好！👋') && brokenRes.reply.includes('日历日程'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与后端路由语言传递)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { fileURLToPath } = await import('node:url')
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+
+  // 1. ZH / EN 词典键名完全 1:1 对齐，且包含全部 SCENARIOS / starters prompt 键
+  const zhBlock = clientSrc.slice(clientSrc.indexOf('const ZH = {'), clientSrc.indexOf('const EN = {'))
+  const enBlock = clientSrc.slice(clientSrc.indexOf('const EN = {'), clientSrc.indexOf('const KIND_ICON = {'))
+  const zhKeys = [...zhBlock.matchAll(/'([^']+)':/g)].map((m) => m[1])
+  const enKeys = [...enBlock.matchAll(/'([^']+)':/g)].map((m) => m[1])
+  assert.deepStrictEqual(zhKeys, enKeys, 'ZH 与 EN 词典键必须严格一致')
+  assert.ok(zhKeys.includes('scene.crm.prompt') && zhKeys.includes('starter.analyze.prompt') && zhKeys.includes('scope.defaultDomain'))
+  assert.strictEqual(/prompt:\s*'[\u4e00-\u9fff]/.test(clientSrc), false, 'SCENARIOS / starters 不允许再出现硬编码中文 prompt')
+
+  // 2. resolveLang 识别显式 lang 与自然文本语言
+  assert.strictEqual(resolveLang('en-US', '你好'), 'en')
+  assert.strictEqual(resolveLang('zh-CN', 'hello'), 'zh')
+  assert.strictEqual(resolveLang(undefined, 'Track customer leads'), 'en')
+  assert.strictEqual(resolveLang(undefined, '帮我建个客户表'), 'zh')
+
+  // 3. destructiveChanges 与 sanitizePlan / sanitizeOps 英文分支
+  const enRisky = destructiveChanges([{ op: 'delete_field', field: 'Notes' }, { op: 'delete_records', record_ids: ['r1'] }], 'en')
+  assert.strictEqual(enRisky[0], 'Delete column "Notes"')
+  assert.strictEqual(enRisky[1], 'Delete 1 record(s)')
+  assert.strictEqual(sanitizePlan(null, 'en').message, 'The model did not return a valid JSON object.')
+  assert.strictEqual(sanitizeOps(null, 'hello', [], 'en').message, 'The model response format was invalid. Please try rephrasing.')
+
+  // 4. dispatchCollab 在 lang='en' 时必须下发英文格式化系统提示与英文空数据回复
+  let capturedPlannerSys = ''
+  let capturedSummarySys = ''
+  const mockCliPath = fileURLToPath(new URL('./package.json', import.meta.url))
+  const opsEn = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system }) {
+          if (system.includes('可用 action 列表')) capturedPlannerSys = system
+          if (system.includes('Summarize the data')) capturedSummarySys = system
+          return (async function* () {
+            if (system.includes('可用 action 列表')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
+            } else if (system.includes('精通飞书 CLI')) {
+              yield { type: 'text-delta', text: JSON.stringify({ argv: ['approval', '+task-list'], readonly: true }) }
+            } else {
+              yield { type: 'text-delta', text: 'You have 1 pending leave approval.' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Approval' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('read')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\napproval +task-list', stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: [] } }), stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: mockCliPath },
+  })
+  const enCollabRes = await opsEn.dispatchCollab({ instruction: 'Check my pending approvals', lang: 'en' })
+  assert.strictEqual(enCollabRes.ok, true)
+  assert.ok(capturedPlannerSys.includes('The active language is English'))
+  assert.ok(capturedSummarySys.includes('human-readable English answer'))
+  assert.strictEqual(enCollabRes.reply, 'You have 1 pending leave approval.')
+
+  // 5. planner.plan 在 lang='en' 时注入英文表结构输出规范
+  let plannerSys = ''
+  const enPlanner = createPlanner({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system }) {
+          plannerSys = system
+          return (async function* () {
+            yield {
+              type: 'text-delta',
+              text: JSON.stringify({
+                isTable: true,
+                baseName: 'Customer Leads',
+                intro: 'Track client status and next follow-up.',
+                tables: [{ name: 'Leads', fields: [{ type: 'text', name: 'Company', description: 'Client company name' }] }],
+              }),
+            }
+          })()
+        },
+      },
+    },
+  })
+  const enPlanRes = await enPlanner.plan('Track customer leads', undefined, undefined, { lang: 'en' })
+  assert.strictEqual(enPlanRes.ok, true)
+  assert.ok(plannerSys.includes('The active UI/user language is English'))
+  assert.strictEqual(enPlanRes.plan.baseName, 'Customer Leads')
+})
+
 Promise.all(pendingTests).then(() => {
   setTimeout(() => {
     console.log(`\n========================================`)
     console.log(`🎉 测试完成: ${passCount} 通过, ${failCount} 失败`)
     console.log(`========================================`)
-    if (failCount > 0) process.exit(1)
+    process.exit(failCount > 0 ? 1 : 0)
   }, 200)
 })

@@ -3,6 +3,8 @@
 [简体中文](README.md) | [English](README_EN.md)
 
 [![npm version](https://img.shields.io/npm/v/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
+[![npm total downloads](https://img.shields.io/npm/dt/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
+[![npm monthly downloads](https://img.shields.io/npm/dm/dsh-lark-studio.svg)](https://www.npmjs.com/package/dsh-lark-studio)
 [![dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/deeplifestudio/dsh-lark-studio)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

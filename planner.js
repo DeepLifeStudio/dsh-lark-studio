@@ -114,7 +114,7 @@ const SYSTEM_PROMPT = `你在帮一个用户设计飞书多维表格（Bitable B
    不要占位符（"待定""test""示例A"），也不要太口语。
 8. intro 不超过 40 个字，说明这张表帮他解决什么问题，例如"记录每个客户推进到哪一步，别忘了下次联系"。
 9. 一张表能表达清楚就只给一张表；确实需要主子表关系时最多 4 张，且不要编造关联字段。
-10. baseName 不超过 20 个字。`
+10. baseName 不超过 40 个字（若用户或附件明确指定了系统语言，例如要求字段、视图、状态全部使用英文，则必须严格使用其指定的语言输出）。`
 
 const REFINE_SYSTEM_PROMPT = `你在帮用户微调一张已经设计好的飞书多维表格草稿（JSON）。
 
@@ -165,7 +165,7 @@ function clip(value, limit = MAX_NAME) {
   return value.trim().replace(/\s+/g, ' ').slice(0, limit)
 }
 
-const PLAN_TIMEOUT_MS = 60000
+const PLAN_TIMEOUT_MS = 120000
 
 /** A bounded signal: the caller's cancellation still wins, but silence does not. */
 export function withTimeout(signal, ms) {
@@ -217,9 +217,30 @@ function sanitizeStyle(field) {
   return undefined
 }
 
+function normalizeFieldType(rawType, rawStyle) {
+  const t = typeof rawType === 'string' ? rawType.trim().toLowerCase() : ''
+  if (FIELD_TYPES.has(t)) return { type: t, style: rawStyle }
+  if (t === 'url' || t === 'link' || t === 'hyperlink') return { type: 'text', style: { type: 'url' } }
+  if (t === 'phone') return { type: 'text', style: { type: 'phone' } }
+  if (t === 'email') return { type: 'text', style: { type: 'email' } }
+  if (t === 'string' || t === 'multiline' || t === 'long_text' || t === 'attachment') return { type: 'text', style: rawStyle }
+  if (t === 'date' || t === 'timestamp' || t === 'time' || t === 'created_at' || t === 'updated_at') return { type: 'datetime', style: rawStyle }
+  if (t === 'currency' || t === 'money') {
+    const style = rawStyle && typeof rawStyle === 'object' ? { type: 'currency', ...rawStyle } : { type: 'currency', currency_code: 'USD', precision: 2 }
+    return { type: 'number', style }
+  }
+  if (t === 'int' || t === 'integer' || t === 'float' || t === 'decimal' || t === 'percent' || t === 'percentage') return { type: 'number', style: rawStyle }
+  if (t === 'single_select' || t === 'singleselect' || t === 'enum') return { type: 'select', style: rawStyle, multiple: false }
+  if (t === 'multi_select' || t === 'multiselect' || t === 'tags') return { type: 'select', style: rawStyle, multiple: true }
+  if (t === 'bool' || t === 'boolean') return { type: 'checkbox', style: rawStyle }
+  if (t === 'person' || t === 'member' || t === 'owner') return { type: 'user', style: rawStyle }
+  return { type: '', style: rawStyle }
+}
+
 function sanitizeField(raw) {
   if (!raw || typeof raw !== 'object') return undefined
-  const type = typeof raw.type === 'string' ? raw.type.trim() : ''
+  const norm = normalizeFieldType(raw.type, raw.style)
+  const type = norm.type
   if (!FIELD_TYPES.has(type)) return undefined
   const name = clip(raw.name, 40)
   if (!name) return undefined
@@ -235,7 +256,7 @@ function sanitizeField(raw) {
     const seen = new Set()
     const names = []
     for (const option of options) {
-      const optionName = clip(typeof option === 'string' ? option : option && option.name, 30)
+      const optionName = clip(typeof option === 'string' ? option : option && option.name, 60)
       if (!optionName || seen.has(optionName)) continue
       seen.add(optionName)
       names.push({ name: optionName })
@@ -243,7 +264,7 @@ function sanitizeField(raw) {
     }
     if (names.length < 2) return undefined
     field.options = names
-    field.multiple = raw.multiple === true
+    field.multiple = norm.multiple !== undefined ? norm.multiple : raw.multiple === true
     return field
   }
 
@@ -252,7 +273,7 @@ function sanitizeField(raw) {
     return field
   }
 
-  const style = sanitizeStyle({ type, style: raw.style })
+  const style = sanitizeStyle({ type, style: norm.style })
   if (style) field.style = style
   return field
 }
@@ -306,7 +327,7 @@ export function sanitizePlan(raw, langInput = 'zh') {
   const usedNames = new Set()
   for (const rawTable of rawTables.slice(0, MAX_TABLES)) {
     if (!rawTable || typeof rawTable !== 'object') continue
-    let tableName = clip(rawTable.name, 30) || (isEn ? 'Table' : '表')
+    let tableName = clip(rawTable.name, 48) || (isEn ? 'Table' : '表')
     while (usedNames.has(tableName)) tableName = `${tableName}2`
     usedNames.add(tableName)
 
@@ -351,28 +372,92 @@ export function sanitizePlan(raw, langInput = 'zh') {
   return {
     ok: true,
     plan: {
-      baseName: clip(raw.baseName, 20) || tables[0].name,
+      baseName: clip(raw.baseName, 48) || tables[0].name,
       intro: clip(raw.intro, 60),
       tables,
     },
   }
 }
 
-/** Pull the first JSON object out of a model reply (tolerates stray fences/prose). */
+function escapeControlCharsInsideJsonStrings(raw) {
+  let out = ''
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]
+    if (escaped) {
+      out += ch
+      escaped = false
+      continue
+    }
+    if (ch === '\\') {
+      out += ch
+      if (inString) escaped = true
+      continue
+    }
+    if (ch === '"') {
+      inString = !inString
+      out += ch
+      continue
+    }
+    if (inString) {
+      if (ch === '\n') { out += '\\n'; continue }
+      if (ch === '\r') { out += '\\r'; continue }
+      if (ch === '\t') { out += '\\t'; continue }
+    }
+    out += ch
+  }
+  return out
+}
+
+function extractBalancedJsonObject(raw) {
+  const start = raw.indexOf('{')
+  if (start === -1) return ''
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]
+    if (escaped) { escaped = false; continue }
+    if (ch === '\\') { if (inString) escaped = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return raw.slice(start, i + 1)
+    }
+  }
+  return ''
+}
+
+function tryJsonParse(candidate) {
+  if (!candidate) return undefined
+  try {
+    return JSON.parse(candidate)
+  } catch {}
+  const repaired = escapeControlCharsInsideJsonStrings(candidate).replace(/,\s*([}\]])/g, '$1')
+  try {
+    return JSON.parse(repaired)
+  } catch {}
+  return undefined
+}
+
+/** Pull the first JSON object out of a model reply (tolerates stray fences/prose/control chars). */
 export function parsePlanText(text) {
-  const trimmed = text.trim()
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return undefined
   const attempts = [trimmed]
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) attempts.push(fenced[1].trim())
+  const balanced = extractBalancedJsonObject(trimmed)
+  if (balanced) attempts.push(balanced)
   const first = trimmed.indexOf('{')
   const last = trimmed.lastIndexOf('}')
   if (first !== -1 && last > first) attempts.push(trimmed.slice(first, last + 1))
   for (const attempt of attempts) {
-    try {
-      return JSON.parse(attempt)
-    } catch {
-      // try the next shape
-    }
+    const parsed = tryJsonParse(attempt)
+    if (parsed && typeof parsed === 'object') return parsed
   }
   return undefined
 }
@@ -380,16 +465,26 @@ export function parsePlanText(text) {
 export function collectText(stream, onDelta) {
   return (async () => {
     let text = ''
+    let emittedBuilding = false
     let failure
     for await (const chunk of stream) {
-      if (chunk.type === 'text-delta') text += chunk.text
-      else if (chunk.type === 'reasoning-delta' || chunk.type === 'thinking-delta') {
+      let piece = ''
+      if (typeof chunk === 'string') piece = chunk
+      else if (chunk?.type === 'text-delta' || chunk?.type === 'text') piece = chunk.text || ''
+      else if (chunk?.text && !chunk?.type) piece = chunk.text
+      if (piece) {
+        if (!emittedBuilding && typeof onDelta === 'function') {
+          emittedBuilding = true
+          onDelta({ type: 'stage', stage: 'building_preview' })
+        }
+        text += piece
+      } else if (chunk?.type === 'reasoning-delta' || chunk?.type === 'thinking-delta' || chunk?.type === 'thinking_delta') {
         if (typeof onDelta === 'function') {
-          onDelta({ type: 'reasoning', delta: chunk.text || chunk.delta || '' })
+          onDelta({ type: 'reasoning', delta: chunk.text || chunk.thinking || chunk.delta || '' })
         }
       }
-      else if (chunk.type === 'finish' && chunk.reason.kind === 'error') failure = chunk.reason.failure
-      else if (chunk.type === 'finish' && chunk.reason.kind === 'aborted' && !text) {
+      else if (chunk?.type === 'finish' && chunk.reason?.kind === 'error') failure = chunk.reason.failure
+      else if (chunk?.type === 'finish' && chunk.reason?.kind === 'aborted' && !text) {
         failure = chunk.reason.failure
       }
     }
@@ -429,12 +524,23 @@ export function createPlanner({ ctx, config = {} }) {
     const isEn = lang === 'en'
     const baseSystem = isRefine ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT
     const system = isEn ? `${baseSystem}${isRefine ? EN_REFINE_DIRECTIVE : EN_PLAN_DIRECTIVE}` : baseSystem
+    const attachPrompt = opts.attachmentContext?.promptBlock ? `\n\n${opts.attachmentContext.promptBlock}` : ''
+    const historySummary = Array.isArray(opts.history) && opts.history.length > 0
+      ? `\n\n${isEn ? 'Recent conversation context:' : '最近对话上下文：'}\n${opts.history.slice(-4).map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${String(m.text || '').slice(0, 1200)}`).join('\n')}`
+      : ''
+    const forceHint = opts.forceTable
+      ? (isEn
+          ? '\n\nIMPORTANT: The user has explicitly requested to create a Base table now. Based on the attached files and conversation context, output ONLY the valid JSON with "isTable": true.'
+          : '\n\n【重要】：用户已明确要求立即建表，请结合附带的文件内容与最近对话上下文，直接设计并输出 "isTable": true 的完整建表 JSON，不要再返回 "isTable": false。')
+      : ''
     const userPrompt = isRefine
       ? (isEn
-          ? `Current Base draft JSON:\n${JSON.stringify(opts.currentPlan, null, 2)}\n\nRequested modification: ${sentence}`
-          : `当前多维表格草稿 JSON：\n${JSON.stringify(opts.currentPlan, null, 2)}\n\n用户的本次修改意见：${sentence}`)
-      : sentence
-    const messages = [{ role: 'user', content: [{ type: 'text', text: userPrompt }] }]
+          ? `Current Base draft JSON:\n${JSON.stringify(opts.currentPlan, null, 2)}\n\nRequested modification: ${sentence}${attachPrompt}`
+          : `当前多维表格草稿 JSON：\n${JSON.stringify(opts.currentPlan, null, 2)}\n\n用户的本次修改意见：${sentence}${attachPrompt}`)
+      : `${sentence}${historySummary}${attachPrompt}${forceHint}`
+    const imageBlocks = Array.isArray(opts.imageBlocks) ? opts.imageBlocks : []
+    const content = [{ type: 'text', text: userPrompt }, ...imageBlocks]
+    const messages = [{ role: 'user', content }]
     const text = await collectText(
       ctx.llm.stream({
         provider,
@@ -442,7 +548,6 @@ export function createPlanner({ ctx, config = {} }) {
         system,
         messages,
         temperature: isRefine ? 0.1 : 0.2,
-        maxTokens: 2000,
         signal,
       }),
       opts.onDelta,
@@ -458,24 +563,31 @@ export function createPlanner({ ctx, config = {} }) {
    * the panel spinning forever with no way out.
    */
   async function plan(sentence, signal, timeoutMs = PLAN_TIMEOUT_MS, opts = {}) {
-    const text = String(sentence ?? '').trim()
-    const lang = resolveLang(opts.lang, text)
+    const rawText = String(sentence ?? '').trim()
+    const hasAttachments = Boolean(opts.attachmentContext?.promptBlock) || (Array.isArray(opts.imageBlocks) && opts.imageBlocks.length > 0)
+    const hasTableAttachment = Boolean(opts.attachmentContext?.tableAttachments?.length)
+    const lang = resolveLang(opts.lang, rawText)
     const isEn = lang === 'en'
+    const text = rawText || (hasAttachments
+      ? (hasTableAttachment
+          ? (isEn ? 'Design a Feishu Base table from the attached spreadsheet.' : '请根据我上传的表格文件，设计对应的飞书多维表格结构。')
+          : (isEn ? 'Analyze the attached file. Only design a Base table if the user or content clearly calls for structured tracking; otherwise return isTable: false.' : '请分析我上传的文件。如果内容适合作为结构化台账或用户意在建表，请设计飞书多维表格；如果是普通文档总结或问答，请返回 isTable: false。'))
+      : '')
     const currentPlan = opts.currentPlan && typeof opts.currentPlan === 'object' && Array.isArray(opts.currentPlan.tables)
       ? opts.currentPlan
       : null
 
     if (currentPlan) {
-      if (!text) return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
-      if (PURE_BUILD_RE.test(text)) {
+      if (!rawText && !hasAttachments) return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
+      if (PURE_BUILD_RE.test(rawText)) {
         return { ok: true, action: 'build', plan: currentPlan, changedFields: [] }
       }
-      if (PURE_KEEP_RE.test(text)) {
+      if (PURE_KEEP_RE.test(rawText)) {
         return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
       }
     }
 
-    if (text.length < 2) {
+    if (text.length < 2 && !hasAttachments) {
       return {
         ok: false,
         message: isEn
@@ -486,42 +598,67 @@ export function createPlanner({ ctx, config = {} }) {
 
     const guard = withTimeout(signal, timeoutMs)
     try {
-      let raw = parsePlanText(await ask(text, guard.signal, { ...opts, lang }))
+      const firstReply = await ask(text, guard.signal, { ...opts, lang })
+      let raw = parsePlanText(firstReply)
       if (!raw) {
+        if (!currentPlan && !opts.forceTable && firstReply && firstReply.trim() && !firstReply.trim().startsWith('{')) {
+          return {
+            ok: false,
+            isNotTable: true,
+            message: firstReply.trim(),
+          }
+        }
         const routed = route()
         const provider = opts.provider || routed.provider
         const model = opts.model || routed.model
         const baseSystem = currentPlan ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT
         const system = isEn ? `${baseSystem}${currentPlan ? EN_REFINE_DIRECTIVE : EN_PLAN_DIRECTIVE}` : baseSystem
+        const attachPrompt = opts.attachmentContext?.promptBlock ? `\n\n${opts.attachmentContext.promptBlock}` : ''
+        const historySummary = Array.isArray(opts.history) && opts.history.length > 0
+          ? `\n\n${isEn ? 'Recent conversation context:' : '最近对话上下文：'}\n${opts.history.slice(-4).map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${String(m.text || '').slice(0, 1200)}`).join('\n')}`
+          : ''
+        const forceHint = opts.forceTable
+          ? (isEn
+              ? '\n\nIMPORTANT: Output ONLY one valid JSON object with "isTable": true and no markdown fences or extra prose.'
+              : '\n\n【重要】：请只输出一个合法的 JSON 对象（包含 "isTable": true），不要输出任何 Markdown 代码块或多余文字。')
+          : ''
         const retryPrompt = currentPlan
           ? (isEn
-              ? `Current Base draft JSON:\n${JSON.stringify(currentPlan, null, 2)}\n\nRequested modification: ${text}`
-              : `当前多维表格草稿 JSON：\n${JSON.stringify(currentPlan, null, 2)}\n\n用户的本次修改意见：${text}`)
-          : text
+              ? `Current Base draft JSON:\n${JSON.stringify(currentPlan, null, 2)}\n\nRequested modification: ${text}${attachPrompt}`
+              : `当前多维表格草稿 JSON：\n${JSON.stringify(currentPlan, null, 2)}\n\n用户的本次修改意见：${text}${attachPrompt}`)
+          : `${text}${historySummary}${attachPrompt}${forceHint}`
+        const imageBlocks = Array.isArray(opts.imageBlocks) ? opts.imageBlocks : []
+        const repairNotice = isEn
+          ? 'The previous response could not be parsed as valid JSON. Output ONLY one valid, complete JSON object with no extra text.'
+          : '上一次回复无法解析为合法 JSON。请只输出一个完整合法的 JSON 对象，不要任何其他文字。'
+        const retryMessages = firstReply && firstReply.trim()
+          ? [
+              { role: 'user', content: [{ type: 'text', text: retryPrompt }, ...imageBlocks] },
+              { role: 'assistant', source: { kind: 'model', provider, model }, content: [{ type: 'text', text: firstReply.slice(0, 4000) }] },
+              { role: 'user', content: [{ type: 'text', text: repairNotice }] },
+            ]
+          : [
+              { role: 'user', content: [{ type: 'text', text: `${retryPrompt}\n\n${repairNotice}` }, ...imageBlocks] },
+            ]
         const retry = await collectText(
           ctx.llm.stream({
             provider,
             model,
             system,
-            messages: [
-              { role: 'user', content: [{ type: 'text', text: retryPrompt }] },
-              {
-                role: 'user',
-                content: [{
-                  type: 'text',
-                  text: isEn
-                    ? 'The previous response could not be parsed. Output ONLY one valid JSON object with no extra text.'
-                    : '上一次回复无法解析。请只输出一个 JSON 对象，不要任何其他文字。',
-                }],
-              },
-            ],
+            messages: retryMessages,
             temperature: 0,
-            maxTokens: 2000,
             signal: guard.signal,
           }),
           opts.onDelta,
         )
         raw = parsePlanText(retry)
+        if (!raw && !currentPlan && retry && retry.trim() && !retry.trim().startsWith('{')) {
+          return {
+            ok: false,
+            isNotTable: true,
+            message: retry.trim(),
+          }
+        }
       }
       if (!raw) {
         return {

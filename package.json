@@ -1,6 +1,6 @@
 {
   "name": "dsh-lark-studio",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "type": "module",
   "description": "Feishu/Lark workbench for DeepSeek Harness: build a Base from one sentence, or run calendar, tasks, chat, mail, and contacts from the sidebar.",
   "license": "MIT",
@@ -38,6 +38,7 @@
     "ops.js",
     "planner.js",
     "adjust-planner.js",
+    "file-reader.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",

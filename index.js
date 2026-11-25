@@ -11,6 +11,7 @@ import z from '@deepseek-ai/schemastery'
 import { createOperations, destructiveChanges } from './ops.js'
 import { createAdjustPlanner } from './adjust-planner.js'
 import { createPlanner, resolveLang, sanitizePlan } from './planner.js'
+import { buildAttachmentContext, createFileStaging } from './file-reader.js'
 
 const PLUGIN_NAME = 'lark-workbench'
 /** Lower priority than official @deepseek-ai/dsh-feishu (BUNDLED_SKILL_RANK = 600), so official feishu always wins when installed. */
@@ -523,6 +524,72 @@ export function apply(ctx, config = {}) {
   }
   const planner = createPlanner({ ctx, config })
   const adjustPlanner = createAdjustPlanner({ ctx, config })
+  const fileStaging = createFileStaging()
+  ctx.effect(() => () => { fileStaging.dispose().catch(() => {}) }, 'dsh-lark: file staging cleanup')
+
+  async function resolveAttachmentInputs(ids) {
+    const items = fileStaging.getMany(ids)
+    if (items.length === 0) {
+      return { attachmentContext: null, imageBlocks: [], tableAttachments: [] }
+    }
+    const attachmentContext = buildAttachmentContext(items)
+    const imageBlocks = []
+    const attachmentsSvc = typeof ctx.get === 'function' ? ctx.get('attachments') : undefined
+    if (attachmentsSvc && typeof attachmentsSvc.saveImage === 'function') {
+      for (const img of attachmentContext.images) {
+        try {
+          const ref = await attachmentsSvc.saveImage({
+            bytes: img.buffer,
+            mediaType: img.mime,
+            name: img.name,
+          })
+          if (ref) imageBlocks.push({ type: 'image', attachment: ref })
+        } catch {}
+      }
+    }
+    return {
+      attachmentContext,
+      imageBlocks,
+      tableAttachments: attachmentContext.tableAttachments,
+    }
+  }
+
+  function mapRowsToTableFields(rawRows, fields = []) {
+    if (!Array.isArray(rawRows) || rawRows.length === 0 || !Array.isArray(fields) || fields.length === 0) {
+      return []
+    }
+    const normalizedHeaders = new Map()
+    const firstRowKeys = Object.keys(rawRows[0] || {})
+    for (const k of firstRowKeys) {
+      normalizedHeaders.set(k.trim().toLowerCase(), k)
+    }
+    return rawRows.map((row) => {
+      const out = {}
+      for (const field of fields) {
+        const direct = row[field.name]
+        const fallbackKey = normalizedHeaders.get(String(field.name || '').trim().toLowerCase())
+        const rawVal = direct !== undefined ? direct : (fallbackKey ? row[fallbackKey] : undefined)
+        if (rawVal === undefined || rawVal === '') continue
+        const str = String(rawVal).trim()
+        if (!str) continue
+        if (field.type === 'number') {
+          const num = Number(str.replace(/,/g, ''))
+          if (Number.isFinite(num)) out[field.name] = num
+        } else if (field.type === 'checkbox') {
+          out[field.name] = /^(true|1|yes|是|已)$/i.test(str)
+        } else if (field.type === 'select') {
+          if (field.multiple) {
+            out[field.name] = str.split(/[,，/|]+/).map((s) => s.trim()).filter(Boolean)
+          } else {
+            out[field.name] = [str]
+          }
+        } else if (field.type === 'text') {
+          out[field.name] = str
+        }
+      }
+      return out
+    }).filter((r) => Object.keys(r).length > 0)
+  }
   const ops = createOperations({
     ctx,
     config: {
@@ -856,6 +923,7 @@ export function apply(ctx, config = {}) {
       { path: '/api/dsh-lark/plan', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/build', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/adjust', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/upload', methods: ['POST', 'DELETE'], requestBody: 'streaming' },
       { path: '/api/dsh-lark/connect/scopes', methods: ['GET'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/connect/cli/install', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/connect/cli/state', methods: ['GET'], requestBody: 'buffered' },
@@ -905,12 +973,17 @@ export function apply(ctx, config = {}) {
                 const models = []
                 const seen = new Set()
 
-                function addModel(id, name, provider) {
+                function addModel(id, name, provider, inputModalities) {
                   if (!id) return
                   const key = `${provider}:${id}`
                   if (seen.has(key)) return
                   seen.add(key)
-                  models.push({ id, name: name || id, provider })
+                  models.push({
+                    id,
+                    name: name || id,
+                    provider,
+                    ...(Array.isArray(inputModalities) ? { inputModalities } : {}),
+                  })
                 }
 
                 try {
@@ -928,7 +1001,7 @@ export function apply(ctx, config = {}) {
                         }
                       }
                       if (Array.isArray(list)) {
-                        for (const m of list) addModel(m.id, m.name, providerId)
+                        for (const m of list) addModel(m.id, m.name, providerId, m.inputModalities)
                       }
                     } catch (e) {
                       try {
@@ -936,7 +1009,7 @@ export function apply(ctx, config = {}) {
                         if (reg?.adapter?.listModels) {
                           const list = await reg.adapter.listModels(providerId)
                           if (Array.isArray(list)) {
-                            for (const m of list) addModel(m.id, m.name, providerId)
+                            for (const m of list) addModel(m.id, m.name, providerId, m.inputModalities)
                           }
                         }
                       } catch {}
@@ -1024,15 +1097,54 @@ export function apply(ctx, config = {}) {
                 return jsonResponse(result.ok ? 200 : 422, result)
               }
 
+              if (method === 'POST' && route === '/upload') {
+                const name = url.searchParams.get('name') || 'file'
+                const mime = url.searchParams.get('mime') || request.headers.get('content-type') || 'application/octet-stream'
+                try {
+                  const file = await fileStaging.saveStream({
+                    body: request.body,
+                    name,
+                    mime,
+                  })
+                  return jsonResponse(200, { ok: true, file })
+                } catch (err) {
+                  const status = err && typeof err.statusCode === 'number' ? err.statusCode : 400
+                  return jsonResponse(status, {
+                    ok: false,
+                    error: err instanceof Error ? err.message : String(err),
+                  })
+                }
+              }
+
+              if (method === 'DELETE' && route === '/upload') {
+                const id = url.searchParams.get('id') || ''
+                const removed = await fileStaging.remove(id)
+                return jsonResponse(200, { ok: true, removed })
+              }
+
               if (method === 'POST' && route === '/plan') {
                 const body = await request.json().catch(() => ({}))
                 const lang = resolveLang(body.lang, body.sentence || '')
+                const resolved = await resolveAttachmentInputs(body.attachments)
                 const planned = await planner.plan(body.sentence, undefined, undefined, {
                   model: body.model,
                   provider: body.provider,
                   currentPlan: body.currentPlan,
+                  attachmentContext: resolved.attachmentContext,
+                  imageBlocks: resolved.imageBlocks,
                   lang,
                 })
+                if (planned && planned.ok && planned.plan && resolved.tableAttachments.length > 0) {
+                  const primarySource = resolved.tableAttachments[0]
+                  return jsonResponse(200, {
+                    ...planned,
+                    sourceAttachment: {
+                      id: primarySource.id,
+                      name: primarySource.name,
+                      totalRows: primarySource.totalRows,
+                    },
+                  })
+                }
                 return jsonResponse(200, planned)
               }
 
@@ -1047,10 +1159,18 @@ export function apply(ctx, config = {}) {
                   }
                   plan = planned.plan
                 }
+                let importRecords = undefined
+                if (body.importAttachmentId) {
+                  const staged = fileStaging.get(body.importAttachmentId)
+                  if (staged && staged.kind === 'table' && Array.isArray(staged.rows) && plan.tables?.[0]?.fields) {
+                    importRecords = mapRowsToTableFields(staged.rows, plan.tables[0].fields)
+                  }
+                }
                 const result = await ops.build(plan, {
                   name: body.name,
                   kanban: body.kanban,
                   sample: body.sample,
+                  importRecords,
                 })
                 return jsonResponse(result.ok ? 200 : 500, result)
               }
@@ -1062,6 +1182,7 @@ export function apply(ctx, config = {}) {
                 const lang = resolveLang(body.lang, instruction)
                 const isEn = lang === 'en'
                 const isCollab = body.type === 'collab' || !token
+                const resolved = await resolveAttachmentInputs(body.attachments)
 
                 if (isCollab) {
                   if (body.stream) {
@@ -1079,6 +1200,8 @@ export function apply(ctx, config = {}) {
                             history: body.history,
                             model: body.model,
                             provider: body.provider,
+                            attachmentContext: resolved.attachmentContext,
+                            imageBlocks: resolved.imageBlocks,
                             lang,
                             onDelta,
                           })
@@ -1095,6 +1218,7 @@ export function apply(ctx, config = {}) {
                       headers: {
                         'content-type': 'text/event-stream; charset=utf-8',
                         'cache-control': 'no-cache, no-transform',
+                        'x-accel-buffering': 'no',
                       },
                     })
                   }
@@ -1104,6 +1228,8 @@ export function apply(ctx, config = {}) {
                     history: body.history,
                     model: body.model,
                     provider: body.provider,
+                    attachmentContext: resolved.attachmentContext,
+                    imageBlocks: resolved.imageBlocks,
                     lang,
                   })
                   return jsonResponse(200, collabRes)
@@ -1121,6 +1247,8 @@ export function apply(ctx, config = {}) {
                     model: body.model,
                     provider: body.provider,
                     table: body.table,
+                    attachmentContext: resolved.attachmentContext,
+                    imageBlocks: resolved.imageBlocks,
                     lang,
                   }, schema, liveRecords)
                   if (!result.ok) {

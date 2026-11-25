@@ -113,7 +113,8 @@ The plugin adds **Lark Workbench** to the DSH main sidebar, conversation view, a
 
 - **Zero-install setup wizard**: automatically prepares `lark-cli` on first open (no manual Node.js or terminal install required; reuses `@deepseek-ai/dsh-feishu`'s CLI when present/newer), guides you through App linking and OAuth, and syncs with the account card on the DSH Plugins page.
 - **Schema preview & draft recovery**: inspect fields, options, and sample rows before creating; unfinished drafts stay accessible under **Draft**, with Undo toasts if closed, discarded, or cleared by mistake.
-- **Live thinking stream**: streams reasoning in real time during planning and assistant runs.
+- **File upload & multimodal reading**: click, drag-and-drop, or paste text, CSV/TSV/XLSX spreadsheets, DOCX/PPTX/PDF documents, and images to ask questions, design Bases, or batch-import real spreadsheet rows directly into Feishu Base.
+- **End-to-end live streaming**: streams reasoning, table-building skeleton transitions, and Markdown replies in real time with smart auto-follow scrolling.
 - **Split-pane view**: chat on the left, live embedded Lark Bitable on the right.
 - **Full Chinese / English i18n**: UI copy, starter prompts, schema planning, and collaboration answers switch seamlessly with your DSH language setting.
 - **Scope inspector & write guards**: surfaces missing scope names with direct developer-console links, and pauses for confirmation before destructive Base changes or mutating skill commands.

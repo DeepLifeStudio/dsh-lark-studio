@@ -795,19 +795,30 @@ export function createOperations({ ctx, config = {}, planner }) {
         })
       }
 
-      if (withSamples && Array.isArray(table.records) && table.records.length > 0) {
-        const seeded = await runJson(
-          [
-            'base', '+record-batch-create',
-            '--base-token', token,
-            '--table-id', table.name,
-            '--json', JSON.stringify({ create_records: table.records }),
-            ...asArgs(),
-          ],
-          signal,
-        )
-        if (seeded.ok) entry.records = table.records.length
-        else warnings.push(`表「${table.name}」的示例数据写入失败：${seeded.message}`)
+      const rowsToSeed = table === first && Array.isArray(options.importRecords) && options.importRecords.length > 0
+        ? options.importRecords
+        : (withSamples && Array.isArray(table.records) ? table.records : [])
+      if (rowsToSeed.length > 0) {
+        let written = 0
+        for (let offset = 0; offset < rowsToSeed.length; offset += 50) {
+          const batch = rowsToSeed.slice(offset, offset + 50)
+          const seeded = await runJson(
+            [
+              'base', '+record-batch-create',
+              '--base-token', token,
+              '--table-id', table.name,
+              '--json', JSON.stringify({ create_records: batch }),
+              ...asArgs(),
+            ],
+            signal,
+          )
+          if (seeded.ok) written += batch.length
+          else {
+            warnings.push(`表「${table.name}」的${offset > 0 ? '部分' : ''}数据写入失败：${seeded.message}`)
+            break
+          }
+        }
+        entry.records = written
       }
     }
 
@@ -1357,6 +1368,13 @@ export function createOperations({ ctx, config = {}, planner }) {
       const assistantSource = { kind: 'model', provider: p, model: m }
       const formattedMessages = messages.map((msg) => {
         const isAssistant = msg.role === 'assistant' || msg.role === 'model'
+        if (Array.isArray(msg.content) && msg.content.length > 0) {
+          return {
+            role: isAssistant ? 'assistant' : 'user',
+            ...(isAssistant ? { source: assistantSource } : {}),
+            content: msg.content,
+          }
+        }
         const rawText = typeof msg.content === 'string'
           ? msg.content
           : (Array.isArray(msg.content) ? msg.content.map((c) => c?.text || '').join('') : (msg.text || ''))
@@ -1373,7 +1391,6 @@ export function createOperations({ ctx, config = {}, planner }) {
         system: system || 'You are a capable Feishu/Lark assistant. Respond concisely and clearly in the same language as the user (using Markdown lists or tables when helpful).',
         messages: formattedMessages,
         temperature,
-        maxTokens: 2000,
         signal,
       })
 
@@ -1557,10 +1574,125 @@ export function createOperations({ ctx, config = {}, planner }) {
       || /(^|\s)\+[a-z0-9-]*(create|update|delete|remove|send|reply|edit|complete|approve|reject|upload|import|archive|move|copy)\b/i.test(cmdHead)
   }
 
-  async function dispatchCollab({ instruction, history = [], model, provider, lang, onDelta }, signal) {
-    const text = (instruction || '').trim()
-    const activeLang = resolveLang(lang, text)
+  /**
+   * Incrementally extracts and unescapes the JSON `"reply"` string field as
+   * text deltas arrive, only when `"action"` is `"reply"`. Non-reply actions
+   * (such as `suggest_create_table` or `get_calendar`) emit zero reply deltas.
+   */
+  function createJsonReplyStreamForwarder(onDelta) {
+    if (typeof onDelta !== 'function') return undefined
+    let raw = ''
+    let active = false
+    let plainMode = false
+    let finished = false
+    let cursor = 0
+    let pendingBackslash = false
+    let unicodeBuf = null
+
+    const emitDecoded = (chunkStart) => {
+      let out = ''
+      for (let i = chunkStart; i < raw.length; i++) {
+        const ch = raw[i]
+        if (unicodeBuf !== null) {
+          unicodeBuf += ch
+          if (unicodeBuf.length === 4) {
+            const code = parseInt(unicodeBuf, 16)
+            if (!Number.isNaN(code)) out += String.fromCharCode(code)
+            unicodeBuf = null
+          }
+          continue
+        }
+        if (pendingBackslash) {
+          pendingBackslash = false
+          if (ch === 'n') out += '\n'
+          else if (ch === 'r') out += '\r'
+          else if (ch === 't') out += '\t'
+          else if (ch === 'u') unicodeBuf = ''
+          else out += ch
+          continue
+        }
+        if (ch === '\\') {
+          pendingBackslash = true
+          continue
+        }
+        if (ch === '"') {
+          finished = true
+          cursor = i + 1
+          break
+        }
+        out += ch
+        cursor = i + 1
+      }
+      if (!finished) cursor = raw.length
+      if (out) onDelta({ type: 'reply_delta', delta: out })
+    }
+
+    return (evt) => {
+      if (!evt) return
+      if (evt.type !== 'text') {
+        onDelta(evt)
+        return
+      }
+      if (finished) return
+      const piece = evt.delta || ''
+      if (!piece) return
+      if (plainMode) {
+        onDelta({ type: 'reply_delta', delta: piece })
+        return
+      }
+      raw += piece
+      if (!active) {
+        const trimmedStart = raw.trimStart()
+        if (!trimmedStart) return
+        // Model bypassed JSON and replied directly in plain prose/Markdown
+        if (trimmedStart[0] !== '{' && trimmedStart[0] !== '`') {
+          plainMode = true
+          onDelta({ type: 'reply_delta', delta: raw })
+          return
+        }
+        // If another non-reply action is already declared, stay silent for reply_delta
+        const actionMatch = /"action"\s*:\s*"([^"]+)"/.exec(raw)
+        if (actionMatch && actionMatch[1] !== 'reply') {
+          onDelta(evt)
+          return
+        }
+        const m = /"reply"\s*:\s*"/.exec(raw)
+        if (!m) {
+          onDelta(evt)
+          return
+        }
+        active = true
+        cursor = m.index + m[0].length
+        emitDecoded(cursor)
+        return
+      }
+      emitDecoded(cursor)
+    }
+  }
+
+  function createPlainReplyForwarder(onDelta) {
+    if (typeof onDelta !== 'function') return undefined
+    return (evt) => {
+      if (!evt) return
+      if (evt.type === 'text') {
+        if (evt.delta) onDelta({ type: 'reply_delta', delta: evt.delta })
+      } else {
+        onDelta(evt)
+      }
+    }
+  }
+
+  async function dispatchCollab({ instruction, history = [], model, provider, lang, attachmentContext, imageBlocks = [], onDelta }, signal) {
+    const rawText = (instruction || '').trim()
+    const activeLang = resolveLang(lang, rawText)
     const isEn = activeLang === 'en'
+    const attachPrompt = attachmentContext?.promptBlock || ''
+    const hasAttachments = Boolean(attachPrompt) || imageBlocks.length > 0
+    const text = rawText || (hasAttachments
+      ? (isEn
+          ? 'Please read the attached file(s), summarize the key points clearly, and suggest next actions (such as turning it into a Feishu Base, creating tasks, or drafting a message).'
+          : '请阅读我上传的文件，先用清晰简洁的语言提炼重点内容，并告诉我可以帮你做哪些后续处理（例如整理成飞书多维表格、创建待办或起草消息/邮件）。')
+      : '')
     const scopesInfo = await getScopes(signal)
     const appId = scopesInfo.appId || ''
     const consoleUrl = scopesInfo.consoleUrl || (appId ? `https://open.feishu.cn/app/${appId}/auth` : 'https://open.feishu.cn/app')
@@ -1647,16 +1779,18 @@ export function createOperations({ ctx, config = {}, planner }) {
   "reply": "当 action 为 reply 时的回答内容（支持 Markdown）"
 }`
 
+      const userContentText = attachPrompt ? `${text}\n\n${attachPrompt}` : text
+      const jsonReplyForwarder = createJsonReplyStreamForwarder(onDelta)
       agentRaw = await callLlm({
         system: agentSystem,
         messages: [
           ...formattedHistory,
-          { role: 'user', text },
+          { role: 'user', content: [{ type: 'text', text: userContentText }, ...imageBlocks] },
         ],
         model,
         provider,
         temperature: 0.2,
-        onDelta,
+        onDelta: jsonReplyForwarder,
       }, signal)
 
       if (agentRaw) {
@@ -1669,14 +1803,27 @@ export function createOperations({ ctx, config = {}, planner }) {
     // 2. 处理大模型的回答决策（支持结构化 reply 与自然语言直接回复）
     if (agentDecision && agentDecision.action) {
       if (agentDecision.action === 'suggest_create_table' || agentDecision.action === 'create_table') {
+        let planFailureMsg = ''
         if (planner && typeof planner.plan === 'function') {
+          onDelta?.({ type: 'stage', stage: 'planning_table' })
           try {
-            const planned = await planner.plan(text, signal, undefined, { model, provider, lang: activeLang, onDelta })
+            const planned = await planner.plan(text, signal, undefined, {
+              model,
+              provider,
+              lang: activeLang,
+              history: formattedHistory,
+              forceTable: true,
+              attachmentContext,
+              imageBlocks,
+              onDelta,
+            })
             if (planned && planned.ok && planned.plan) {
+              const primarySource = attachmentContext?.tableAttachments?.[0]
               return {
                 ok: true,
                 type: 'table_plan',
                 plan: planned.plan,
+                ...(primarySource ? { sourceAttachment: { id: primarySource.id, name: primarySource.name, totalRows: primarySource.totalRows } } : {}),
                 sentence: text,
                 reply: isEn
                   ? `Drafted "${planned.plan.baseName}". Review the fields in the preview screen and click Create Base.`
@@ -1685,16 +1832,24 @@ export function createOperations({ ctx, config = {}, planner }) {
                 reasoning: agentRaw?.reasoning || null,
               }
             }
+            if (planned && planned.message) {
+              planFailureMsg = planned.message
+            }
           } catch (e) {
-            console.warn('[dsh-lark] planner.plan error:', e?.message || e)
+            planFailureMsg = e?.message || String(e)
+            console.warn('[dsh-lark] planner.plan error:', planFailureMsg)
           }
         }
         return {
           ok: true,
           type: 'suggest_table',
-          reply: isEn
-            ? 'Looks like you want to create a Base. Tell me what columns or workflow you want to track and I will design it for you.'
-            : `检测到您想创建多维表格。请告诉我需要包含什么字段或业务场景，我直接为您规划生成！`,
+          reply: planFailureMsg
+            ? (isEn
+                ? `Could not finish the table blueprint yet: ${planFailureMsg}`
+                : `尝试生成表结构时未完成：${planFailureMsg}`)
+            : (isEn
+                ? 'Looks like you want to create a Base. Tell me what columns or workflow you want to track and I will design it for you.'
+                : `检测到您想创建多维表格。请告诉我需要包含什么字段或业务场景，我直接为您规划生成！`),
           summary: isEn ? 'Suggest creating a Base' : '建议前往多维表格模式',
         }
       }
@@ -1796,7 +1951,7 @@ ${guide.slice(0, 28000)}
               ],
               model,
               provider,
-              onDelta,
+              onDelta: createPlainReplyForwarder(onDelta),
             }, signal)
             return {
               ok: true,
@@ -2009,6 +2164,7 @@ ${guide.slice(0, 28000)}
           }],
           model,
           provider,
+          onDelta: createPlainReplyForwarder(onDelta),
         }, signal)
         if (mailTable) {
           return {
@@ -2145,11 +2301,11 @@ Always answer in natural, friendly English using Markdown lists or tables when h
 如果用户要求表格呈现，请输出标准的 Markdown 表格。严禁输出内部 JSON 结构，严禁给出机械重复的套话。`,
       messages: [
         ...formattedHistory,
-        { role: 'user', text },
+        { role: 'user', content: [{ type: 'text', text: attachPrompt ? `${text}\n\n${attachPrompt}` : text }, ...imageBlocks] },
       ],
       model,
       provider,
-      onDelta,
+      onDelta: createPlainReplyForwarder(onDelta),
     }, signal)
 
     if (generalLlmReply) {

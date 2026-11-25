@@ -167,6 +167,20 @@ window.__ModuleLoader__.load({
         'M9.5 9.5V20',
       ],
       plus: ['M12 5.5v13', 'M5.5 12h13'],
+      paperclip: [
+        'M16.5 7.5l-7.2 7.2a2.5 2.5 0 01-3.5-3.5l7.8-7.8a4.2 4.2 0 016 6l-7.8 7.8a5.8 5.8 0 01-8.2-8.2l7.2-7.2',
+      ],
+      fileText: [
+        'M7 3.8h6.8L18.5 8.5v11.7a1.5 1.5 0 01-1.5 1.5H7a1.5 1.5 0 01-1.5-1.5V5.3A1.5 1.5 0 017 3.8Z',
+        'M13.5 3.8v4.8h5',
+        'M8.8 13h6.4',
+        'M8.8 16.5h4.5',
+      ],
+      image: [
+        'M4.5 6.5A2 2 0 016.5 4.5h11a2 2 0 012 2v11a2 2 0 01-2 2h-11a2 2 0 01-2-2Z',
+        'M8.5 10a1.3 1.3 0 100-2.6 1.3 1.3 0 000 2.6Z',
+        'M4.8 17.2l4.4-4.2 3.1 2.9 2.6-2.4 4.3 3.7',
+      ],
       moreHorizontal: [
         'M6 12h.01',
         'M12 12h.01',
@@ -469,6 +483,19 @@ window.__ModuleLoader__.load({
       'err.plan': '未能理解需求，换个说法或点击下方场景试试',
       'err.incomplete': '表格信息不完整，建议在飞书中查看',
 
+      'file.attach': '添加文件或图片（支持拖拽 / 粘贴）',
+      'file.dropHint': '松开以添加文件',
+      'file.tooLarge': '单个文件不能超过 20 MB',
+      'file.tooMany': '单次最多添加 5 个文件',
+      'file.uploadFailed': '文件上传未完成，请重试',
+      'file.uploadingWait': '文件正在上传，请稍候…',
+      'file.visionUnsupported': '当前模型不支持识图，请切换支持视觉的模型或改传文档',
+      'file.importBadge': '将导入 {n} 条真实数据',
+      'file.defaultPrompt': '已上传 {n} 个文件',
+      'busy.planningTable': '正在规划多维表格结构…',
+      'busy.buildingPreview': '正在组装预览表与示例数据…',
+      'busy.writing': '正在整理回复…',
+
       'gate.step.tool': '准备组件',
       'gate.step.app': '关联应用',
       'gate.step.auth': '授权',
@@ -685,6 +712,19 @@ window.__ModuleLoader__.load({
       'err.network': 'Network error. Check your connection and try again.',
       'err.plan': 'Could not understand the request. Try rephrasing or pick a starter.',
       'err.incomplete': 'Table data is incomplete. Please inspect it in Feishu.',
+
+      'file.attach': 'Attach file or image (drag & drop / paste)',
+      'file.dropHint': 'Drop to attach',
+      'file.tooLarge': 'Each file must be 20 MB or smaller',
+      'file.tooMany': 'Up to 5 files per message',
+      'file.uploadFailed': 'File upload failed. Please try again.',
+      'file.uploadingWait': 'Uploading file…',
+      'file.visionUnsupported': 'Selected model does not support images. Switch model or attach a document.',
+      'file.importBadge': 'Imports {n} real rows',
+      'file.defaultPrompt': 'Attached {n} file(s)',
+      'busy.planningTable': 'Designing Base structure…',
+      'busy.buildingPreview': 'Assembling preview table and sample data…',
+      'busy.writing': 'Drafting response…',
 
       'gate.step.tool': 'Setup',
       'gate.step.app': 'Connect App',
@@ -1072,6 +1112,176 @@ window.__ModuleLoader__.load({
   align-items: center;
   gap: 8px;
   flex: none;
+}
+
+/* Composer Attach Button & Restrained File Pills */
+.lw-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  border: 0;
+  background: transparent;
+  color: var(--lw-ink-3);
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io), transform var(--dur-press) var(--ease-out);
+}
+.lw-attach-btn:hover:not(:disabled) {
+  background: var(--lw-surface-2);
+  color: var(--lw-ink);
+}
+.lw-attach-btn:active:not(:disabled) { transform: scale(0.93); }
+.lw-attach-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.lw-composer.is-drag {
+  box-shadow: 0 0 0 1.5px var(--lw-ink), 0 12px 32px -10px rgba(15, 17, 21, 0.14);
+}
+.lw[data-theme="dark"] .lw-composer.is-drag {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.72), 0 14px 36px -10px rgba(0, 0, 0, 0.72);
+}
+
+.lw-drop-overlay {
+  position: absolute;
+  inset: 4px;
+  z-index: 6;
+  border-radius: calc(var(--r-xl) - 4px);
+  border: 1.5px dashed color-mix(in srgb, var(--lw-ink) 32%, transparent);
+  background: color-mix(in srgb, var(--lw-surface) 88%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--lw-ink);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  animation: lw-fade-scale var(--dur-ui) var(--ease-out) both;
+}
+
+.lw-file-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+@keyframes lw-pill-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes lw-fade-scale {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.lw-file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--lw-line);
+  background: var(--lw-surface-2);
+  color: var(--lw-ink);
+  font-size: 12px;
+  line-height: 1;
+  animation: lw-pill-in var(--dur-ui) var(--ease-spring) both;
+  transition: border-color var(--dur-micro) var(--ease-io), background var(--dur-micro) var(--ease-io);
+}
+.lw-file-pill.is-error {
+  border-color: color-mix(in srgb, var(--lw-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--lw-danger) 8%, var(--lw-surface));
+  color: var(--lw-danger);
+}
+.lw-file-pill-ico {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lw-ink-2);
+}
+.lw-file-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.lw-file-pill-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--lw-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lw-file-pill-rm {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--lw-ink-3);
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io), transform var(--dur-press) var(--ease-out);
+}
+.lw-file-pill-rm:hover {
+  background: color-mix(in srgb, var(--lw-ink) 10%, transparent);
+  color: var(--lw-ink);
+}
+.lw-file-pill-rm:active { transform: scale(0.88); }
+
+.lw-file-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 0;
+  font-size: 11.5px;
+  color: var(--lw-warn, #b45309);
+  animation: lw-pill-in var(--dur-micro) var(--ease-out) both;
+}
+
+.lw-ring {
+  transform: rotate(-90deg);
+}
+.lw-ring-track {
+  stroke: color-mix(in srgb, var(--lw-ink) 16%, transparent);
+}
+.lw-ring-fill {
+  stroke: var(--lw-ink);
+  transition: stroke-dashoffset 140ms linear;
+}
+
+.lw-msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.lw-msg-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: var(--lw-surface-2);
+  border: 1px solid var(--lw-line);
+  font-size: 11.5px;
+  color: var(--lw-ink-2);
+  max-width: 210px;
+}
+.lw-msg-file-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Circular Send / Stop Action */
@@ -2107,6 +2317,16 @@ window.__ModuleLoader__.load({
   max-height: 220px;
   overflow-y: auto;
 }
+.lw-stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 13px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  border-radius: 1px;
+  background: var(--lw-ink-2);
+  animation: lwTextBreath 0.9s var(--ease-io) infinite;
+}
 
 /* Scope Authorization Card */
 .lw-scope-card {
@@ -2957,6 +3177,40 @@ body:has(.lw) [class*="viewArea"] {
       )
     }
 
+    function fileKindIcon(kind, name) {
+      if (kind === 'image' || /\.(png|jpe?g|webp|gif)$/i.test(name || '')) return 'image'
+      if (kind === 'table' || /\.(csv|tsv|xlsx?)$/i.test(name || '')) return 'table'
+      return 'fileText'
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes < 1024) return `${bytes || 0} B`
+      if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    }
+
+    function UploadProgressRing({ progress = 0 }) {
+      const r = 5.5
+      const c = 2 * Math.PI * r
+      const offset = c * (1 - Math.min(100, Math.max(0, progress)) / 100)
+      return h(
+        'svg',
+        { className: 'lw-ring', width: 14, height: 14, viewBox: '0 0 14 14', 'aria-hidden': true },
+        h('circle', { className: 'lw-ring-track', cx: 7, cy: 7, r, fill: 'none', strokeWidth: 1.6 }),
+        h('circle', {
+          className: 'lw-ring-fill',
+          cx: 7,
+          cy: 7,
+          r,
+          fill: 'none',
+          strokeWidth: 1.6,
+          strokeLinecap: 'round',
+          strokeDasharray: c,
+          strokeDashoffset: offset,
+        }),
+      )
+    }
+
     function UnifiedComposer({
       value = '',
       onChange = () => {},
@@ -2969,6 +3223,10 @@ body:has(.lw) [class*="viewArea"] {
       selectedModel = null,
       modelKey = (m) => (m ? `${m.provider || ''}:${m.id || ''}` : ''),
       changeModel = () => {},
+      files = [],
+      onAddFiles = null,
+      onRemoveFile = null,
+      visionWarning = false,
       minHeight = 48,
       id = 'lw-composer-input',
       ariaLabel = '',
@@ -2977,6 +3235,9 @@ body:has(.lw) [class*="viewArea"] {
     }) {
       const innerRef = useRef(null)
       const areaRef = inputRef || innerRef
+      const fileInputRef = useRef(null)
+      const dragDepthRef = useRef(0)
+      const [dragging, setDragging] = useState(false)
 
       useEffect(() => {
         const el = areaRef.current
@@ -2986,11 +3247,112 @@ body:has(.lw) [class*="viewArea"] {
         el.style.height = `${next}px`
       }, [value, minHeight, areaRef])
 
-      const canSend = !busy && !disabled && value.trim().length > 0
+      const hasUploading = files.some((f) => f.status === 'uploading')
+      const hasReadyFile = files.some((f) => f.status === 'ready')
+      const canSend = !busy && !disabled && !hasUploading && !visionWarning && (value.trim().length > 0 || hasReadyFile)
+
+      const handleFiles = (fileList) => {
+        if (!onAddFiles || !fileList || fileList.length === 0) return
+        onAddFiles(fileList)
+      }
 
       return h(
         'div',
-        { className: `lw-composer${busy ? ' is-busy' : ''}` },
+        {
+          className: `lw-composer${busy ? ' is-busy' : ''}${dragging ? ' is-drag' : ''}`,
+          onDragEnter: (e) => {
+            if (!onAddFiles || !e.dataTransfer?.types?.includes('Files')) return
+            e.preventDefault()
+            dragDepthRef.current += 1
+            if (dragDepthRef.current === 1) setDragging(true)
+          },
+          onDragOver: (e) => {
+            if (!onAddFiles || !e.dataTransfer?.types?.includes('Files')) return
+            e.preventDefault()
+          },
+          onDragLeave: (e) => {
+            if (!onAddFiles) return
+            dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+            if (dragDepthRef.current === 0) setDragging(false)
+          },
+          onDrop: (e) => {
+            if (!onAddFiles) return
+            e.preventDefault()
+            dragDepthRef.current = 0
+            setDragging(false)
+            if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files)
+          },
+        },
+        dragging
+          ? h(
+              'div',
+              { className: 'lw-drop-overlay', 'aria-hidden': true },
+              h(Icon, { name: 'paperclip', size: 15 }),
+              h('span', null, t('file.dropHint')),
+            )
+          : null,
+        onAddFiles
+          ? h('input', {
+              ref: fileInputRef,
+              type: 'file',
+              multiple: true,
+              style: { display: 'none' },
+              onChange: (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handleFiles(e.target.files)
+                }
+                e.target.value = ''
+              },
+            })
+          : null,
+        files.length > 0
+          ? h(
+              'div',
+              { className: 'lw-file-strip' },
+              files.map((f) => {
+                const isUploading = f.status === 'uploading'
+                const isError = f.status === 'error'
+                const meta = isUploading
+                  ? `${f.progress || 0}%`
+                  : isError
+                    ? (f.error || t('file.uploadFailed'))
+                    : (f.previewMeta || formatBytes(f.size))
+                return h(
+                  'div',
+                  { key: f.localId, className: `lw-file-pill${isError ? ' is-error' : ''}`, title: f.error || f.name },
+                  h(
+                    'span',
+                    { className: 'lw-file-pill-ico' },
+                    isUploading
+                      ? h(UploadProgressRing, { progress: f.progress })
+                      : h(Icon, { name: isError ? 'alertCircle' : fileKindIcon(f.kind, f.name), size: 13 }),
+                  ),
+                  h('span', { className: 'lw-file-pill-name' }, f.name),
+                  h('span', { className: 'lw-file-pill-meta' }, meta),
+                  onRemoveFile
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'lw-file-pill-rm',
+                          'aria-label': `Remove ${f.name}`,
+                          onClick: () => onRemoveFile(f.localId),
+                        },
+                        h(Icon, { name: 'close', size: 10 }),
+                      )
+                    : null,
+                )
+              }),
+            )
+          : null,
+        visionWarning
+          ? h(
+              'div',
+              { className: 'lw-file-warn', role: 'status' },
+              h(Icon, { name: 'alertCircle', size: 12 }),
+              h('span', null, t('file.visionUnsupported')),
+            )
+          : null,
         h('textarea', {
           id,
           ref: areaRef,
@@ -3004,6 +3366,14 @@ body:has(.lw) [class*="viewArea"] {
           readOnly: Boolean(busy),
           spellCheck: false,
           onChange: (event) => onChange(event.target.value),
+          onPaste: (event) => {
+            if (!onAddFiles || busy) return
+            const pastedFiles = event.clipboardData?.files
+            if (pastedFiles && pastedFiles.length > 0) {
+              event.preventDefault()
+              handleFiles(pastedFiles)
+            }
+          },
           onKeyDown: (event) => {
             // Never misfire during CJK IME composition
             if (event.isComposing || (event.nativeEvent && event.nativeEvent.isComposing) || event.keyCode === 229) {
@@ -3021,6 +3391,20 @@ body:has(.lw) [class*="viewArea"] {
           h(
             'div',
             { className: 'lw-composer-left' },
+            onAddFiles
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lw-attach-btn',
+                    disabled: Boolean(busy),
+                    title: t('file.attach'),
+                    'aria-label': t('file.attach'),
+                    onClick: () => fileInputRef.current?.click(),
+                  },
+                  h(Icon, { name: 'paperclip', size: 14 }),
+                )
+              : null,
             h(ModelPicker, {
               models,
               selectedModel,
@@ -3051,7 +3435,7 @@ body:has(.lw) [class*="viewArea"] {
                     type: 'button',
                     className: 'lw-send-btn',
                     disabled: !canSend,
-                    title: t('pick.send'),
+                    title: hasUploading ? t('file.uploadingWait') : t('pick.send'),
                     'aria-label': t('pick.send'),
                     onClick: () => {
                       if (canSend) onSubmit(value)
@@ -4605,9 +4989,14 @@ body:has(.lw) [class*="viewArea"] {
       const [adjustText, setAdjustText] = useState('')
       const [adjustError, setAdjustError] = useState(null)
       const [liveReasoning, setLiveReasoning] = useState('')
+      const [liveReply, setLiveReply] = useState('')
+      const [liveStage, setLiveStage] = useState('')
       const [confirmPlan, setConfirmPlan] = useState(null)
       const [savedDraft, setSavedDraft] = useState(readSavedDraft)
       const [history, setHistory] = useState([])
+      const [attachments, setAttachments] = useState([])
+      const [sourceAttachment, setSourceAttachment] = useState(null)
+      const uploadAbortsRef = useRef(new Map())
       const [syncingAuth, setSyncingAuth] = useState(false)
       const [syncingTable, setSyncingTable] = useState(false)
       const [syncedTick, setSyncedTick] = useState(false)
@@ -4616,6 +5005,8 @@ body:has(.lw) [class*="viewArea"] {
 
       const authAbortRef = useRef(null)
       const activeRequestAbortRef = useRef(null)
+      const liveThinkingRef = useRef(null)
+      const autoFollowRef = useRef(true)
 
       const [tableOpen, setTableOpen] = useState(() => {
         try {
@@ -4803,15 +5194,22 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [refreshHealth, connected])
 
-      // Smart auto-scroll: only scroll if user is already near bottom
+      // Smart auto-scroll: follow stream continuously unless user deliberately scrolled up
       useEffect(() => {
         const el = chatStreamRef.current
         if (stage !== 'view' || !el) return
-        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-        if (distFromBottom < 140) {
+        if (autoFollowRef.current) {
           el.scrollTop = el.scrollHeight
         }
-      }, [stage, history, busy, liveReasoning])
+      }, [stage, history, busy, liveReasoning, liveReply, liveStage])
+
+      // Keep the internal live-thinking box scrolled to the latest line while streaming
+      useEffect(() => {
+        const box = liveThinkingRef.current
+        if (box && !liveReply) {
+          box.scrollTop = box.scrollHeight
+        }
+      }, [liveReasoning, liveReply])
 
       // Hide host conversation composer via lightweight MutationObserver (no 250ms polling)
       useEffect(() => {
@@ -4889,6 +5287,8 @@ body:has(.lw) [class*="viewArea"] {
         }
         setBusy(null)
         setLiveReasoning('')
+        setLiveReply('')
+        setLiveStage('')
         showToast({ message: t('toast.stopped') })
       }, [showToast, t])
 
@@ -4909,6 +5309,7 @@ body:has(.lw) [class*="viewArea"] {
         setAdjustText('')
         setAdjustError(null)
         setConfirmPlan(null)
+        setSourceAttachment(null)
         setShowDetails(false)
         setCopiedView(false)
         setCompactPane('chat')
@@ -4929,7 +5330,12 @@ body:has(.lw) [class*="viewArea"] {
         setBusy('build')
         setError(null)
         try {
-          const payload = await post('/build', { plan, kanban: true, sample: true })
+          const payload = await post('/build', {
+            plan,
+            kanban: true,
+            sample: true,
+            ...(sourceAttachment?.id ? { importAttachmentId: sourceAttachment.id } : {}),
+          })
           if (!alive.current) return
           if (payload.ok) {
             const item = {
@@ -5046,6 +5452,7 @@ body:has(.lw) [class*="viewArea"] {
           setAdjustError(null)
           setSentence(payload.sentence || payload.plan.baseName || '')
           setPlan(payload.plan)
+          setSourceAttachment(payload.sourceAttachment || null)
           setTweakText('')
           setShowDetails(false)
           setStage('preview')
@@ -5088,10 +5495,144 @@ body:has(.lw) [class*="viewArea"] {
         setConfirmPlan(null)
       }, [t])
 
+      const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+      const MAX_FILES = 5
+
+      const visionWarning = useMemo(() => {
+        const hasImage = attachments.some((a) => a.status !== 'error' && (a.kind === 'image' || /\.(png|jpe?g|webp|gif)$/i.test(a.name || '')))
+        if (!hasImage) return false
+        const mods = selectedModel && Array.isArray(selectedModel.inputModalities) ? selectedModel.inputModalities : null
+        return Boolean(mods && !mods.includes('image'))
+      }, [attachments, selectedModel])
+
+      const removeAttachment = useCallback((localId) => {
+        const controller = uploadAbortsRef.current.get(localId)
+        if (controller) {
+          try { controller.abort() } catch {}
+          uploadAbortsRef.current.delete(localId)
+        }
+        setAttachments((prev) => {
+          const target = prev.find((a) => a.localId === localId)
+          if (target?.id) {
+            authFetch(`${API}/upload?id=${encodeURIComponent(target.id)}`, { method: 'DELETE' }).catch(() => {})
+          }
+          return prev.filter((a) => a.localId !== localId)
+        })
+      }, [])
+
+      const addFiles = useCallback((fileList) => {
+        const incoming = Array.from(fileList || [])
+        if (incoming.length === 0) return
+
+        setAttachments((prev) => {
+          const remaining = MAX_FILES - prev.length
+          if (remaining <= 0) {
+            showToast({ message: t('file.tooMany') })
+            return prev
+          }
+          const accepted = []
+          for (const rawFile of incoming.slice(0, remaining)) {
+            if (rawFile.size > MAX_UPLOAD_BYTES) {
+              showToast({ message: `${rawFile.name}: ${t('file.tooLarge')}` })
+              continue
+            }
+            const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+            const isImg = String(rawFile.type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(rawFile.name || '')
+            accepted.push({
+              localId,
+              name: rawFile.name || 'file',
+              size: rawFile.size,
+              mime: rawFile.type || 'application/octet-stream',
+              kind: isImg ? 'image' : 'text',
+              status: 'uploading',
+              progress: 25,
+              rawFile,
+            })
+          }
+          if (incoming.length > remaining) {
+            showToast({ message: t('file.tooMany') })
+          }
+          for (const entry of accepted) {
+            const controller = new AbortController()
+            uploadAbortsRef.current.set(entry.localId, controller)
+            const q = new URLSearchParams({ name: entry.name, mime: entry.mime })
+            const targetUrl = `${API}/upload?${q.toString()}`
+            const progressTimer = setInterval(() => {
+              if (!alive.current) return
+              setAttachments((curr) => curr.map((a) => (
+                a.localId === entry.localId && a.status === 'uploading' && a.progress < 85
+                  ? { ...a, progress: Math.min(85, a.progress + 12) }
+                  : a
+              )))
+            }, 180)
+
+            authFetch(targetUrl, {
+              method: 'POST',
+              headers: { 'content-type': 'application/octet-stream' },
+              body: entry.rawFile,
+              signal: controller.signal,
+            })
+              .then(async (resp) => {
+                const text = await resp.text().catch(() => '')
+                let parsed = null
+                try { parsed = JSON.parse(text) } catch {}
+                return { status: resp.status, ok: resp.ok, parsed }
+              })
+              .then(({ status, ok, parsed }) => {
+                clearInterval(progressTimer)
+                uploadAbortsRef.current.delete(entry.localId)
+                if (!alive.current || controller.signal.aborted) return
+                if (ok && parsed && parsed.ok && parsed.file) {
+                  const f = parsed.file
+                  setAttachments((curr) => curr.map((a) => (
+                    a.localId === entry.localId
+                      ? {
+                          ...a,
+                          id: f.id,
+                          kind: f.kind,
+                          previewMeta: activeLang === 'en' ? (f.previewMetaEn || f.previewMeta) : f.previewMeta,
+                          totalRows: f.totalRows || 0,
+                          status: 'ready',
+                          progress: 100,
+                        }
+                      : a
+                  )))
+                } else {
+                  const errMsg = parsed?.error || (status ? `HTTP ${status}` : t('file.uploadFailed'))
+                  setAttachments((curr) => curr.map((a) => (
+                    a.localId === entry.localId ? { ...a, status: 'error', error: errMsg } : a
+                  )))
+                }
+              })
+              .catch((err) => {
+                clearInterval(progressTimer)
+                uploadAbortsRef.current.delete(entry.localId)
+                if (!alive.current || controller.signal.aborted) return
+                const errMsg = err instanceof Error ? err.message : t('file.uploadFailed')
+                setAttachments((curr) => curr.map((a) => (
+                  a.localId === entry.localId ? { ...a, status: 'error', error: errMsg } : a
+                )))
+              })
+          }
+          return [...prev, ...accepted.map(({ rawFile, ...rest }) => rest)]
+        })
+      }, [activeLang, showToast, t])
+
       const applyAdjust = useCallback(async (overrideText, options = {}) => {
         if (busy) return
+        const readyFiles = options.attachments || attachments.filter((a) => a.status === 'ready' && a.id)
+        const historyAttachmentIds = []
+        for (const msg of history) {
+          if (msg && msg.role === 'user' && Array.isArray(msg.files)) {
+            for (const f of msg.files) {
+              if (f && f.id) historyAttachmentIds.push(f.id)
+            }
+          }
+        }
+        const newIds = readyFiles.map((f) => f.id)
+        const attachmentIds = [...new Set([...newIds, ...historyAttachmentIds.slice(-5)])].slice(0, 5)
         const text = (typeof overrideText === 'string' ? overrideText : adjustText).trim()
-        if (!text) return
+        if (!text && attachmentIds.length === 0) return
         const isCollab = options.collab || (active && active.type === 'collab') || !active
         const token = (active && active.token) || (active && baseTokenFrom(active.url)) || ''
         if (!token && !isCollab) {
@@ -5107,14 +5648,21 @@ body:has(.lw) [class*="viewArea"] {
           .map((msg) => ({ role: msg.role === 'user' ? 'user' : 'assistant', text: msg.text }))
           .slice(-8)
 
+        const displayFiles = readyFiles.map((f) => ({ id: f.id, name: f.name, kind: f.kind, previewMeta: f.previewMeta }))
+        const displayUserText = text || t('file.defaultPrompt').replace('{n}', String(displayFiles.length))
+
         if (options.retryIndex !== undefined) {
           setHistory((prev) => prev.filter((_, i) => i !== options.retryIndex))
         } else {
-          setHistory((prev) => [...prev, { role: 'user', text }])
+          setHistory((prev) => [...prev, { role: 'user', text: displayUserText, files: displayFiles }])
         }
         setAdjustText('')
+        if (!options.attachments) setAttachments([])
         setBusy('adjust')
+        autoFollowRef.current = true
         setLiveReasoning('')
+        setLiveReply('')
+        setLiveStage('')
         setAdjustError(null)
 
         const controller = new AbortController()
@@ -5131,6 +5679,7 @@ body:has(.lw) [class*="viewArea"] {
                 token: token || '',
                 type: 'collab',
                 instruction: text,
+                attachments: attachmentIds,
                 table: (active && active.table) || '',
                 history: recentHistory,
                 lang: activeLang,
@@ -5170,6 +5719,12 @@ body:has(.lw) [class*="viewArea"] {
                       try {
                         const evt = JSON.parse(trimmed.slice(5).trim())
                         if (evt.type === 'reasoning') setLiveReasoning((prev) => prev + evt.delta)
+                        else if (evt.type === 'reply_delta' && evt.delta) {
+                          setLiveReply((prev) => prev + evt.delta)
+                          setLiveStage((prev) => (prev === 'planning_table' || prev === 'building_preview' ? prev : 'writing'))
+                        }
+                        else if (evt.type === 'stage' && evt.stage) setLiveStage(evt.stage)
+                        else if (evt.type === 'text') setLiveStage((prev) => (prev === 'planning_table' || prev === 'building_preview' ? prev : 'writing'))
                         else if (evt.type === 'done') payload = evt.payload
                       } catch {}
                     }
@@ -5184,6 +5739,7 @@ body:has(.lw) [class*="viewArea"] {
               token: token || '',
               type: isCollab ? 'collab' : 'base',
               instruction: text,
+              attachments: attachmentIds,
               table: (active && active.table) || '',
               history: recentHistory,
               model: selectedModel ? selectedModel.id : undefined,
@@ -5203,13 +5759,27 @@ body:has(.lw) [class*="viewArea"] {
           if (alive.current) {
             setBusy(null)
             setLiveReasoning('')
+            setLiveReply('')
+            setLiveStage('')
           }
         }
       }, [active, adjustText, busy, finishAdjust, history, post, selectedModel, t])
 
       const planFor = useCallback(async (text) => {
-        if (!text || !text.trim() || busy) return
-        const s = text.trim()
+        const readyFiles = attachments.filter((a) => a.status === 'ready' && a.id)
+        const attachmentIds = readyFiles.map((f) => f.id)
+        const s = String(text || '').trim()
+        if ((!s && attachmentIds.length === 0) || busy) return
+        // When files are attached on the home screen, route to the conversational
+        // understanding workspace first instead of assuming table creation upfront.
+        if (attachmentIds.length > 0) {
+          setSentence('')
+          setAttachments([])
+          setError(null)
+          openCollab('')
+          setTimeout(() => { applyAdjust(s, { collab: true, attachments: readyFiles }) }, 0)
+          return
+        }
         setSentence(s)
         setBusy('plan')
         setError(null)
@@ -5218,23 +5788,27 @@ body:has(.lw) [class*="viewArea"] {
         try {
           const payload = await post('/plan', {
             sentence: s,
+            attachments: attachmentIds,
             model: selectedModel ? selectedModel.id : undefined,
             provider: selectedModel ? selectedModel.provider : undefined,
           }, controller.signal)
           if (!alive.current || controller.signal.aborted) return
           if (payload && payload.ok && payload.plan) {
             setPlan(payload.plan)
+            setSourceAttachment(payload.sourceAttachment || null)
+            setAttachments([])
             setTweakText('')
             setShowDetails(false)
             setStage('preview')
             return
           }
           if (payload && payload.isNotTable) {
-            // Seamlessly hand off non-table queries to Lark Assistant
+            // Seamlessly hand off non-table queries (including file Q&A) to Lark Assistant
             if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
             setBusy(null)
-            openCollab(s)
-            setTimeout(() => { applyAdjust(s, { collab: true }) }, 0)
+            setAttachments([])
+            openCollab('')
+            setTimeout(() => { applyAdjust(s, { collab: true, attachments: readyFiles }) }, 0)
             return
           }
           setError(payload?.message || payload?.error || t('error.title'))
@@ -5245,11 +5819,13 @@ body:has(.lw) [class*="viewArea"] {
           if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
           if (alive.current) setBusy(null)
         }
-      }, [busy, post, selectedModel, openCollab, applyAdjust, t])
+      }, [attachments, busy, post, selectedModel, openCollab, applyAdjust, t])
 
       const refine = useCallback(async (extra) => {
-        const clean = extra.trim()
-        if (!clean || busy || !plan) return
+        const readyFiles = attachments.filter((a) => a.status === 'ready' && a.id)
+        const attachmentIds = readyFiles.map((f) => f.id)
+        const clean = String(extra || '').trim()
+        if ((!clean && attachmentIds.length === 0) || busy || !plan) return
         lastRefinePromptRef.current = clean
         const prevPlan = plan
         setBusy('refine')
@@ -5259,6 +5835,7 @@ body:has(.lw) [class*="viewArea"] {
         try {
           const payload = await post('/plan', {
             sentence: clean,
+            attachments: attachmentIds,
             currentPlan: prevPlan,
             model: selectedModel ? selectedModel.id : undefined,
             provider: selectedModel ? selectedModel.provider : undefined,
@@ -5267,6 +5844,7 @@ body:has(.lw) [class*="viewArea"] {
 
           if (payload && payload.ok && payload.action === 'build') {
             setTweakText('')
+            setAttachments([])
             if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
             setBusy(null)
             setTimeout(() => { build() }, 0)
@@ -5275,6 +5853,7 @@ body:has(.lw) [class*="viewArea"] {
 
           if (payload && payload.ok && payload.action === 'keep') {
             setTweakText('')
+            setAttachments([])
             if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current)
             setNudgeBuild(true)
             nudgeTimerRef.current = setTimeout(() => { if (alive.current) setNudgeBuild(false) }, 1600)
@@ -5283,6 +5862,8 @@ body:has(.lw) [class*="viewArea"] {
 
           if (payload && payload.ok && payload.plan) {
             const nextPlan = payload.plan
+            if (payload.sourceAttachment) setSourceAttachment(payload.sourceAttachment)
+            setAttachments([])
             // Compute highlighted fields (server list with client fallback diff)
             let diffNames = Array.isArray(payload.changedFields) ? payload.changedFields : []
             if (diffNames.length === 0) {
@@ -5543,16 +6124,21 @@ body:has(.lw) [class*="viewArea"] {
               if (error) setError(null)
             },
             onSubmit: () => {
-              if (sentence.trim().length >= 2) planFor(sentence)
+              const hasReady = attachments.some((a) => a.status === 'ready')
+              if (sentence.trim().length >= 2 || hasReady) planFor(sentence)
             },
             onStop: planning ? stopActiveRequest : null,
             placeholder: t('pick.placeholder'),
             busy: planning,
-            disabled: !toolOk || sentence.trim().length < 2,
+            disabled: !toolOk || (sentence.trim().length < 2 && !attachments.some((a) => a.status === 'ready')),
             models,
             selectedModel,
             modelKey,
             changeModel,
+            files: attachments,
+            onAddFiles: addFiles,
+            onRemoveFile: removeAttachment,
+            visionWarning,
             minHeight: 62,
             id: 'lw-own',
             ariaLabel: t('pick.own'),
@@ -5728,6 +6314,10 @@ body:has(.lw) [class*="viewArea"] {
                   totalRows > 0 ? h('span', null, `${totalRows} ${t('preview.rows')}`) : null,
                   hasKanban ? h('span', { className: 'lw-preview-sep' }, '·') : null,
                   hasKanban ? h('span', null, t('preview.kanban')) : null,
+                  sourceAttachment && sourceAttachment.totalRows > 0 ? h('span', { className: 'lw-preview-sep' }, '·') : null,
+                  sourceAttachment && sourceAttachment.totalRows > 0
+                    ? h('span', null, t('file.importBadge').replace('{n}', String(sourceAttachment.totalRows)))
+                    : null,
                 ),
               ),
               plan.tables.map((table) =>
@@ -5769,15 +6359,22 @@ body:has(.lw) [class*="viewArea"] {
               h(UnifiedComposer, {
                 value: tweakText,
                 onChange: setTweakText,
-                onSubmit: () => { if (tweakText.trim()) refine(tweakText) },
+                onSubmit: () => {
+                  const hasReady = attachments.some((a) => a.status === 'ready')
+                  if (tweakText.trim() || hasReady) refine(tweakText)
+                },
                 onStop: isRefining ? stopActiveRequest : null,
                 placeholder: t('preview.tweakPlaceholder'),
                 busy: isRefining,
-                disabled: !tweakText.trim(),
+                disabled: !tweakText.trim() && !attachments.some((a) => a.status === 'ready'),
                 models,
                 selectedModel,
                 modelKey,
                 changeModel,
+                files: attachments,
+                onAddFiles: addFiles,
+                onRemoveFile: removeAttachment,
+                visionWarning,
                 minHeight: 46,
                 id: 'lw-tweak',
                 ariaLabel: t('preview.tweakPlaceholder'),
@@ -5833,7 +6430,14 @@ body:has(.lw) [class*="viewArea"] {
 
         const chatFeed = h(
           'div',
-          { ref: chatStreamRef, className: 'lw-chat-stream' },
+          {
+            ref: chatStreamRef,
+            className: 'lw-chat-stream',
+            onScroll: (e) => {
+              const el = e.currentTarget
+              autoFollowRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80
+            },
+          },
           history.length === 0 && busy !== 'adjust' ? emptyState : null,
           history.map((msg, idx) => {
             if (msg.missingScope) {
@@ -5929,6 +6533,20 @@ body:has(.lw) [class*="viewArea"] {
               return h(
                 'div',
                 { key: idx, className: 'lw-msg lw-msg-user' },
+                Array.isArray(msg.files) && msg.files.length > 0
+                  ? h(
+                      'div',
+                      { className: 'lw-msg-files' },
+                      msg.files.map((f, fIdx) =>
+                        h(
+                          'div',
+                          { key: f.id || fIdx, className: 'lw-msg-file-chip', title: f.name },
+                          h(Icon, { name: fileKindIcon(f.kind, f.name), size: 12 }),
+                          h('span', null, f.name),
+                        ),
+                      ),
+                    )
+                  : null,
                 h('div', { className: 'lw-msg-text' }, msg.text),
               )
             }
@@ -5955,9 +6573,42 @@ body:has(.lw) [class*="viewArea"] {
                     'div',
                     { className: 'lw-thinking-head' },
                     h('span', { className: 'lw-dot is-busy' }),
-                    h('span', { className: 'lw-thinking-label' }, t('busy.thinking')),
+                    h(
+                      'span',
+                      { className: 'lw-thinking-label' },
+                      liveStage === 'building_preview'
+                        ? t('busy.buildingPreview')
+                        : liveStage === 'planning_table'
+                          ? t('busy.planningTable')
+                          : liveStage === 'writing'
+                            ? t('busy.writing')
+                            : t('busy.thinking'),
+                    ),
                   ),
-                  liveReasoning ? h('div', { className: 'lw-thinking-content' }, liveReasoning) : null,
+                  liveReasoning
+                    ? h(
+                        'div',
+                        {
+                          ref: liveThinkingRef,
+                          className: 'lw-thinking-content',
+                          style: (liveStage === 'building_preview' || liveReply)
+                            ? { opacity: 0.52, maxHeight: 72, transition: 'opacity var(--dur-ui) var(--ease-out), max-height var(--dur-ui) var(--ease-out)' }
+                            : undefined,
+                        },
+                        liveReasoning,
+                      )
+                    : null,
+                  liveReply
+                    ? h(
+                        'div',
+                        { className: 'lw-msg-text', style: { marginTop: 4 } },
+                        renderMarkdownContent(liveReply),
+                        h('span', { className: 'lw-stream-cursor', 'aria-hidden': true }),
+                      )
+                    : null,
+                  liveStage === 'planning_table' || liveStage === 'building_preview'
+                    ? h('div', { className: 'lw-stage-in', style: { marginTop: 4 } }, h(TableSkeleton))
+                    : null,
                 ),
               )
             : null,
@@ -5996,15 +6647,22 @@ body:has(.lw) [class*="viewArea"] {
                 h(UnifiedComposer, {
                   value: adjustText,
                   onChange: setAdjustText,
-                  onSubmit: () => { if (adjustText.trim()) applyAdjust() },
+                  onSubmit: () => {
+                    const hasReady = attachments.some((a) => a.status === 'ready')
+                    if (adjustText.trim() || hasReady) applyAdjust()
+                  },
                   onStop: busy === 'adjust' ? stopActiveRequest : null,
                   placeholder: isTableMode ? t('view.tablePlaceholder') : t('view.collabPlaceholder'),
                   busy: busy === 'adjust',
-                  disabled: !adjustText.trim(),
+                  disabled: !adjustText.trim() && !attachments.some((a) => a.status === 'ready'),
                   models,
                   selectedModel,
                   modelKey,
                   changeModel,
+                  files: attachments,
+                  onAddFiles: addFiles,
+                  onRemoveFile: removeAttachment,
+                  visionWarning,
                   minHeight: 44,
                   id: 'lw-adjust-input',
                   ariaLabel: isTableMode ? t('view.tablePlaceholder') : t('view.collabPlaceholder'),

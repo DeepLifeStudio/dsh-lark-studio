@@ -690,7 +690,7 @@ test('10.1 旧 /dsh-lark/api HTTP 路由与固定 desktop-workbench 绕过已彻
   apply(mockCtx)
 
   assert.strictEqual(webServerRegisterCalled, false, '不应注册任何旧版 webServer /dsh-lark/api 路由')
-  assert.strictEqual(registeredRoutes.size, 18, '全部 18 个端点应仅通过 DSH Connection Fetch 注册')
+  assert.strictEqual(registeredRoutes.size, 19, '全部 19 个端点应仅通过 DSH Connection Fetch 注册')
 })
 
 test('10.4 DSH Connection Fetch 路由注册与调用测试 (官方 Connection 机制)', async () => {
@@ -2452,6 +2452,151 @@ test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与�
   assert.ok(wvSrc.includes('clearHistory'), '首次跳转到真实 URL 后应清理 about:blank 历史')
   assert.strictEqual(/\[url,\s*retryTick,\s*t\]/.test(wvSrc), false, 'NativeWebview useEffect 不应依赖 t 导致重渲染中断加载')
   assert.ok(clientSrc.includes('reloadTick: webviewReloadTick'), '顶部刷新应联动触发右侧真表重载')
+})
+
+// -------------------------------------------------------------
+// 16. 文件上传、解析暂存、空白输入兜底与真实数据导入验证
+// -------------------------------------------------------------
+test('16.1 file-reader 零依赖解析 (CSV/TSV 嗅探、路径清洗、大小限制、暂存清理)', async () => {
+  const { createFileStaging, buildAttachmentContext, parseDelimitedText, sanitizeFilename } = await import('./file-reader.js')
+  assert.strictEqual(sanitizeFilename('../../etc/passwd'), 'passwd')
+  assert.strictEqual(sanitizeFilename('  '), 'file')
+
+  const csv = '\uFEFF公司名称,联系人,预算\n字节跳动,张三,500000\n"月之暗面, Inc.",李四,300000\n'
+  const parsed = parseDelimitedText(csv)
+  assert.deepStrictEqual(parsed.headers, ['公司名称', '联系人', '预算'])
+  assert.strictEqual(parsed.rows.length, 2)
+  assert.strictEqual(parsed.rows[1]['公司名称'], '月之暗面, Inc.')
+
+  const { mkdtempSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const staging = createFileStaging({ maxBytes: 1024, rootDir: mkdtempSync(join(tmpdir(), 'lw-test-upload-')) })
+  const saved = await staging.saveStream({
+    body: Buffer.from(csv, 'utf8'),
+    name: '../leads.csv',
+    mime: 'text/csv',
+  })
+  assert.strictEqual(saved.name, 'leads.csv')
+  assert.strictEqual(saved.kind, 'table')
+  assert.strictEqual(saved.totalRows, 2)
+
+  const ctxObj = buildAttachmentContext(staging.getMany([saved.id]))
+  assert.ok(ctxObj.promptBlock.includes('Spreadsheet "leads.csv": 2 data rows, 3 columns.'))
+  assert.strictEqual(ctxObj.tableAttachments.length, 1)
+
+  // 超限拦截 413
+  let overErr = null
+  try {
+    await staging.saveStream({ body: Buffer.alloc(2048, 65), name: 'big.txt', mime: 'text/plain' })
+  } catch (e) {
+    overErr = e
+  }
+  assert.ok(overErr && overErr.statusCode === 413)
+
+  assert.strictEqual(await staging.remove(saved.id), true)
+  assert.strictEqual(staging.get(saved.id), null)
+  await staging.dispose()
+})
+
+test('16.2 只传文件不打字时 planner.plan 与 adjustPlanner.plan 正常兜底并透传文件上下文', async () => {
+  let capturedPlannerPrompt = ''
+  const mockCtx = {
+    agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+    llm: {
+      stream({ messages }) {
+        capturedPlannerPrompt = messages[0].content.map((c) => c.text || '').join('')
+        return (async function* () {
+          yield {
+            type: 'text-delta',
+            text: JSON.stringify({
+              isTable: true,
+              baseName: '导入客户表',
+              intro: '根据 CSV 整理客户台账',
+              tables: [{ name: '客户', fields: [{ type: 'text', name: '公司名称', description: '客户公司' }] }],
+            }),
+          }
+        })()
+      },
+    },
+  }
+  const p = createPlanner({ ctx: mockCtx })
+  const res = await p.plan('', undefined, undefined, {
+    attachmentContext: {
+      promptBlock: '<attached_file name="leads.csv">demo</attached_file>',
+      tableAttachments: [{ id: 'f1', name: 'leads.csv', totalRows: 2 }],
+    },
+  })
+  assert.strictEqual(res.ok, true)
+  assert.strictEqual(res.plan.baseName, '导入客户表')
+  assert.ok(capturedPlannerPrompt.includes('leads.csv'))
+
+  let capturedAdjustText = ''
+  const ap = createAdjustPlanner({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ messages }) {
+          const last = messages[messages.length - 1]
+          capturedAdjustText = last.content.map((c) => c.text || '').join('')
+          return (async function* () {
+            yield { type: 'text-delta', text: JSON.stringify({ type: 'answer', reply: '已读取附件内容。' }) }
+          })()
+        },
+      },
+    },
+  })
+  const adjRes = await ap.plan(
+    { instruction: '', attachmentContext: { promptBlock: '<attached_file name="doc.txt">hello</attached_file>' } },
+    { ok: true, tables: [{ name: '表1', fields: [{ name: '名称', type: 'text' }], views: [] }] },
+    { ok: true, rows: [] },
+  )
+  assert.strictEqual(adjRes.ok, true)
+  assert.strictEqual(adjRes.type, 'answer')
+  assert.ok(capturedAdjustText.includes('doc.txt'))
+})
+
+test('16.3 前端上传交互、零 Emoji、动效与防错契约验证', async () => {
+  const { readFileSync } = await import('node:fs')
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  const indexSrc = readFileSync(new URL('./index.js', import.meta.url), 'utf8')
+  assert.ok(indexSrc.includes("path: '/api/dsh-lark/upload'") && indexSrc.includes("requestBody: 'streaming'"))
+  assert.ok(clientSrc.includes('lw-drop-overlay') && clientSrc.includes('lw-file-pill') && clientSrc.includes('lw-ring-fill'))
+  assert.ok(clientSrc.includes('visionWarning') && clientSrc.includes('inputModalities'))
+  assert.ok(clientSrc.includes('onPaste:') && clientSrc.includes('onDrop:'))
+  assert.strictEqual(/[\u{1F300}-\u{1FAFF}]/u.test(clientSrc), false, 'client.js 不应包含任何 Emoji')
+  assert.strictEqual(indexSrc.includes("Reflect.get(ctx, 'attachments')"), false, '可选服务 attachments 必须使用 ctx.get，禁止绕过 Cordis inject proxy')
+  assert.ok(clientSrc.includes('historyAttachmentIds'), '多轮对话应自动续传本会话已上传的附件 ID')
+
+  // 模型返回自然语言而非 JSON 时，planner.plan 应转为 isNotTable 而非报错
+  const textFallbackPlanner = createPlanner({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream() {
+          return (async function* () {
+            yield { type: 'text-delta', text: '这是一份峰会项目管理系统搭建需求文档，包含三张核心表和报价要求。' }
+          })()
+        },
+      },
+    },
+  })
+  const fallbackRes = await textFallbackPlanner.plan('这是什么表')
+  assert.strictEqual(fallbackRes.ok, false)
+  assert.strictEqual(fallbackRes.isNotTable, true)
+
+  // parsePlanText 容错：字符串内未转义换行、尾随逗号，以及不硬编码低 maxTokens 饿死思考模型
+  const { parsePlanText } = await import('./planner.js')
+  const dirtyJson = '```json\n{\n  "isTable": true,\n  "baseName": "Summit Project Tracker",\n  "intro": "Line1\nLine2",\n  "tables": [{\n    "name": "Master Tracker",\n    "fields": [\n      {"type": "text", "name": "Item"},\n      {"type": "url", "name": "Link"},\n      {"type": "currency", "name": "Budget"},\n    ],\n  }],\n}\n```'
+  const parsedDirty = parsePlanText(dirtyJson)
+  assert.ok(parsedDirty && parsedDirty.isTable === true)
+  const sanitizedDirty = sanitizePlan(parsedDirty, 'en')
+  assert.strictEqual(sanitizedDirty.ok, true)
+  assert.strictEqual(sanitizedDirty.plan.tables[0].fields[1].style.type, 'url')
+  assert.strictEqual(sanitizedDirty.plan.tables[0].fields[2].type, 'number')
+  const plannerSrc = readFileSync(new URL('./planner.js', import.meta.url), 'utf8')
+  assert.strictEqual(/maxTokens\s*:/.test(plannerSrc), false, 'planner.js 不应硬编码小 maxTokens 截断 DeepSeek 思考模型输出')
+  assert.ok(clientSrc.includes('liveReply') && clientSrc.includes('reply_delta'), '前端应支持实时流式渲染 reply_delta')
 })
 
 Promise.all(pendingTests).then(() => {

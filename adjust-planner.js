@@ -524,7 +524,6 @@ export function createAdjustPlanner({ ctx, config = {} }) {
         system,
         messages,
         temperature,
-        maxTokens: 1500,
         signal,
       }),
     )
@@ -546,16 +545,24 @@ export function createAdjustPlanner({ ctx, config = {} }) {
     }
 
     const options = typeof input === 'string' ? { instruction: input } : (input || {})
-    const instruction = clip(options.instruction || '', 500)
+    const rawInstruction = clip(options.instruction || '', 500)
     const history = Array.isArray(options.history) ? options.history : []
-    const lang = resolveLang(options.lang, instruction)
+    const attachmentPrompt = options.attachmentContext?.promptBlock || ''
+    const imageBlocks = Array.isArray(options.imageBlocks) ? options.imageBlocks : []
+    const hasAttachments = Boolean(attachmentPrompt) || imageBlocks.length > 0
+    const lang = resolveLang(options.lang, rawInstruction)
     const isEn = lang === 'en'
+    const instruction = rawInstruction || (hasAttachments
+      ? (isEn
+          ? 'Analyze the attached file(s) in the context of the current Base table. Summarize what you found and ask or suggest whether to add columns or import rows.'
+          : '请结合当前多维表格结构阅读我上传的文件内容：先简要说明文件里有什么，如有适合录入当前表的数据或需补充的字段，请给出建议或询问是否直接写入。')
+      : '')
     const customRoute = {
       model: options.model,
       provider: options.provider,
     }
 
-    if (instruction.length < 1) {
+    if (instruction.length < 1 && !hasAttachments) {
       return {
         ok: false,
         message: isEn
@@ -601,9 +608,10 @@ export function createAdjustPlanner({ ctx, config = {} }) {
     }
 
     // Current turn
+    const currentText = attachmentPrompt ? `${instruction}\n\n${attachmentPrompt}` : instruction
     messages.push({
       role: 'user',
-      content: [{ type: 'text', text: instruction }],
+      content: [{ type: 'text', text: currentText }, ...imageBlocks],
     })
 
     const guard = withTimeout(signal, actualTimeout)

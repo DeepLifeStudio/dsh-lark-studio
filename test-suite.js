@@ -2312,6 +2312,17 @@ test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与�
   assert.strictEqual(enPlanRes.ok, true)
   assert.ok(plannerSys.includes('The active UI/user language is English'))
   assert.strictEqual(enPlanRes.plan.baseName, 'Customer Leads')
+
+  // 6. NativeWebview 生命周期健壮性：不依赖 t、过滤 isMainFrame、支持可见延后挂载与顶部刷新联动重载
+  const wvStart = clientSrc.indexOf('function NativeWebview(')
+  const wvEnd = clientSrc.indexOf('function renderInlineText(', wvStart)
+  const wvSrc = clientSrc.slice(wvStart, wvEnd)
+  assert.ok(wvSrc.includes('hasBeenVisible'), 'NativeWebview 应延后至可见后再首次挂载')
+  assert.ok(wvSrc.includes('e.isMainFrame !== false'), 'did-fail-load 必须仅处理主框架失败')
+  assert.ok(wvSrc.includes('render-process-gone'), 'NativeWebview 必须处理渲染进程崩溃恢复')
+  assert.ok(wvSrc.includes('clearHistory'), '首次跳转到真实 URL 后应清理 about:blank 历史')
+  assert.strictEqual(/\[url,\s*retryTick,\s*t\]/.test(wvSrc), false, 'NativeWebview useEffect 不应依赖 t 导致重渲染中断加载')
+  assert.ok(clientSrc.includes('reloadTick: webviewReloadTick'), '顶部刷新应联动触发右侧真表重载')
 })
 
 Promise.all(pendingTests).then(() => {

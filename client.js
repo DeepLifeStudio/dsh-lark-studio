@@ -1924,6 +1924,7 @@ window.__ModuleLoader__.load({
   pointer-events: none;
 }
 .lw-wv-veil.is-ready { opacity: 0; }
+.lw-wv-veil.is-slow { pointer-events: auto; }
 .lw-wv-error {
   position: absolute;
   inset: 0;
@@ -3688,62 +3689,124 @@ body:has(.lw) [class*="viewArea"] {
 
     // ── Native Webview (Theme-Aware Loading Veil + Proper Lease Cleanup) ───
 
-    function NativeWebview({ url, t }) {
+    function NativeWebview({ url, visible = true, reloadTick = 0, t }) {
       const containerRef = useRef(null)
       const webviewInstanceRef = useRef(null)
       const leaseRef = useRef(null)
+      const guestAbortRef = useRef(null)
+      const readyRef = useRef(false)
+      const firstDocRef = useRef(true)
+      const pendingUrlRef = useRef('')
       const loadedUrlRef = useRef('')
+      const lastReloadTickRef = useRef(reloadTick)
+      const tRef = useRef(t)
+      tRef.current = t
+
+      const [hasBeenVisible, setHasBeenVisible] = useState(Boolean(visible))
       const [loading, setLoading] = useState(true)
+      const [slowLoad, setSlowLoad] = useState(false)
       const [error, setError] = useState(null)
       const [retryTick, setRetryTick] = useState(0)
 
-      // Release Electron browser lease cleanly on unmount
       useEffect(() => {
-        return () => {
-          const lease = leaseRef.current
-          leaseRef.current = null
-          const desktop = typeof window !== 'undefined' && window.dshDesktop && window.dshDesktop.browser
-          if (lease && desktop && typeof desktop.release === 'function') {
-            desktop.release(lease).catch(() => {})
-          }
+        if (visible) setHasBeenVisible(true)
+      }, [visible])
+
+      // Surface quiet retry action only if initial load stalls > 12s
+      useEffect(() => {
+        if (!loading || error || !hasBeenVisible) {
+          setSlowLoad(false)
+          return undefined
+        }
+        const timer = setTimeout(() => setSlowLoad(true), 12000)
+        return () => clearTimeout(timer)
+      }, [loading, error, hasBeenVisible, retryTick, reloadTick])
+
+      const dropGuest = useCallback(() => {
+        if (guestAbortRef.current) {
+          guestAbortRef.current.abort()
+          guestAbortRef.current = null
+        }
+        readyRef.current = false
+        firstDocRef.current = true
+        if (webviewInstanceRef.current) {
+          try { webviewInstanceRef.current.remove() } catch {}
+          webviewInstanceRef.current = null
+        }
+        const lease = leaseRef.current
+        leaseRef.current = null
+        const desktop = typeof window !== 'undefined' && window.dshDesktop && window.dshDesktop.browser
+        if (lease && desktop && typeof desktop.release === 'function') {
+          desktop.release(lease).catch(() => {})
         }
       }, [])
 
+      // Release Electron browser lease cleanly on unmount
+      useEffect(() => () => dropGuest(), [dropGuest])
+
       useEffect(() => {
         const container = containerRef.current
-        if (!container || !url) return undefined
-        if (webviewInstanceRef.current && loadedUrlRef.current === url && retryTick === 0) return undefined
+        if (!container || !url || !hasBeenVisible) return undefined
 
-        let disposed = false
+        const isManualReload = reloadTick !== lastReloadTickRef.current
+        lastReloadTickRef.current = reloadTick
+
+        if (webviewInstanceRef.current && loadedUrlRef.current === url && retryTick === 0 && !isManualReload) {
+          return undefined
+        }
+
+        let cancelled = false
+
+        const navigateGuest = (el, targetUrl, forceReload) => {
+          pendingUrlRef.current = targetUrl
+          loadedUrlRef.current = targetUrl
+          setLoading(true)
+          setSlowLoad(false)
+          setError(null)
+          if (typeof el.loadURL === 'function') {
+            if (!readyRef.current) return
+            try {
+              const cur = typeof el.getURL === 'function' ? el.getURL() : ''
+              const op = forceReload && cur && !cur.startsWith('about:blank') && typeof el.reload === 'function'
+                ? Promise.resolve(el.reload())
+                : Promise.resolve(el.loadURL(targetUrl))
+              op.catch((err) => {
+                if (cancelled) return
+                if (err && (err.code === 'ERR_ABORTED' || err.errno === -3)) return
+                setLoading(false)
+                setError(String((err && err.message) || err))
+              })
+            } catch (err) {
+              setLoading(false)
+              setError(String((err && err.message) || err))
+            }
+          } else {
+            el.src = targetUrl
+          }
+        }
 
         async function initWebview() {
-          if (webviewInstanceRef.current) {
-            loadedUrlRef.current = url
-            setLoading(true)
-            setError(null)
-            try {
-              if (typeof webviewInstanceRef.current.loadURL === 'function') {
-                webviewInstanceRef.current.loadURL(url)
-              } else {
-                webviewInstanceRef.current.src = url
-              }
-            } catch {
-              webviewInstanceRef.current.src = url
-            }
+          // If an existing healthy guest is mounted, navigate/reload in place without tearing down partition/session
+          if (webviewInstanceRef.current && !error) {
+            navigateGuest(webviewInstanceRef.current, url, isManualReload || retryTick > 0)
             return
           }
 
-          setLoading(true)
-          setError(null)
+          if (webviewInstanceRef.current) dropGuest()
+
+          pendingUrlRef.current = url
           loadedUrlRef.current = url
+          setLoading(true)
+          setSlowLoad(false)
+          setError(null)
 
           const desktop = window.dshDesktop && window.dshDesktop.browser
           if (!desktop || typeof desktop.acquire !== 'function') {
             const iframe = document.createElement('iframe')
             iframe.src = url
             iframe.style.cssText = 'width:100%;height:100%;border:none;flex:1;background:transparent;'
-            iframe.onload = () => { if (!disposed) setLoading(false) }
-            iframe.onerror = () => { if (!disposed) { setLoading(false); setError(t('view.webviewError')) } }
+            iframe.onload = () => { if (!cancelled) setLoading(false) }
+            iframe.onerror = () => { if (!cancelled) { setLoading(false); setError(tRef.current('view.webviewError')) } }
             container.innerHTML = ''
             container.appendChild(iframe)
             webviewInstanceRef.current = iframe
@@ -3752,11 +3815,14 @@ body:has(.lw) [class*="viewArea"] {
 
           try {
             const reservation = await desktop.acquire('workspace:lark')
-            if (disposed) {
+            if (cancelled) {
               desktop.release(reservation.lease).catch(() => {})
               return
             }
             leaseRef.current = reservation.lease
+            const guestAbort = new AbortController()
+            guestAbortRef.current = guestAbort
+            const { signal } = guestAbort
 
             const webview = document.createElement('webview')
             webview.style.cssText = 'width:100%;height:100%;border:none;flex:1 1 auto;min-width:0;min-height:0;display:flex;'
@@ -3766,40 +3832,73 @@ body:has(.lw) [class*="viewArea"] {
             webview.setAttribute('allowpopups', '')
             webview.setAttribute('src', 'about:blank#' + reservation.lease)
 
-            let loaded = false
             webview.addEventListener('dom-ready', () => {
-              if (disposed) return
-              if (!loaded) {
-                loaded = true
-                webview.loadURL(url)
+              if (signal.aborted) return
+              readyRef.current = true
+              const target = pendingUrlRef.current
+              if (target) {
+                pendingUrlRef.current = ''
+                Promise.resolve(webview.loadURL(target)).catch((err) => {
+                  if (signal.aborted) return
+                  if (err && (err.code === 'ERR_ABORTED' || err.errno === -3)) return
+                  setLoading(false)
+                  setError(String((err && err.message) || err))
+                })
               }
-            })
+            }, { signal })
+
+            webview.addEventListener('did-navigate', () => {
+              if (signal.aborted || !readyRef.current) return
+              try {
+                const cur = typeof webview.getURL === 'function' ? webview.getURL() : ''
+                if (firstDocRef.current && /^https?:/i.test(cur)) {
+                  firstDocRef.current = false
+                  if (typeof webview.clearHistory === 'function') webview.clearHistory()
+                }
+              } catch {}
+            }, { signal })
+
             webview.addEventListener('did-finish-load', () => {
-              if (!disposed && loaded) setLoading(false)
-            })
+              if (!signal.aborted && readyRef.current && !firstDocRef.current) setLoading(false)
+            }, { signal })
             webview.addEventListener('did-stop-loading', () => {
-              if (!disposed && loaded) setLoading(false)
-            })
+              if (!signal.aborted && readyRef.current) {
+                try {
+                  const cur = typeof webview.getURL === 'function' ? webview.getURL() : ''
+                  if (!cur || !cur.startsWith('about:blank')) setLoading(false)
+                } catch {
+                  setLoading(false)
+                }
+              }
+            }, { signal })
             webview.addEventListener('did-fail-load', (e) => {
-              if (disposed) return
-              if (e.errorCode !== -3) {
+              if (signal.aborted) return
+              if (e.isMainFrame !== false && e.errorCode !== -3) {
                 setLoading(false)
                 setError(e.errorDescription || String(e.errorCode))
               }
-            })
+            }, { signal })
+            const onCrash = () => {
+              if (signal.aborted) return
+              dropGuest()
+              setLoading(false)
+              setError(tRef.current('view.webviewError'))
+            }
+            webview.addEventListener('render-process-gone', onCrash, { signal })
+            webview.addEventListener('destroyed', onCrash, { signal })
 
             if (typeof desktop.onOpenRequested === 'function') {
               const unsub = desktop.onOpenRequested(reservation.lease, (openUrl) => {
-                window.open(openUrl, '_blank', 'noopener')
+                if (!signal.aborted) window.open(openUrl, '_blank', 'noopener')
               })
-              webview.addEventListener('destroyed', unsub, { once: true })
+              signal.addEventListener('abort', unsub, { once: true })
             }
 
             container.innerHTML = ''
             container.appendChild(webview)
             webviewInstanceRef.current = webview
           } catch (err) {
-            if (!disposed) {
+            if (!cancelled) {
               setLoading(false)
               setError(String((err && err.message) || err))
             }
@@ -3807,8 +3906,8 @@ body:has(.lw) [class*="viewArea"] {
         }
 
         initWebview()
-        return () => { disposed = true }
-      }, [url, retryTick, t])
+        return () => { cancelled = true }
+      }, [url, hasBeenVisible, retryTick, reloadTick, dropGuest])
 
       return h(
         'div',
@@ -3817,9 +3916,12 @@ body:has(.lw) [class*="viewArea"] {
         !error
           ? h(
               'div',
-              { className: `lw-wv-veil${loading ? '' : ' is-ready'}`, 'aria-hidden': !loading },
+              { className: `lw-wv-veil${loading ? '' : ' is-ready'}${loading && slowLoad ? ' is-slow' : ''}`, 'aria-hidden': !loading },
               h(Icon, { name: 'refresh', size: 16, className: loading ? 'lw-spin' : undefined }),
               h('span', null, t('view.webviewLoading')),
+              loading && slowLoad
+                ? h(Button, { size: 'sm', variant: 'ghost', onClick: () => setRetryTick((n) => n + 1) }, t('error.retry'))
+                : null,
             )
           : null,
         error
@@ -4339,6 +4441,7 @@ body:has(.lw) [class*="viewArea"] {
       const [syncingAuth, setSyncingAuth] = useState(false)
       const [syncingTable, setSyncingTable] = useState(false)
       const [syncedTick, setSyncedTick] = useState(false)
+      const [webviewReloadTick, setWebviewReloadTick] = useState(0)
       const [compactPane, setCompactPane] = useState('chat') // 'chat' | 'table' on compact containers
 
       const authAbortRef = useRef(null)
@@ -4688,7 +4791,10 @@ body:has(.lw) [class*="viewArea"] {
         if (!item) return
         const token = item.token || baseTokenFrom(item.url)
         if (!token) return
-        if (showFeedback) setSyncingTable(true)
+        if (showFeedback) {
+          setSyncingTable(true)
+          setWebviewReloadTick((n) => n + 1)
+        }
         try {
           const query = new URLSearchParams({ token, limit: '12' })
           if (item.table) query.set('table', item.table)
@@ -5900,7 +6006,13 @@ body:has(.lw) [class*="viewArea"] {
                     className: `lw-ws-right${!showWebviewPane ? ' is-hidden' : ''}`,
                     style: { pointerEvents: isResizing ? 'none' : 'auto' },
                   },
-                  h(NativeWebview, { url: active.url, t, key: 'persistent-lark-webview' }),
+                  h(NativeWebview, {
+                    url: active.url,
+                    visible: showWebviewPane,
+                    reloadTick: webviewReloadTick,
+                    t,
+                    key: 'persistent-lark-webview',
+                  }),
                 )
               : null,
           ),

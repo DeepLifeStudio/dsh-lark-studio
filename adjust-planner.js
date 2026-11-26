@@ -205,19 +205,6 @@ export function sanitizeOps(raw, instruction = '', history = [], langInput = 'zh
     if (replyText) {
       return { ok: true, type: 'answer', reply: replyText, ops: [] }
     }
-    // Intelligent fallback for query questions like "总结", "加了什么", "刚才"
-    const isQuery = /总结|加了什么|刚才|刚刚|是什么|有哪些|列出|说明|为什么|summary|what|which|list|explain|why/i.test(instruction)
-    if (isQuery && Array.isArray(history) && history.length > 0) {
-      const lastAiMsg = [...history].reverse().find((m) => m && (m.role === 'assistant' || m.role === 'model') && m.text)
-      if (lastAiMsg) {
-        return {
-          ok: true,
-          type: 'answer',
-          reply: isEn ? `Previous result:\n${lastAiMsg.text}` : `回顾上一轮操作结果：\n${lastAiMsg.text}`,
-          ops: [],
-        }
-      }
-    }
     return {
       ok: false,
       message: isEn

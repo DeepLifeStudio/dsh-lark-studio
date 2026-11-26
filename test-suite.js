@@ -171,15 +171,18 @@ test('2.1 问答模式 - 自然语言查询回答识别', () => {
   assert.ok(result.reply.includes('共有 3 条记录'))
 })
 
-test('2.2 问答模式 - 追问上一轮结果的兜底机制', () => {
+test('2.2 问答模式 - 空操作附带大模型 reply 正常透传，无 reply 时不靠正则机械复读', () => {
   const history = [
     { role: 'user', text: '加一条任务' },
     { role: 'assistant', text: '已为您添加一条记录：写周报' }
   ]
-  const result = sanitizeOps({ ops: [] }, '刚刚加了什么', history)
-  assert.strictEqual(result.ok, true)
-  assert.strictEqual(result.type, 'answer')
-  assert.ok(result.reply.includes('写周报'))
+  const noReplyRes = sanitizeOps({ ops: [] }, '刚刚加了什么', history)
+  assert.strictEqual(noReplyRes.ok, false)
+
+  const llmReplyRes = sanitizeOps({ ops: [], reply: '上一轮已为您添加记录「写周报」。' }, '刚刚加了什么', history)
+  assert.strictEqual(llmReplyRes.ok, true)
+  assert.strictEqual(llmReplyRes.type, 'answer')
+  assert.ok(llmReplyRes.reply.includes('写周报'))
 })
 
 // -------------------------------------------------------------
@@ -549,7 +552,26 @@ test('9.1 全域权限大盘与 22 领域能力解析 (ops.getScopes)', async ()
 })
 
 test('9.2 协同指令意图分发与权限优雅降级引导 (ops.dispatchCollab)', async () => {
-  const ops = createOperations({ ctx: { subprocess: realSubprocess } }, process.cwd())
+  const collabMockCtx = {
+    subprocess: realSubprocess,
+    agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+    llm: {
+      stream({ system, messages }) {
+        const userText = String(messages?.[messages.length - 1]?.content?.[0]?.text || messages?.[messages.length - 1]?.text || '')
+        let out = { action: 'reply', reply: '您好，有什么可以帮您？' }
+        if (system.includes('可用 action 列表')) {
+          if (userText.includes('日程')) out = { action: 'get_calendar' }
+          else if (userText.includes('待办清单')) out = { action: 'get_tasks' }
+          else if (userText.includes('台账数据表')) out = { action: 'suggest_create_table' }
+          else if (userText.includes('谢谢')) out = { action: 'reply', reply: '不客气，随时为您效劳！' }
+        }
+        return (async function* () {
+          yield { type: 'text-delta', text: JSON.stringify(out) }
+        })()
+      },
+    },
+  }
+  const ops = createOperations({ ctx: collabMockCtx }, process.cwd())
   assert.strictEqual(typeof ops.dispatchCollab, 'function')
 
   // 测试日历意图识别与缺失权限引导卡片数据结构
@@ -643,7 +665,19 @@ test('9.3 前端多态自适应逻辑校验 (isTableMode 判定与操作栏收�
 })
 
 test('9.4 飞书全域协同指令与 lark_collab 调度验证', async () => {
-  const ops = createOperations({ ctx: { subprocess: realSubprocess } }, process.cwd())
+  const ops = createOperations({
+    ctx: {
+      subprocess: realSubprocess,
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream() {
+          return (async function* () {
+            yield { type: 'text-delta', text: JSON.stringify({ action: 'get_calendar' }) }
+          })()
+        },
+      },
+    },
+  }, process.cwd())
   const res = await ops.dispatchCollab({ instruction: '查一下我今天的日程安排与会议' })
   assert.strictEqual(typeof res.ok, 'boolean')
   assert.strictEqual(res.domain, 'calendar')
@@ -651,7 +685,19 @@ test('9.4 飞书全域协同指令与 lark_collab 调度验证', async () => {
 })
 
 test('9.5 飞书团队知识库与云文档检索调度验证', async () => {
-  const ops = createOperations({ ctx: { subprocess: realSubprocess } }, process.cwd())
+  const ops = createOperations({
+    ctx: {
+      subprocess: realSubprocess,
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream() {
+          return (async function* () {
+            yield { type: 'text-delta', text: JSON.stringify({ action: 'search_wiki', query: '最新规范' }) }
+          })()
+        },
+      },
+    },
+  }, process.cwd())
   const res = await ops.dispatchCollab({ instruction: '在团队知识库中搜索最新规范' })
   assert.strictEqual(typeof res.ok, 'boolean')
   assert.strictEqual(res.domain, 'wiki')
@@ -1364,26 +1410,34 @@ test('14.2 预览增量微调、认可/确认意图分流与变更列识别 (pla
       stream({ messages }) {
         llmCalls++
         lastUserPrompt = messages[0].content[0].text
+        let payload
+        if (lastUserPrompt.includes('本次修改意见：不错，建吧') || lastUserPrompt.includes('本次修改意见：确认建表')) {
+          payload = { action: 'build' }
+        } else if (lastUserPrompt.includes('本次修改意见：不错')) {
+          payload = { action: 'keep' }
+        } else {
+          payload = {
+            isTable: true,
+            baseName: '客户往来台账',
+            intro: '记录客户推进阶段与下次联系时间',
+            tables: [{
+              name: '客户表',
+              kanbanField: '销售阶段',
+              fields: [
+                { name: '公司名称', type: 'text', description: '客户公司全称' },
+                { name: '销售阶段', type: 'select', description: '当前阶段', options: [{ name: '初访' }, { name: '签约' }] },
+                { name: '优先级', type: 'select', description: '客户跟进优先级', options: [{ name: '高' }, { name: '中' }, { name: '低' }] },
+              ],
+              records: [
+                { 公司名称: '杭州云栖智能科技', 销售阶段: ['初访'], 优先级: ['高'] },
+              ],
+            }],
+          }
+        }
         return (async function* () {
           yield {
             type: 'text-delta',
-            text: JSON.stringify({
-              isTable: true,
-              baseName: '客户往来台账',
-              intro: '记录客户推进阶段与下次联系时间',
-              tables: [{
-                name: '客户表',
-                kanbanField: '销售阶段',
-                fields: [
-                  { name: '公司名称', type: 'text', description: '客户公司全称' },
-                  { name: '销售阶段', type: 'select', description: '当前阶段', options: [{ name: '初访' }, { name: '签约' }] },
-                  { name: '优先级', type: 'select', description: '客户跟进优先级', options: [{ name: '高' }, { name: '中' }, { name: '低' }] },
-                ],
-                records: [
-                  { 公司名称: '杭州云栖智能科技', 销售阶段: ['初访'], 优先级: ['高'] },
-                ],
-              }],
-            }),
+            text: JSON.stringify(payload),
           }
         })()
       },
@@ -1392,14 +1446,13 @@ test('14.2 预览增量微调、认可/确认意图分流与变更列识别 (pla
 
   const planner = createPlanner({ ctx: mockCtx })
 
-  // 1. 认可评价词（「不错」/「可以」）：零重生成，不调模型，保持原表不变
+  // 1. 认可评价词（「不错」）：由大模型原生识别为 keep，保持原表不变
   const keepRes = await planner.plan('不错', undefined, undefined, { currentPlan: basePlan })
   assert.strictEqual(keepRes.ok, true)
   assert.strictEqual(keepRes.action, 'keep')
   assert.strictEqual(keepRes.plan, basePlan)
-  assert.strictEqual(llmCalls, 0, '纯认可词不应触发模型重写')
 
-  // 2. 明确确认建表指令（「确认建表」或「不错，建吧」）：返回 build 动作，不调模型
+  // 2. 明确确认建表指令（「确认建表」或「不错，建吧」）：由大模型原生返回 build 动作
   const buildRes = await planner.plan('确认建表', undefined, undefined, { currentPlan: basePlan })
   assert.strictEqual(buildRes.ok, true)
   assert.strictEqual(buildRes.action, 'build')
@@ -1407,13 +1460,13 @@ test('14.2 预览增量微调、认可/确认意图分流与变更列识别 (pla
   const comboBuildRes = await planner.plan('不错，建吧', undefined, undefined, { currentPlan: basePlan })
   assert.strictEqual(comboBuildRes.ok, true)
   assert.strictEqual(comboBuildRes.action, 'build')
-  assert.strictEqual(llmCalls, 0)
+  assert.strictEqual(llmCalls, 3)
 
   // 3. 局部增量修改（「增加一列优先级」）：携带 currentPlan 进模型，保留旧值并返回 changedFields
   const updateRes = await planner.plan('增加一列优先级', undefined, undefined, { currentPlan: basePlan })
   assert.strictEqual(updateRes.ok, true)
   assert.strictEqual(updateRes.action, 'update')
-  assert.strictEqual(llmCalls, 1)
+  assert.strictEqual(llmCalls, 4)
   assert.ok(lastUserPrompt.includes('杭州云栖智能科技'), '增量微调必须把现有草稿传给模型')
   assert.deepStrictEqual(updateRes.changedFields, ['优先级'])
   assert.strictEqual(updateRes.plan.tables[0].records[0]['公司名称'], '杭州云栖智能科技')
@@ -2163,7 +2216,7 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
                 } else {
                   yield {
                     type: 'text-delta',
-                    text: JSON.stringify({ argv: ['approval', '+task-list'], readonly: true }),
+                    text: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], readonly: true }),
                   }
                 }
               } else {
@@ -2191,11 +2244,11 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
             if (argv.includes('skills') && argv.includes('read') && argv.includes('lark-approval')) {
               readSkillGuideCalled = true
               return {
-                done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\nUse `lark-cli approval +task-list` to query pending approvals.', stderr: '' }),
+                done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\nUse `lark-cli approval tasks query --topic 1` to query pending approvals.', stderr: '' }),
                 terminate() {},
               }
             }
-            if (argv.includes('approval') && argv.includes('+task-list')) {
+            if (argv.includes('approval') && argv.includes('tasks') && argv.includes('query')) {
               if (mode === 'missing_scope') {
                 return {
                   done: Promise.resolve({
@@ -2387,7 +2440,7 @@ test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与�
             if (system.includes('可用 action 列表')) {
               yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
             } else if (system.includes('精通飞书 CLI')) {
-              yield { type: 'text-delta', text: JSON.stringify({ argv: ['approval', '+task-list'], readonly: true }) }
+              yield { type: 'text-delta', text: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], readonly: true }) }
             } else {
               yield { type: 'text-delta', text: 'You have 1 pending leave approval.' }
             }
@@ -2597,6 +2650,443 @@ test('16.3 前端上传交互、零 Emoji、动效与防错契约验证', async 
   const plannerSrc = readFileSync(new URL('./planner.js', import.meta.url), 'utf8')
   assert.strictEqual(/maxTokens\s*:/.test(plannerSrc), false, 'planner.js 不应硬编码小 maxTokens 截断 DeepSeek 思考模型输出')
   assert.ok(clientSrc.includes('liveReply') && clientSrc.includes('reply_delta'), '前端应支持实时流式渲染 reply_delta')
+})
+
+test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护', async () => {
+  const { fileURLToPath } = await import('node:url')
+  const { validateReadonlySkillArgv, normalizeSkillArgvWithDomain, READONLY_SKILL_COMMANDS } = await import('./readonly-allowlist.js')
+  assert.ok(Object.keys(READONLY_SKILL_COMMANDS).length >= 200)
+
+  // 0. 官方 SKILL.md 省略域名时的自动补全（防止误杀且确保命令真实可执行）
+  assert.deepStrictEqual(normalizeSkillArgvWithDomain(['tasks', 'query', '--topic', '1'], 'lark-approval'), ['approval', 'tasks', 'query', '--topic', '1'])
+  assert.deepStrictEqual(normalizeSkillArgvWithDomain(['+cycle-list'], 'lark-okr'), ['okr', '+cycle-list'])
+  assert.deepStrictEqual(normalizeSkillArgvWithDomain(['+detail', '--minute-tokens', 'm1'], 'lark-meeting'), ['minutes', '+detail', '--minute-tokens', 'm1'])
+  assert.deepStrictEqual(normalizeSkillArgvWithDomain(['+search', '--query', '周会'], 'lark-workflow-meeting-summary'), ['minutes', '+search', '--query', '周会'])
+
+  // 1. 允许清单内合法只读查询 + 参数放行（含带短横线参数、重复数组参数、纯 JSON 对象 --data、内置只读）
+  assert.strictEqual(validateReadonlySkillArgv(['approval', 'tasks', 'query', '--topic', '1', '--page-size', '20']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['calendar', '+agenda', '--start', '-7d', '--json']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['docs', '+search', '--query', 'update']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['sheets', '+cells-get', '--spreadsheet-token', 'sht1', '--sheet-id', 'sh1', '--range', 'A1:C5', '--skip-hidden']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['attendance', 'user_tasks', 'query', '--employee-type', 'employee_id', '--data', '{"user_ids":["u1"]}']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['contact', 'user_profiles', 'batch_query', '--data', '{"user_ids":["ou_1"]}']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['minutes', '+detail', '--minute-tokens', 'm1', '--summary', '--todo', '--keyword']).ok, true)
+  assert.strictEqual(validateReadonlySkillArgv(['whoami', '--json']).ok, true)
+
+  // 2. 严厉拦截：布尔 flag 吞参数绕过、未收录子命令、api/apps/event、本地写盘、@file、--params、--page-all
+  assert.strictEqual(validateReadonlySkillArgv(['task', '--json', '+delete', '--task-id', '1']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['task', 'tasks', 'delete', '--task-id', '1', '--yes']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['api', 'GET', '/open-apis/calendar/v4/calendars']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['apps', '+env-list', '--app-id', 'cli_1', '--include-values']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['event', 'consume', '--max-events', '1']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['drive', '+download', '--file-token', 'f1', '--output', '/tmp/x']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['docs', '+script', '--doc', 'd1']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['minutes', '+detail', '--minute-tokens', 'm1', '--transcript']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['im', '+chat-messages-list', '--chat-id', 'oc_1', '--download-resources']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['im', '+chat-messages-list', '--chat-id', 'oc_1', '--page-all']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['approval', 'tasks', 'query', '--params', '{"topic":"1"}']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['contact', 'user_profiles', 'batch_query', '--data', '@/etc/passwd']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['contact', 'user_profiles', 'batch_query', '--data', '-']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['docs', '+search', '--query', 'a', '--output', '/tmp/out.json']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['sheets', '+cells-get', '--spreadsheet-token', 's1', '--skip-hidden', 'true']).ok, false)
+  assert.strictEqual(validateReadonlySkillArgv(['docs', '+search', '--query', '--page-size', '10']).ok, false)
+
+  // 3. 端到端集成测试：模型即使谎称 readonly: true 且伪造了带 --json 绕过或 --output 的命令，dispatchCollab 必须拦截进 skill_guard，绝不自动调用 spawn
+  let executedCmds = []
+  let modelPayload = { argv: ['task', '--json', '+delete', '--task-id', 't1'], readonly: true }
+  const opsGuard = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system }) {
+          return (async function* () {
+            if (system.includes('可用 action 列表')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-task' }) }
+            } else {
+              yield { type: 'text-delta', text: JSON.stringify(modelPayload) }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('auth') || argv.includes('config')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-task', description: 'Tasks' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('read')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-task\ntask +get-my-tasks', stderr: '' }), terminate() {} }
+          }
+          executedCmds.push(argv)
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)) },
+  })
+
+  const r1 = await opsGuard.dispatchCollab({ instruction: '删掉任务' })
+  assert.strictEqual(r1.needsConfirm, true)
+  assert.strictEqual(r1.confirmKind, 'skill_guard')
+  assert.strictEqual(executedCmds.length, 0, '布尔 flag 绕过写操作绝不能自动执行')
+
+  modelPayload = { argv: ['docs', '+search', '--query', 'ok', '--output', '/tmp/leak.json'], readonly: true }
+  const r2 = await opsGuard.dispatchCollab({ instruction: '导出文档搜索结果' })
+  assert.strictEqual(r2.needsConfirm, true)
+  assert.strictEqual(r2.confirmKind, 'skill_guard')
+  assert.strictEqual(executedCmds.length, 0, '带 --output 的只读命令绝不能自动执行')
+
+  modelPayload = { argv: ['apps', '+env-list', '--app-id', 'app_1', '--include-values'], readonly: true }
+  const r3 = await opsGuard.dispatchCollab({ instruction: '查看环境变量' })
+  assert.strictEqual(r3.needsConfirm, true)
+  assert.strictEqual(r3.confirmKind, 'skill_guard')
+  assert.strictEqual(executedCmds.length, 0, 'apps 环境变量读取绝不能自动执行')
+
+  // 4. 模型省略域名前缀（tasks query --topic 1）时自动补全 approval 域名并放行只读白名单；用户点击确认执行 confirmSkill=true 时正常跑通
+  const executedAllowed = []
+  const opsDomainNorm = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system }) {
+          return (async function* () {
+            if (system.includes('可用 action 列表')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
+            } else if (system.includes('精通飞书 CLI')) {
+              yield { type: 'text-delta', text: JSON.stringify({ argv: ['tasks', 'query', '--topic', '1'], readonly: true }) }
+            } else {
+              yield { type: 'text-delta', text: '查询完成：共 0 条审批。' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('auth') || argv.includes('config')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Approval' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('read')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\ntasks query', stderr: '' }), terminate() {} }
+          }
+          executedAllowed.push(argv.slice(1))
+          return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: [] } }), stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)) },
+  })
+  const normRes = await opsDomainNorm.dispatchCollab({ instruction: '帮我查一下待我处理的飞书审批' })
+  assert.strictEqual(normRes.ok, true)
+  assert.strictEqual(normRes.needsConfirm, undefined)
+  assert.ok(executedAllowed[0][0] === 'approval' && executedAllowed[0][1] === 'tasks' && executedAllowed[0][2] === 'query')
+
+  const clientSrc = (await import('node:fs')).readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  assert.ok(clientSrc.includes('lw-action-card') && clientSrc.includes('onCancelSkill'), '应渲染结构化操作确认卡片并支持确认/取消')
+
+  const confirmedRes = await opsDomainNorm.dispatchCollab({
+    instruction: '确认执行',
+    confirmSkill: true,
+    skillName: 'lark-task',
+    skillSteps: [['+create', '--title', '周报']],
+  })
+  assert.strictEqual(confirmedRes.ok, true)
+  assert.ok(executedAllowed[1][0] === 'task' && executedAllowed[1][1] === '+create')
+
+  // 5. 全仓排查补强：taskDelete 使用 --task-guid、okr 缺 user-id 自动查 contact +get-user 自愈、user access token not support 友好提示
+  const opsSrc = (await import('node:fs')).readFileSync(new URL('./ops.js', import.meta.url), 'utf8')
+  assert.ok(opsSrc.includes("'--task-guid'"), 'taskDelete 必须使用 lark-cli 真实的 --task-guid 参数')
+
+  let okrAttempts = 0
+  const opsOkrRepair = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system }) {
+          return (async function* () {
+            if (system.includes('可用 action 列表')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-okr' }) }
+            } else if (system.includes('精通飞书 CLI')) {
+              yield { type: 'text-delta', text: JSON.stringify({ argv: ['+cycle-list'], readonly: true }) }
+            } else if (system.includes('修复失败的只读命令参数')) {
+              assert.ok(true)
+              yield { type: 'text-delta', text: JSON.stringify({ argv: ['okr', '+cycle-list', '--user-id', 'ou_self_123'] }) }
+            } else {
+              yield { type: 'text-delta', text: '您的当前 OKR 周期共 1 个。' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('auth') || argv.includes('config')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-okr', description: 'OKR' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('read')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-okr\n+cycle-list', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('--help')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'Flags:\n  --user-id string  required', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('contact') && argv.includes('+get-user')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { user: { open_id: 'ou_self_123' } } }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('okr') && argv.includes('+cycle-list')) {
+            okrAttempts++
+            if (okrAttempts === 1) {
+              return { done: Promise.resolve({ exitCode: 1, stdout: JSON.stringify({ ok: false, error: { message: 'required flag(s) "user-id" not set' } }), stderr: '' }), terminate() {} }
+            }
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { cycles: [{ id: 'c1' }] } }), stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)) },
+  })
+  const okrRes = await opsOkrRepair.dispatchCollab({ instruction: '查一下我当前的 OKR' })
+  assert.strictEqual(okrRes.ok, true)
+  assert.strictEqual(okrAttempts, 2, 'okr +cycle-list 缺 user-id 应自动取 open_id 并自愈重试成功')
+
+  // 6. 自动剥离 lark-cli 返回体中的 _notice 版本提醒，防止透传给摘要模型和最终用户
+  let sawNoticeInSummary = false
+  const opsNoticeStrip = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system, messages }) {
+          const msgText = messages.map((m) => (typeof m.content === 'string' ? m.content : m.text || '')).join('')
+          if (system.includes('整理成简洁清晰') && (msgText.includes('_notice') || msgText.includes('lark-cli update'))) {
+            sawNoticeInSummary = true
+          }
+          return (async function* () {
+            if (system.includes('可用 action 列表')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
+            } else if (system.includes('精通飞书 CLI')) {
+              yield { type: 'text-delta', text: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], readonly: true }) }
+            } else {
+              yield { type: 'text-delta', text: '目前没有待处理的审批。' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('auth') || argv.includes('config')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Approval' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('read')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\ntasks query', stderr: '' }), terminate() {} }
+          }
+          return {
+            done: Promise.resolve({
+              exitCode: 0,
+              stdout: JSON.stringify({
+                ok: true,
+                _notice: 'Installed skills (1.0.98) are out of sync with lark-cli (1.0.100). Run lark-cli update.',
+                data: { tasks: [] },
+              }),
+              stderr: '',
+            }),
+            terminate() {},
+          }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)) },
+  })
+  const noticeRes = await opsNoticeStrip.dispatchCollab({ instruction: '帮我查审批' })
+  assert.strictEqual(noticeRes.ok, true)
+  assert.strictEqual(sawNoticeInSummary, false, 'runJson 与摘要流程必须剥离 _notice 内部版本提醒')
+
+  // 7. Lark 国际版 / 飞书双品牌：consoleUrl、larkoffice.com/feishu.cn 域名适配，以及 applink 追加 lk_unique=true 防跨端劫持
+  const larkOps = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ system }) {
+          return (async function* () {
+            if (system.includes('可用 action 列表')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-task' }) }
+            } else {
+              yield { type: 'text-delta', text: '已创建待办：[打开待办](https://applink.larkoffice.com/client/todo/detail?guid=g1)' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('config') && argv.includes('show')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_lark', brand: 'lark' }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('auth') && argv.includes('scopes')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, scopes: [] }), stderr: '' }), terminate() {} }
+          }
+          return {
+            done: Promise.resolve({
+              exitCode: 0,
+              stdout: JSON.stringify({ ok: true, data: { guid: 'g1', url: 'https://applink.feishu.cn/client/todo/detail?guid=g1' } }),
+              stderr: '',
+            }),
+            terminate() {},
+          }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)), brand: 'lark' },
+  })
+  const larkScopes = await larkOps.getScopes()
+  assert.strictEqual(larkScopes.brand, 'lark')
+  assert.strictEqual(larkScopes.consoleUrl, 'https://open.larksuite.com/app/cli_lark/auth')
+  const larkExec = await larkOps.dispatchCollab({
+    instruction: '创建待办',
+    confirmSkill: true,
+    skillName: 'lark-task',
+    skillSteps: [['task', '+create', '--summary', 'test']],
+  })
+  assert.strictEqual(larkExec.ok, true)
+  assert.ok(
+    larkExec.reply.includes('https://applink.larksuite.com/client/todo/detail?guid=g1&lk_unique=true'),
+    'Lark 品牌应将 applink.larkoffice.com/feishu.cn 自动转为 applink.larksuite.com 并附加 lk_unique=true',
+  )
+  assert.ok(
+    larkExec.data?.data?.url === 'https://applink.larksuite.com/client/todo/detail?guid=g1&lk_unique=true',
+    '返回给调用方的 data 内 applink 也应携带 lk_unique=true',
+  )
+
+  const feishuOps = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream() {
+          return (async function* () {
+            yield { type: 'text-delta', text: JSON.stringify({ action: 'reply', reply: '链接：[打开](https://applink.larkoffice.com/client/todo/detail?guid=g2)' }) }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('config') && argv.includes('show')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_feishu', brand: 'feishu' }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('auth') && argv.includes('scopes')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, scopes: [] }), stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)), brand: 'feishu' },
+  })
+  const feishuReply = await feishuOps.dispatchCollab({ instruction: '测试飞书链接' })
+  assert.strictEqual(feishuReply.ok, true)
+  assert.ok(
+    feishuReply.reply.includes('https://applink.feishu.cn/client/todo/detail?guid=g2&lk_unique=true'),
+    'Feishu 品牌应将 applink.larkoffice.com 规范为 applink.feishu.cn 并附加 lk_unique=true',
+  )
+})
+
+test('17.2 纯 LLM-Native 意图分流、预览页非改表对话回复及无硬编码关键词正则回归校验', async () => {
+  const { readFileSync } = await import('node:fs')
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  const plannerSrc = readFileSync(new URL('./planner.js', import.meta.url), 'utf8')
+  const adjustPlannerSrc = readFileSync(new URL('./adjust-planner.js', import.meta.url), 'utf8')
+  const opsSrc = readFileSync(new URL('./ops.js', import.meta.url), 'utf8')
+
+  const baseDraft = {
+    baseName: '待办清单',
+    intro: '管理日常任务',
+    tables: [{ name: '任务', fields: [{ type: 'text', name: '任务名称' }], records: [] }],
+  }
+  const guardPlanner = createPlanner({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ messages }) {
+          const prompt = messages?.[0]?.content?.[0]?.text || ''
+          return (async function* () {
+            if (prompt.includes('帮我创建一个待办')) {
+              yield { type: 'text-delta', text: JSON.stringify({ isTable: false, reason: '创建个人飞书待办不属于多维表格设计' }) }
+            } else if (prompt.includes('你好')) {
+              yield { type: 'text-delta', text: JSON.stringify({ action: 'reply', reply: '你好！你可以继续调整表结构。\\\\n' }) }
+            } else {
+              yield { type: 'text-delta', text: '当然可以，请告诉我你想加减哪些字段。' }
+            }
+          })()
+        },
+      },
+    },
+  })
+
+  const todoRes = await guardPlanner.plan('帮我创建一个待办')
+  assert.strictEqual(todoRes.ok, false)
+  assert.strictEqual(todoRes.isNotTable, true)
+
+  const previewGreet = await guardPlanner.plan('你好', undefined, undefined, { currentPlan: baseDraft })
+  assert.strictEqual(previewGreet.ok, true)
+  assert.strictEqual(previewGreet.action, 'reply')
+  assert.ok(previewGreet.reply.includes('你好'))
+  assert.strictEqual(previewGreet.reply.includes('\\n'), false, 'preview reply 不应向前端泄漏字面 \\n 转义字符')
+
+  const previewPlainText = await guardPlanner.plan('这表怎么用', undefined, undefined, { currentPlan: baseDraft })
+  assert.strictEqual(previewPlainText.ok, true)
+  assert.strictEqual(previewPlainText.action, 'reply')
+  assert.ok(previewPlainText.reply.includes('字段'))
+
+  const previewTodo = await guardPlanner.plan('帮我创建一个待办', undefined, undefined, { currentPlan: baseDraft })
+  assert.strictEqual(previewTodo.ok, false)
+  assert.strictEqual(previewTodo.isNotTable, true)
+
+  assert.strictEqual(clientSrc.includes('readOnly: Boolean(busy)'), false, 'UnifiedComposer 不应锁定回复中的输入框只读状态')
+  assert.strictEqual(clientSrc.includes('classifyQuickIntent'), false, 'client.js 不应使用硬编码关键词正则猜意图')
+  assert.strictEqual(clientSrc.includes('正在生成表结构与示例数据'), false, '首页等待态不应提前假定一定会建表')
+  assert.ok(clientSrc.includes('setPreviewReply') && clientSrc.includes('lw-preview-reply'), 'client.js 应使用贴近底部的轻量预览回复浮层')
+  assert.ok(clientSrc.includes('postStream') && clientSrc.includes('lw-think-dots') && clientSrc.includes('queuedPrompt'), 'client.js 应具备流式分段加载与忙碌态排队发送能力')
+  assert.strictEqual(/PURE_BUILD_RE|PURE_KEEP_RE|DIRECT_COLLAB/.test(plannerSrc), false, 'planner.js 不应保留关键词硬拦截正则')
+  assert.strictEqual(/总结\|加了什么/.test(adjustPlannerSrc), false, 'adjust-planner.js 不应保留关键词追问复读机正则')
+  assert.strictEqual(/我们需要\|用户要求\|思路：/.test(opsSrc + clientSrc), false, 'ops.js 与 client.js 不应凭汉语词汇正则截断正文当思考过程')
+  assert.strictEqual(/isOffline\s*&&|帮我\|查一下/.test(opsSrc), false, 'ops.js 不应保留离线关键词路由与暴力抠词正则')
+
+  // 校验所有字面量 Icon({ name }) 均在 ICONS 中注册，防止图标回退错乱
+  const iconsBlockMatch = clientSrc.match(/const ICONS = \{([\s\S]*?)\n    \}/)
+  assert.ok(iconsBlockMatch, '应能在 client.js 中解析 ICONS 注册表')
+  const registeredIcons = new Set([...iconsBlockMatch[1].matchAll(/^\s{6}([A-Za-z0-9_]+)\s*:/gm)].map((m) => m[1]))
+  for (const m of clientSrc.matchAll(/h\(\s*Icon\s*,\s*\{\s*name:\s*'([A-Za-z0-9_]+)'/g)) {
+    assert.ok(registeredIcons.has(m[1]), `Icon "${m[1]}" 必须在 ICONS 注册表中存在`)
+  }
+
+  // 验证 /plan 流式阶段事件在 isTable: true 时才发 building_preview，isTable: false 时发 routing_collab
+  const { collectText } = await import('./planner.js')
+  const eventsTable = []
+  await collectText(
+    (async function* () {
+      yield { type: 'text-delta', text: '{"isTable": true, "baseName": "A"' }
+      yield { type: 'text-delta', text: ', "tables": []}' }
+    })(),
+    (evt) => eventsTable.push(evt),
+    { detectIntent: true },
+  )
+  assert.ok(eventsTable.some((e) => e.type === 'stage' && e.stage === 'building_preview'))
+  const eventsCollab = []
+  await collectText(
+    (async function* () {
+      yield { type: 'text-delta', text: '{"isTable": false, "reason": "task"}' }
+    })(),
+    (evt) => eventsCollab.push(evt),
+    { detectIntent: true },
+  )
+  assert.ok(eventsCollab.some((e) => e.type === 'stage' && e.stage === 'routing_collab'))
+  assert.strictEqual(eventsCollab.some((e) => e.stage === 'building_preview'), false)
 })
 
 Promise.all(pendingTests).then(() => {

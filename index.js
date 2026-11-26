@@ -25,6 +25,7 @@ export const Config = z.object({
   larkCliPath: z.string().description('Custom lark-cli executable path / 自定义 lark-cli 可执行文件路径（留空则自动准备）'),
   binDir: z.string().description('Custom directory containing lark-cli / 自定义 lark-cli 所在目录（兼容官方飞书插件配置）'),
   identity: z.union(['auto', 'user', 'bot']).default('auto').description('Default Feishu API identity mode / 调用飞书 API 时的默认身份模式'),
+  brand: z.union(['auto', 'feishu', 'lark']).default('auto').description('Preferred brand (feishu or lark) / 飞书（中国区）或 Lark（国际版）品牌偏好'),
   showInConversationTab: z.boolean().default(false).volatile().description('Show Lark Workbench tab in conversation header / 是否在对话顶部标签页显示飞书工作台'),
 })
 
@@ -182,7 +183,7 @@ function firstJsonObjectSafe(text) {
   }
 }
 
-function buildCliAccountRegistration(ops) {
+function buildCliAccountRegistration(ops, preferredBrand = 'feishu') {
   const zh = {
     'section.title': '飞书工作台账号',
     'status.checking': '正在检查连接',
@@ -438,7 +439,8 @@ function buildCliAccountRegistration(ops) {
       if (kind === 'link-app') {
         await ensureCliForAccount(control, signal)
         control.stage('configuring')
-        const res = await control.run('config-init', ['config', 'init', '--new', '--brand', 'feishu'], signal, {
+        const targetBrand = (preferredBrand === 'lark' || preferredBrand === 'feishu') ? preferredBrand : 'feishu'
+        const res = await control.run('config-init', ['config', 'init', '--new', '--brand', targetBrand], signal, {
           awaitsUser: true,
           onLine: offerUrlFromLine(control),
         })
@@ -1056,7 +1058,8 @@ export function apply(ctx, config = {}) {
               }
 
               if (method === 'POST' && route === '/connect/app/start') {
-                const result = await ops.startAppInit(undefined)
+                const body = await request.json().catch(() => ({}))
+                const result = await ops.startAppInit(undefined, body?.brand)
                 return jsonResponse(result.ok ? 200 : 500, result)
               }
 
@@ -1067,7 +1070,7 @@ export function apply(ctx, config = {}) {
 
               if (method === 'POST' && route === '/connect/app/manual') {
                 const body = await request.json().catch(() => ({}))
-                const result = await ops.bindApp(body.appId, body.appSecret, undefined)
+                const result = await ops.bindApp(body.appId, body.appSecret, undefined, body?.brand)
                 return jsonResponse(result.ok ? 200 : 422, result)
               }
 
@@ -1126,6 +1129,56 @@ export function apply(ctx, config = {}) {
                 const body = await request.json().catch(() => ({}))
                 const lang = resolveLang(body.lang, body.sentence || '')
                 const resolved = await resolveAttachmentInputs(body.attachments)
+                const attachPlanSource = (planned) => {
+                  if (planned && planned.ok && planned.plan && resolved.tableAttachments.length > 0) {
+                    const primarySource = resolved.tableAttachments[0]
+                    return {
+                      ...planned,
+                      sourceAttachment: {
+                        id: primarySource.id,
+                        name: primarySource.name,
+                        totalRows: primarySource.totalRows,
+                      },
+                    }
+                  }
+                  return planned
+                }
+                if (body.stream) {
+                  const encoder = new TextEncoder()
+                  const stream = new ReadableStream({
+                    async start(controller) {
+                      const onDelta = (event) => {
+                        try {
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+                        } catch {}
+                      }
+                      try {
+                        const planned = await planner.plan(body.sentence, undefined, undefined, {
+                          model: body.model,
+                          provider: body.provider,
+                          currentPlan: body.currentPlan,
+                          attachmentContext: resolved.attachmentContext,
+                          imageBlocks: resolved.imageBlocks,
+                          lang,
+                          onDelta,
+                        })
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', payload: attachPlanSource(planned) })}\n\n`))
+                      } catch (err) {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: String(err) })}\n\n`))
+                      } finally {
+                        controller.close()
+                      }
+                    },
+                  })
+                  return new Response(stream, {
+                    status: 200,
+                    headers: {
+                      'content-type': 'text/event-stream; charset=utf-8',
+                      'cache-control': 'no-cache, no-transform',
+                      'x-accel-buffering': 'no',
+                    },
+                  })
+                }
                 const planned = await planner.plan(body.sentence, undefined, undefined, {
                   model: body.model,
                   provider: body.provider,
@@ -1134,18 +1187,7 @@ export function apply(ctx, config = {}) {
                   imageBlocks: resolved.imageBlocks,
                   lang,
                 })
-                if (planned && planned.ok && planned.plan && resolved.tableAttachments.length > 0) {
-                  const primarySource = resolved.tableAttachments[0]
-                  return jsonResponse(200, {
-                    ...planned,
-                    sourceAttachment: {
-                      id: primarySource.id,
-                      name: primarySource.name,
-                      totalRows: primarySource.totalRows,
-                    },
-                  })
-                }
-                return jsonResponse(200, planned)
+                return jsonResponse(200, attachPlanSource(planned))
               }
 
               if (method === 'POST' && route === '/build') {
@@ -1202,6 +1244,9 @@ export function apply(ctx, config = {}) {
                             provider: body.provider,
                             attachmentContext: resolved.attachmentContext,
                             imageBlocks: resolved.imageBlocks,
+                            confirmSkill: body.confirmSkill === true,
+                            skillSteps: body.skillSteps,
+                            skillName: body.skillName,
                             lang,
                             onDelta,
                           })
@@ -1230,6 +1275,9 @@ export function apply(ctx, config = {}) {
                     provider: body.provider,
                     attachmentContext: resolved.attachmentContext,
                     imageBlocks: resolved.imageBlocks,
+                    confirmSkill: body.confirmSkill === true,
+                    skillSteps: body.skillSteps,
+                    skillName: body.skillName,
                     lang,
                   })
                   return jsonResponse(200, collabRes)
@@ -1466,7 +1514,7 @@ export function apply(ctx, config = {}) {
 
     ctx.inject(['cliAccounts'], (scoped) => {
       if (!scoped.cliAccounts || typeof scoped.cliAccounts.register !== 'function') return
-      const reg = buildCliAccountRegistration(ops)
+      const reg = buildCliAccountRegistration(ops, (config.brand === 'lark' || config.brand === 'feishu') ? config.brand : 'feishu')
       let handle
       try {
         handle = scoped.cliAccounts.register(reg)

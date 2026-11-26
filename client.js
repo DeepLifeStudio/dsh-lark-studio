@@ -395,13 +395,14 @@ window.__ModuleLoader__.load({
       'toast.stopped': '已停止',
       'toast.built': '表格已创建',
       'toast.refined': '已更新方案',
+      'toast.kept': '已保留当前草稿，可点击右上角「确认建表」',
       'toast.draftCleared': '已收起刚才的设计草稿',
 
       'model.label': '切换模型',
       'model.loading': '加载模型…',
 
       'busy.planning': '构思中…',
-      'busy.planningSub': '正在生成表结构与示例数据',
+      'busy.planningSub': '正在理解需求并准备方案',
       'busy.refining': '调整中…',
       'busy.building': '创建中…',
       'busy.thinking': '思考中…',
@@ -417,6 +418,7 @@ window.__ModuleLoader__.load({
       'preview.tweakPlaceholder': '想怎么改？如：加一列来源，或去掉金额…',
       'preview.build': '确认建表',
       'preview.back': '返回',
+      'preview.replyClose': '收起',
 
       'view.back': '返回',
       'view.collabTitle': '飞书协同',
@@ -443,6 +445,15 @@ window.__ModuleLoader__.load({
       'view.confirmBody': '以下改动无法撤销：',
       'view.confirmYes': '确认删除',
       'view.confirmNo': '取消',
+      'view.skillConfirm': '确认执行',
+      'view.skillRunning': '正在执行…',
+      'view.skillTitle': '待确认操作',
+      'view.skillPending': '待确认',
+      'view.skillDone': '已执行',
+      'view.skillCancelled': '已取消',
+      'view.skillCancel': '取消',
+      'view.skillCmdShow': '查看命令详情',
+      'view.skillCmdHide': '收起命令详情',
       'view.resizeTip': '拖拽调整宽度，双击恢复默认',
       'view.webviewLoading': '正在载入飞书多维表格…',
       'view.webviewError': '表格载入失败',
@@ -481,7 +492,7 @@ window.__ModuleLoader__.load({
       'err.timeout': '飞书响应超时，请检查网络或重试',
       'err.network': '网络连接异常，请检查网络后重试',
       'err.plan': '未能理解需求，换个说法或点击下方场景试试',
-      'err.incomplete': '表格信息不完整，建议在飞书中查看',
+      'err.incomplete': '缺少必要参数或信息不完整，请补充后再试',
 
       'file.attach': '添加文件或图片（支持拖拽 / 粘贴）',
       'file.dropHint': '松开以添加文件',
@@ -494,7 +505,10 @@ window.__ModuleLoader__.load({
       'file.defaultPrompt': '已上传 {n} 个文件',
       'busy.planningTable': '正在规划多维表格结构…',
       'busy.buildingPreview': '正在组装预览表与示例数据…',
+      'busy.routingCollab': '正在进入飞书协同…',
       'busy.writing': '正在整理回复…',
+      'composer.queued': '将在完成后发送：',
+      'composer.cancelQueue': '取消',
 
       'gate.step.tool': '准备组件',
       'gate.step.app': '关联应用',
@@ -514,6 +528,9 @@ window.__ModuleLoader__.load({
       'gate.noApp.cta': '前往飞书创建',
       'gate.noApp.done': '已完成，检测',
       'gate.noApp.reopen': '重新打开',
+      'gate.brandLabel': '账号版本',
+      'gate.brandFeishu': '飞书 (中国区)',
+      'gate.brandLark': 'Lark (海外版)',
       'gate.team.toggle': '使用已有应用凭据',
       'gate.team.hide': '收起',
       'gate.team.appId': 'App ID（cli_ 开头）',
@@ -625,13 +642,14 @@ window.__ModuleLoader__.load({
       'toast.stopped': 'Stopped',
       'toast.built': 'Base created',
       'toast.refined': 'Blueprint updated',
+      'toast.kept': 'Draft kept as-is — click Create Base when ready',
       'toast.draftCleared': 'Draft closed',
 
       'model.label': 'Switch model',
       'model.loading': 'Loading…',
 
       'busy.planning': 'Designing…',
-      'busy.planningSub': 'Structuring fields and sample rows',
+      'busy.planningSub': 'Understanding your request',
       'busy.refining': 'Refining…',
       'busy.building': 'Creating…',
       'busy.thinking': 'Thinking…',
@@ -647,6 +665,7 @@ window.__ModuleLoader__.load({
       'preview.tweakPlaceholder': 'Refine structure… e.g. add a Source column or remove Amount',
       'preview.build': 'Create Base',
       'preview.back': 'Back',
+      'preview.replyClose': 'Dismiss',
 
       'view.back': 'Back',
       'view.collabTitle': 'Lark Assistant',
@@ -673,6 +692,15 @@ window.__ModuleLoader__.load({
       'view.confirmBody': 'These changes cannot be undone:',
       'view.confirmYes': 'Delete',
       'view.confirmNo': 'Cancel',
+      'view.skillConfirm': 'Confirm & run',
+      'view.skillRunning': 'Running…',
+      'view.skillTitle': 'Confirm action',
+      'view.skillPending': 'Pending',
+      'view.skillDone': 'Executed',
+      'view.skillCancelled': 'Cancelled',
+      'view.skillCancel': 'Cancel',
+      'view.skillCmdShow': 'Command details',
+      'view.skillCmdHide': 'Hide command',
       'view.resizeTip': 'Drag to resize, double-click to reset',
       'view.webviewLoading': 'Loading Feishu Base…',
       'view.webviewError': 'Failed to load table',
@@ -711,7 +739,7 @@ window.__ModuleLoader__.load({
       'err.timeout': 'Request timed out. Check your network and try again.',
       'err.network': 'Network error. Check your connection and try again.',
       'err.plan': 'Could not understand the request. Try rephrasing or pick a starter.',
-      'err.incomplete': 'Table data is incomplete. Please inspect it in Feishu.',
+      'err.incomplete': 'Required details are missing. Please add them and retry.',
 
       'file.attach': 'Attach file or image (drag & drop / paste)',
       'file.dropHint': 'Drop to attach',
@@ -724,7 +752,10 @@ window.__ModuleLoader__.load({
       'file.defaultPrompt': 'Attached {n} file(s)',
       'busy.planningTable': 'Designing Base structure…',
       'busy.buildingPreview': 'Assembling preview table and sample data…',
+      'busy.routingCollab': 'Opening Lark Assistant…',
       'busy.writing': 'Drafting response…',
+      'composer.queued': 'Queued: ',
+      'composer.cancelQueue': 'Cancel',
 
       'gate.step.tool': 'Setup',
       'gate.step.app': 'Connect App',
@@ -744,6 +775,9 @@ window.__ModuleLoader__.load({
       'gate.noApp.cta': 'Open Feishu',
       'gate.noApp.done': 'Done, verify',
       'gate.noApp.reopen': 'Open again',
+      'gate.brandLabel': 'Edition',
+      'gate.brandFeishu': 'Feishu (China)',
+      'gate.brandLark': 'Lark (Global)',
       'gate.team.toggle': 'Use existing app credentials',
       'gate.team.hide': 'Hide',
       'gate.team.appId': 'App ID (cli_…)',
@@ -946,6 +980,14 @@ window.__ModuleLoader__.load({
   0%, 100% { opacity: 0.52; }
   50% { opacity: 1; }
 }
+@keyframes lwThinkDot {
+  0%, 80%, 100% { opacity: 0.28; transform: translateY(0) scale(0.86); }
+  40% { opacity: 1; transform: translateY(-1.5px) scale(1); }
+}
+@keyframes lwCheckDraw {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
 
 .lw-stage-in { animation: lwStageIn var(--dur-view) var(--ease-out) both; }
 .lw-spin { animation: lwSpin 760ms linear infinite; }
@@ -1092,7 +1134,9 @@ window.__ModuleLoader__.load({
   overflow-y: auto;
 }
 .lw-composer-area::placeholder { color: var(--lw-ink-3); }
-.lw-composer.is-busy .lw-composer-area { color: var(--lw-ink-2); }
+.lw-composer.is-busy {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lw-accent) 24%, transparent), 0 8px 28px -8px color-mix(in srgb, var(--lw-accent) 12%, rgba(15, 17, 21, 0.08));
+}
 
 .lw-composer-bar {
   display: flex;
@@ -1655,6 +1699,32 @@ window.__ModuleLoader__.load({
   gap: 12px;
   animation: lwStageIn var(--dur-ui) var(--ease-out) both;
 }
+.lw-plan-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: center;
+  padding: 6px 0;
+  transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-ui) var(--ease-out);
+}
+.lw-plan-status.is-building {
+  align-self: flex-start;
+  padding: 2px 0 0;
+}
+.lw-think-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3.5px;
+}
+.lw-think-dots span {
+  width: 4.5px;
+  height: 4.5px;
+  border-radius: 50%;
+  background: var(--lw-accent);
+  animation: lwThinkDot 1.2s var(--ease-io) infinite;
+}
+.lw-think-dots span:nth-child(2) { animation-delay: 160ms; }
+.lw-think-dots span:nth-child(3) { animation-delay: 320ms; }
 .lw-skel-table {
   border: 0.5px solid var(--lw-line);
   border-radius: var(--r-md);
@@ -1928,6 +1998,57 @@ window.__ModuleLoader__.load({
 @keyframes lwColFlash {
   0% { background: color-mix(in srgb, var(--lw-accent) 16%, transparent); }
   100% { background: transparent; }
+}
+.lw-preview-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 16px;
+  border-radius: var(--r-md);
+  border: 0.5px solid var(--lw-line-2);
+  background: var(--lw-surface);
+  box-shadow: var(--lw-e2);
+  animation: lwStageIn var(--dur-ui) var(--ease-out) both;
+}
+.lw-preview-reply-ico {
+  color: var(--lw-accent);
+  margin-top: 4px;
+  flex: none;
+}
+.lw-preview-reply-text {
+  flex: 1;
+  min-width: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+  font-size: 13.5px;
+  line-height: 1.68;
+  color: var(--lw-ink);
+  word-break: break-word;
+}
+.lw-preview-reply-text > :first-child {
+  margin-top: 0;
+}
+.lw-preview-reply-text > :last-child {
+  margin-bottom: 0;
+}
+.lw-preview-reply-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--lw-ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io);
+}
+.lw-preview-reply-close:hover {
+  background: var(--lw-surface-3);
+  color: var(--lw-ink);
 }
 @keyframes lwNudgePulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lw-accent) 45%, transparent); }
@@ -2254,18 +2375,132 @@ window.__ModuleLoader__.load({
   min-width: 0;
 }
 .lw-msg.is-error .lw-msg-text {
-  padding: 10px 13px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
-  border: 0.5px solid color-mix(in srgb, var(--lw-danger) 26%, transparent);
-  background: color-mix(in srgb, var(--lw-danger) 5%, var(--lw-surface));
-  color: var(--lw-danger);
+  border: 0.5px solid color-mix(in srgb, var(--lw-danger) 28%, var(--lw-line-2));
+  border-left: 2.5px solid var(--lw-danger);
+  background: var(--lw-surface-2);
+  color: var(--lw-ink);
 }
 .lw-msg.is-warn .lw-msg-text {
-  padding: 10px 13px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
-  border: 0.5px solid color-mix(in srgb, var(--lw-warn) 26%, transparent);
-  background: color-mix(in srgb, var(--lw-warn) 5%, var(--lw-surface));
+  border: 0.5px solid color-mix(in srgb, var(--lw-warn) 28%, var(--lw-line-2));
+  border-left: 2.5px solid var(--lw-warn);
+  background: var(--lw-surface-2);
+  color: var(--lw-ink);
+}
+.lw-action-card {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  border: 0.5px solid var(--lw-line-2);
+  background: var(--lw-surface-2);
+  box-shadow: var(--lw-e1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lw-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lw-action-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lw-ink);
+  min-width: 0;
+}
+.lw-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  flex: none;
+  background: var(--lw-surface-3);
+  color: var(--lw-ink-2);
+}
+.lw-action-pill.is-pending {
+  background: color-mix(in srgb, var(--lw-warn) 12%, transparent);
   color: var(--lw-warn);
+}
+.lw-action-pill.is-done {
+  background: color-mix(in srgb, var(--lw-ok) 12%, transparent);
+  color: var(--lw-ok);
+}
+.lw-action-pill.is-done svg path,
+.lw-step.is-done .lw-step-num svg path {
+  stroke-dasharray: 24;
+  animation: lwCheckDraw 240ms var(--ease-out) both;
+}
+.lw-queue-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 0.5px solid var(--lw-line);
+  background: var(--lw-surface-2);
+  font-size: 12px;
+  color: var(--lw-ink-2);
+  animation: lwStageIn var(--dur-micro) var(--ease-out) both;
+}
+.lw-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lw-ink);
+}
+.lw-queue-cancel {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lw-ink-2);
+  background: transparent;
+  border: 0;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  flex: none;
+  transition: background var(--dur-micro) var(--ease-io), color var(--dur-micro) var(--ease-io);
+}
+.lw-queue-cancel:hover {
+  background: var(--lw-surface-3);
+  color: var(--lw-ink);
+}
+.lw-action-body {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--lw-ink-2);
+}
+.lw-action-cmd {
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  border: 0.5px solid var(--lw-line);
+  background: var(--lw-surface);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--lw-ink-2);
+  word-break: break-all;
+}
+.lw-action-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
 }
 .lw-msg-actions {
   display: flex;
@@ -2420,8 +2655,9 @@ window.__ModuleLoader__.load({
 /* ── Docked Composer Area (Preview & Workspace) ───────────────────────── */
 .lw-ws-dock {
   flex: none;
-  padding: 8px 16px 14px;
+  padding: 10px 16px 14px;
   background: var(--lw-bg);
+  border-top: 0.5px solid color-mix(in srgb, var(--lw-line) 75%, transparent);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2860,7 +3096,7 @@ body:has(.lw) [class*="viewArea"] {
       if (/timeout|超时|aborted|ETIMEDOUT|想太久了/i.test(text)) return pick('err.timeout', '飞书响应超时，请检查网络或重试')
       if (/ENOTFOUND|ECONNREFUSED|network|网络/i.test(text)) return pick('err.network', '网络连接异常，请检查网络后重试')
       if (/模型没有|无法解析|没能组成/.test(text)) return pick('err.plan', '未能理解需求，换个说法或点击下方场景试试')
-      if (/required flag|missing required|is required/i.test(text)) return pick('err.incomplete', '表格信息不完整，建议在飞书中查看')
+      if (/required flag|missing required|is required/i.test(text)) return pick('err.incomplete', '缺少必要参数或信息不完整，请补充后再试')
       return text
     }
 
@@ -3215,6 +3451,7 @@ body:has(.lw) [class*="viewArea"] {
       value = '',
       onChange = () => {},
       onSubmit = () => {},
+      onQueue = null,
       onStop = null,
       placeholder = '',
       busy = false,
@@ -3363,11 +3600,10 @@ body:has(.lw) [class*="viewArea"] {
           placeholder,
           'aria-label': ariaLabel || placeholder,
           'aria-busy': busy ? 'true' : undefined,
-          readOnly: Boolean(busy),
           spellCheck: false,
           onChange: (event) => onChange(event.target.value),
           onPaste: (event) => {
-            if (!onAddFiles || busy) return
+            if (!onAddFiles) return
             const pastedFiles = event.clipboardData?.files
             if (pastedFiles && pastedFiles.length > 0) {
               event.preventDefault()
@@ -3381,7 +3617,11 @@ body:has(.lw) [class*="viewArea"] {
             }
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey || !event.shiftKey)) {
               event.preventDefault()
-              if (canSend) onSubmit(value)
+              if (canSend) {
+                onSubmit(value)
+              } else if (busy && onQueue && !disabled && !hasUploading && !visionWarning && (value.trim().length > 0 || hasReadyFile)) {
+                onQueue(value)
+              }
             }
           },
         }),
@@ -3397,7 +3637,6 @@ body:has(.lw) [class*="viewArea"] {
                   {
                     type: 'button',
                     className: 'lw-attach-btn',
-                    disabled: Boolean(busy),
                     title: t('file.attach'),
                     'aria-label': t('file.attach'),
                     onClick: () => fileInputRef.current?.click(),
@@ -3754,6 +3993,7 @@ body:has(.lw) [class*="viewArea"] {
       const [showTeam, setShowTeam] = useState(false)
       const [teamId, setTeamId] = useState('')
       const [teamSecret, setTeamSecret] = useState('')
+      const [brand, setBrand] = useState(() => (health?.app?.brand === 'lark' ? 'lark' : 'feishu'))
       const [autoChecking, setAutoChecking] = useState(false)
       const autoInstallStartedRef = useRef(false)
 
@@ -3863,7 +4103,7 @@ body:has(.lw) [class*="viewArea"] {
         setBusyAction('start')
         setError(null)
         try {
-          const payload = await post('/connect/app/start')
+          const payload = await post('/connect/app/start', { brand })
           if (payload.ok && payload.url) {
             setLink(payload.url)
             window.open(payload.url, '_blank', 'noopener')
@@ -3875,7 +4115,7 @@ body:has(.lw) [class*="viewArea"] {
         } finally {
           setBusyAction(null)
         }
-      }, [post, t])
+      }, [brand, post, t])
 
       const startAuth = useCallback(async () => {
         setBusyAction('start')
@@ -3947,7 +4187,7 @@ body:has(.lw) [class*="viewArea"] {
         setBusyAction('team')
         setError(null)
         try {
-          const payload = await post('/connect/app/manual', { appId: teamId, appSecret: teamSecret })
+          const payload = await post('/connect/app/manual', { appId: teamId, appSecret: teamSecret, brand })
           if (payload.ok) {
             setTeamSecret('')
             onRecheck()
@@ -3959,7 +4199,7 @@ body:has(.lw) [class*="viewArea"] {
         } finally {
           setBusyAction(null)
         }
-      }, [teamId, teamSecret, onRecheck, post, t])
+      }, [brand, teamId, teamSecret, onRecheck, post, t])
 
       const title = stage === 'no-cli' ? t('gate.noTool.title') : stage === 'no-app' ? t('gate.noApp.title') : t('gate.noAuth.title')
       const bodyText = stage === 'no-cli' ? t('gate.noTool.body') : stage === 'no-app' ? t('gate.noApp.body') : t('gate.noAuth.body')
@@ -4038,6 +4278,22 @@ body:has(.lw) [class*="viewArea"] {
           h('h2', { className: 'lw-h lw-h-lg', id: 'lw-gate-title' }, title),
           h('p', { className: 'lw-p' }, bodyText),
         ),
+        stage === 'no-app' && !link
+          ? h(
+              'div',
+              { className: 'lw-actions', role: 'group', 'aria-label': t('gate.brandLabel') },
+              h(
+                Button,
+                { size: 'sm', active: brand === 'feishu', disabled: busy, onClick: () => setBrand('feishu') },
+                t('gate.brandFeishu'),
+              ),
+              h(
+                Button,
+                { size: 'sm', active: brand === 'lark', disabled: busy, onClick: () => setBrand('lark') },
+                t('gate.brandLark'),
+              ),
+            )
+          : null,
         stage === 'no-cli' && busyAction === 'install'
           ? h(
               'div',
@@ -4619,8 +4875,79 @@ body:has(.lw) [class*="viewArea"] {
       return blocks
     }
 
-    function AssistantBubble({ msg, onRetry, t }) {
+    function AssistantBubble({ msg, onRetry, onConfirmSkill, onCancelSkill, busy, t }) {
       const [thinkingOpen, setThinkingOpen] = useState(false)
+      const [cmdOpen, setCmdOpen] = useState(false)
+
+      if (msg.skillGuard) {
+        const g = msg.skillGuard
+        const status = g.status || (g.executed ? 'done' : 'pending')
+        const pillClass = status === 'done' ? 'is-done' : status === 'pending' ? 'is-pending' : ''
+        const pillText = status === 'done'
+          ? t('view.skillDone')
+          : status === 'cancelled'
+            ? t('view.skillCancelled')
+            : t('view.skillPending')
+        const titleLabel = g.label ? `${t('view.skillTitle')} · ${g.label}` : t('view.skillTitle')
+        const cmdText = g.commandPreview || (Array.isArray(g.steps) ? g.steps.map((s) => `lark-cli ${s.join(' ')}`).join(' && ') : '')
+        return h(
+          'div',
+          { className: 'lw-msg lw-msg-ai' },
+          h(
+            'div',
+            { className: 'lw-action-card' },
+            h(
+              'div',
+              { className: 'lw-action-head' },
+              h(
+                'div',
+                { className: 'lw-action-title' },
+                h(Icon, { name: 'shieldCheck', size: 15, style: { color: status === 'done' ? 'var(--lw-ok)' : 'var(--lw-accent)' } }),
+                h('span', null, titleLabel),
+              ),
+              h('span', { className: `lw-action-pill ${pillClass}` }, pillText),
+            ),
+            h('div', { className: 'lw-action-body' }, renderMarkdownContent(g.reason || msg.text || '')),
+            cmdText
+              ? h(
+                  'div',
+                  null,
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lw-details-toggle',
+                      'aria-expanded': cmdOpen,
+                      onClick: () => setCmdOpen((v) => !v),
+                    },
+                    h(Icon, { name: 'chevronRight', size: 12, className: `lw-details-chevron${cmdOpen ? ' is-open' : ''}` }),
+                    cmdOpen ? t('view.skillCmdHide') : t('view.skillCmdShow'),
+                  ),
+                  h(AnimatedCollapse, { open: cmdOpen }, h('div', { className: 'lw-action-cmd' }, cmdText)),
+                )
+              : null,
+            status === 'pending' && onConfirmSkill
+              ? h(
+                  'div',
+                  { className: 'lw-action-foot' },
+                  onCancelSkill
+                    ? h(
+                        Button,
+                        { size: 'sm', variant: 'ghost', disabled: Boolean(busy), onClick: onCancelSkill },
+                        t('view.skillCancel'),
+                      )
+                    : null,
+                  h(
+                    Button,
+                    { size: 'sm', variant: 'primary', disabled: Boolean(busy), onClick: onConfirmSkill },
+                    busy ? h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }) : h(Icon, { name: 'check', size: 12 }),
+                    busy ? t('view.skillRunning') : t('view.skillConfirm'),
+                  ),
+                )
+              : null,
+          ),
+        )
+      }
 
       let reasoning = msg.reasoning || ''
       let cleanText = msg.text || ''
@@ -4629,16 +4956,6 @@ body:has(.lw) [class*="viewArea"] {
       if (thinkMatch) {
         reasoning = (reasoning ? `${reasoning}\n` : '') + thinkMatch[1].trim()
         cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
-      }
-
-      if (!reasoning && /我们需要|用户要求|思路：|分析：|思考：|Let me think/i.test(cleanText)) {
-        const tableIndex = cleanText.indexOf('|')
-        const introIndex = cleanText.indexOf('以下')
-        const splitIndex = introIndex !== -1 && (tableIndex === -1 || introIndex < tableIndex) ? introIndex : tableIndex
-        if (splitIndex > 0) {
-          reasoning = cleanText.slice(0, splitIndex).trim()
-          cleanText = cleanText.slice(splitIndex).trim()
-        }
       }
 
       return h(
@@ -5073,6 +5390,9 @@ body:has(.lw) [class*="viewArea"] {
       const chatStreamRef = useRef(null)
       const [showDetails, setShowDetails] = useState(false)
       const [plan, setPlan] = useState(null)
+      const [planStage, setPlanStage] = useState('understanding')
+      const [previewReply, setPreviewReply] = useState(null)
+      const [queuedPrompt, setQueuedPrompt] = useState(null)
       const [changedFields, setChangedFields] = useState([])
       const [nudgeBuild, setNudgeBuild] = useState(false)
       const changedTimerRef = useRef(null)
@@ -5280,17 +5600,67 @@ body:has(.lw) [class*="viewArea"] {
         return response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }))
       }, [activeLang])
 
+      const postStream = useCallback(async (path, body, { signal, onEvent } = {}) => {
+        const payloadBody = body && typeof body === 'object' && !Array.isArray(body)
+          ? { lang: activeLang, ...body, stream: true }
+          : body
+        const resp = await authFetch(`${API}${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal,
+          body: JSON.stringify(payloadBody),
+        })
+        const contentType = resp.headers.get('content-type') || ''
+        if (!contentType.includes('text/event-stream') || !resp.body) {
+          return resp.json().catch(() => ({ ok: false, message: `HTTP ${resp.status}` }))
+        }
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        let finalPayload
+        const handleLine = (line) => {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) return
+          try {
+            const evt = JSON.parse(trimmed.slice(5).trim())
+            if (evt.type === 'done') finalPayload = evt.payload
+            else if (evt.type === 'error' && !finalPayload) finalPayload = { ok: false, message: evt.error || t('error.title') }
+            else onEvent?.(evt)
+          } catch {}
+        }
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            if (buf.trim()) buf.split('\n').forEach(handleLine)
+            break
+          }
+          buf += decoder.decode(value, { stream: true })
+          const parts = buf.split('\n\n')
+          buf = parts.pop() || ''
+          for (const part of parts) {
+            part.split('\n').forEach(handleLine)
+          }
+        }
+        return finalPayload
+      }, [activeLang, t])
+
       const stopActiveRequest = useCallback(() => {
         if (activeRequestAbortRef.current) {
           activeRequestAbortRef.current.abort()
           activeRequestAbortRef.current = null
         }
+        if (queuedPrompt?.text) {
+          if (queuedPrompt.target === 'refine') setTweakText(queuedPrompt.text)
+          else setAdjustText(queuedPrompt.text)
+        }
+        setQueuedPrompt(null)
+        setPlanStage('understanding')
         setBusy(null)
         setLiveReasoning('')
         setLiveReply('')
         setLiveStage('')
         showToast({ message: t('toast.stopped') })
-      }, [showToast, t])
+      }, [queuedPrompt, showToast, t])
 
       const restart = useCallback(() => {
         if (activeRequestAbortRef.current) {
@@ -5301,6 +5671,9 @@ body:has(.lw) [class*="viewArea"] {
         const savedSentence = sentence
         setStage('pick')
         setPlan(null)
+        setPlanStage('understanding')
+        setPreviewReply(null)
+        setQueuedPrompt(null)
         setActive(null)
         setError(null)
         setHistory([])
@@ -5418,12 +5791,25 @@ body:has(.lw) [class*="viewArea"] {
           if (payload.confirmKind === 'skill_guard' || payload.skill || !hasTableConfirm) {
             setConfirmPlan(null)
             setAdjustError(null)
+            const hasExecutableSkill = payload.confirmKind === 'skill_guard' && Array.isArray(payload.steps) && payload.steps.length > 0
             setHistory((prev) => [
               ...prev,
               {
                 role: 'assistant',
                 text: payload.reply || payload.summary || '',
-                warn: true,
+                warn: !hasExecutableSkill,
+                ...(hasExecutableSkill
+                  ? {
+                      skillGuard: {
+                        skill: payload.skill || payload.domain || 'feishu',
+                        label: payload.skillLabel || '',
+                        reason: payload.confirmReason || payload.reply || payload.summary || '',
+                        commandPreview: payload.commandPreview || '',
+                        steps: payload.steps,
+                        status: 'pending',
+                      },
+                    }
+                  : {}),
               },
             ])
             return
@@ -5671,69 +6057,27 @@ body:has(.lw) [class*="viewArea"] {
         try {
           let payload
           if (isCollab && typeof window !== 'undefined' && window.fetch) {
-            const resp = await authFetch(`${API}/adjust`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
+            payload = await postStream('/adjust', {
+              token: token || '',
+              type: 'collab',
+              instruction: text,
+              attachments: attachmentIds,
+              table: (active && active.table) || '',
+              history: recentHistory,
+              model: selectedModel ? selectedModel.id : undefined,
+              provider: selectedModel ? selectedModel.provider : undefined,
+            }, {
               signal: controller.signal,
-              body: JSON.stringify({
-                token: token || '',
-                type: 'collab',
-                instruction: text,
-                attachments: attachmentIds,
-                table: (active && active.table) || '',
-                history: recentHistory,
-                lang: activeLang,
-                model: selectedModel ? selectedModel.id : undefined,
-                provider: selectedModel ? selectedModel.provider : undefined,
-                stream: true,
-              }),
+              onEvent: (evt) => {
+                if (evt.type === 'reasoning') setLiveReasoning((prev) => prev + evt.delta)
+                else if (evt.type === 'reply_delta' && evt.delta) {
+                  setLiveReply((prev) => prev + evt.delta)
+                  setLiveStage((prev) => (prev === 'planning_table' || prev === 'building_preview' ? prev : 'writing'))
+                }
+                else if (evt.type === 'stage' && evt.stage) setLiveStage(evt.stage)
+                else if (evt.type === 'text') setLiveStage((prev) => (prev === 'planning_table' || prev === 'building_preview' ? prev : 'writing'))
+              },
             })
-            const contentType = resp.headers.get('content-type') || ''
-            if (contentType.includes('text/event-stream') && resp.body) {
-              const reader = resp.body.getReader()
-              const decoder = new TextDecoder()
-              let buf = ''
-              while (true) {
-                const { done, value } = await reader.read()
-                if (done) {
-                  if (buf.trim()) {
-                    for (const line of buf.split('\n')) {
-                      const trimmed = line.trim()
-                      if (trimmed.startsWith('data:')) {
-                        try {
-                          const evt = JSON.parse(trimmed.slice(5).trim())
-                          if (evt.type === 'done') payload = evt.payload
-                        } catch {}
-                      }
-                    }
-                  }
-                  break
-                }
-                buf += decoder.decode(value, { stream: true })
-                const parts = buf.split('\n\n')
-                buf = parts.pop() || ''
-                for (const part of parts) {
-                  for (const line of part.split('\n')) {
-                    const trimmed = line.trim()
-                    if (trimmed.startsWith('data:')) {
-                      try {
-                        const evt = JSON.parse(trimmed.slice(5).trim())
-                        if (evt.type === 'reasoning') setLiveReasoning((prev) => prev + evt.delta)
-                        else if (evt.type === 'reply_delta' && evt.delta) {
-                          setLiveReply((prev) => prev + evt.delta)
-                          setLiveStage((prev) => (prev === 'planning_table' || prev === 'building_preview' ? prev : 'writing'))
-                        }
-                        else if (evt.type === 'stage' && evt.stage) setLiveStage(evt.stage)
-                        else if (evt.type === 'text') setLiveStage((prev) => (prev === 'planning_table' || prev === 'building_preview' ? prev : 'writing'))
-                        else if (evt.type === 'done') payload = evt.payload
-                      } catch {}
-                    }
-                  }
-                }
-              }
-            } else {
-              payload = await resp.json().catch(() => ({ ok: false, message: `HTTP ${resp.status}` }))
-            }
           } else {
             payload = await post('/adjust', {
               token: token || '',
@@ -5763,7 +6107,7 @@ body:has(.lw) [class*="viewArea"] {
             setLiveStage('')
           }
         }
-      }, [active, adjustText, busy, finishAdjust, history, post, selectedModel, t])
+      }, [active, adjustText, busy, finishAdjust, history, post, postStream, selectedModel, t])
 
       const planFor = useCallback(async (text) => {
         const readyFiles = attachments.filter((a) => a.status === 'ready' && a.id)
@@ -5776,22 +6120,37 @@ body:has(.lw) [class*="viewArea"] {
           setSentence('')
           setAttachments([])
           setError(null)
+          setPreviewReply(null)
           openCollab('')
           setTimeout(() => { applyAdjust(s, { collab: true, attachments: readyFiles }) }, 0)
           return
         }
         setSentence(s)
+        setPreviewReply(null)
+        setPlanStage('understanding')
         setBusy('plan')
         setError(null)
         const controller = new AbortController()
         activeRequestAbortRef.current = controller
         try {
-          const payload = await post('/plan', {
-            sentence: s,
-            attachments: attachmentIds,
-            model: selectedModel ? selectedModel.id : undefined,
-            provider: selectedModel ? selectedModel.provider : undefined,
-          }, controller.signal)
+          const payload = typeof window !== 'undefined' && window.fetch
+            ? await postStream('/plan', {
+                sentence: s,
+                attachments: attachmentIds,
+                model: selectedModel ? selectedModel.id : undefined,
+                provider: selectedModel ? selectedModel.provider : undefined,
+              }, {
+                signal: controller.signal,
+                onEvent: (evt) => {
+                  if (evt.type === 'stage' && evt.stage) setPlanStage(evt.stage)
+                },
+              })
+            : await post('/plan', {
+                sentence: s,
+                attachments: attachmentIds,
+                model: selectedModel ? selectedModel.id : undefined,
+                provider: selectedModel ? selectedModel.provider : undefined,
+              }, controller.signal)
           if (!alive.current || controller.signal.aborted) return
           if (payload && payload.ok && payload.plan) {
             setPlan(payload.plan)
@@ -5806,6 +6165,7 @@ body:has(.lw) [class*="viewArea"] {
             // Seamlessly hand off non-table queries (including file Q&A) to Lark Assistant
             if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
             setBusy(null)
+            setPlanStage('understanding')
             setAttachments([])
             openCollab('')
             setTimeout(() => { applyAdjust(s, { collab: true, attachments: readyFiles }) }, 0)
@@ -5817,19 +6177,26 @@ body:has(.lw) [class*="viewArea"] {
           if (alive.current) setError(err instanceof Error ? err.message : String(err))
         } finally {
           if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
-          if (alive.current) setBusy(null)
+          if (alive.current) {
+            setBusy(null)
+            setPlanStage('understanding')
+          }
         }
-      }, [attachments, busy, post, selectedModel, openCollab, applyAdjust, t])
+      }, [attachments, busy, post, postStream, selectedModel, openCollab, applyAdjust, t])
 
       const refine = useCallback(async (extra) => {
         const readyFiles = attachments.filter((a) => a.status === 'ready' && a.id)
         const attachmentIds = readyFiles.map((f) => f.id)
         const clean = String(extra || '').trim()
         if ((!clean && attachmentIds.length === 0) || busy || !plan) return
+        const clearTweakIfUnchanged = () => {
+          setTweakText((prev) => (String(prev || '').trim() === clean ? '' : prev))
+        }
         lastRefinePromptRef.current = clean
         const prevPlan = plan
         setBusy('refine')
         setError(null)
+        setPreviewReply(null)
         const controller = new AbortController()
         activeRequestAbortRef.current = controller
         try {
@@ -5843,20 +6210,40 @@ body:has(.lw) [class*="viewArea"] {
           if (!alive.current || controller.signal.aborted) return
 
           if (payload && payload.ok && payload.action === 'build') {
-            setTweakText('')
+            clearTweakIfUnchanged()
             setAttachments([])
+            setPreviewReply(null)
             if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
             setBusy(null)
             setTimeout(() => { build() }, 0)
             return
           }
 
+          if (payload && payload.ok && payload.action === 'reply') {
+            clearTweakIfUnchanged()
+            setAttachments([])
+            setPreviewReply(payload.reply || t('toast.kept'))
+            return
+          }
+
+          if (payload && payload.isNotTable) {
+            clearTweakIfUnchanged()
+            setAttachments([])
+            setPreviewReply(null)
+            if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
+            setBusy(null)
+            openCollab('')
+            setTimeout(() => { applyAdjust(clean, { collab: true, attachments: readyFiles }) }, 0)
+            return
+          }
+
           if (payload && payload.ok && payload.action === 'keep') {
-            setTweakText('')
+            clearTweakIfUnchanged()
             setAttachments([])
             if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current)
             setNudgeBuild(true)
             nudgeTimerRef.current = setTimeout(() => { if (alive.current) setNudgeBuild(false) }, 1600)
+            showToast({ message: t('toast.kept') })
             return
           }
 
@@ -5871,7 +6258,8 @@ body:has(.lw) [class*="viewArea"] {
               diffNames = (nextPlan.tables?.[0]?.fields || []).map((f) => f.name).filter((n) => !prevNames.has(n))
             }
             setPlan(nextPlan)
-            setTweakText('')
+            setPreviewReply(null)
+            clearTweakIfUnchanged()
             if (diffNames.length > 0) {
               if (changedTimerRef.current) clearTimeout(changedTimerRef.current)
               setChangedFields(diffNames)
@@ -5895,7 +6283,20 @@ body:has(.lw) [class*="viewArea"] {
           if (activeRequestAbortRef.current === controller) activeRequestAbortRef.current = null
           if (alive.current) setBusy(null)
         }
-      }, [plan, busy, post, selectedModel, build, showToast, t])
+      }, [plan, busy, attachments, post, selectedModel, build, openCollab, applyAdjust, showToast, t])
+
+      // Flush queued user prompt as soon as the current request finishes naturally
+      useEffect(() => {
+        if (busy || !queuedPrompt || !alive.current) return
+        const next = queuedPrompt
+        setQueuedPrompt(null)
+        const timer = setTimeout(() => {
+          if (!alive.current) return
+          if (next.target === 'refine') refine(next.text)
+          else applyAdjust(next.text)
+        }, 0)
+        return () => clearTimeout(timer)
+      }, [busy, queuedPrompt, refine, applyAdjust])
 
       const confirmApply = useCallback(async () => {
         if (!confirmPlan || !active || busy) return
@@ -6156,8 +6557,27 @@ body:has(.lw) [class*="viewArea"] {
             ? h(
                 'div',
                 { className: 'lw-planning', 'aria-live': 'polite' },
-                h('span', { className: 'lw-meta' }, t('busy.planningSub')),
-                h(TableSkeleton),
+                h(
+                  'div',
+                  { className: `lw-plan-status${planStage === 'building_preview' ? ' is-building' : ''}` },
+                  h(
+                    'div',
+                    { className: 'lw-think-dots', 'aria-hidden': true },
+                    h('span', null),
+                    h('span', null),
+                    h('span', null),
+                  ),
+                  h(
+                    'span',
+                    { className: 'lw-meta lw-thinking-label' },
+                    planStage === 'building_preview'
+                      ? t('busy.buildingPreview')
+                      : planStage === 'routing_collab'
+                        ? t('busy.routingCollab')
+                        : t('busy.planningSub'),
+                  ),
+                ),
+                planStage === 'building_preview' ? h(TableSkeleton) : null,
               )
             : h(
                 'div',
@@ -6356,12 +6776,49 @@ body:has(.lw) [class*="viewArea"] {
             h(
               'div',
               { className: 'lw-composer-wrap', style: { maxWidth: 900 } },
+              previewReply
+                ? h(
+                    'div',
+                    { className: 'lw-preview-reply', role: 'status', 'aria-live': 'polite' },
+                    h(Icon, { name: 'spark', size: 14, className: 'lw-preview-reply-ico' }),
+                    h('div', { className: 'lw-preview-reply-text' }, renderMarkdownContent(previewReply)),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'lw-preview-reply-close',
+                        title: t('preview.replyClose'),
+                        'aria-label': t('preview.replyClose'),
+                        onClick: () => setPreviewReply(null),
+                      },
+                      h(Icon, { name: 'close', size: 13 }),
+                    ),
+                  )
+                : null,
+              queuedPrompt && queuedPrompt.target === 'refine'
+                ? h(
+                    'div',
+                    { className: 'lw-queue-bar', role: 'status' },
+                    h('span', { className: 'lw-dot is-busy' }),
+                    h('span', { className: 'lw-queue-text' }, `${t('composer.queued')}${queuedPrompt.text}`),
+                    h('button', { type: 'button', className: 'lw-queue-cancel', onClick: () => setQueuedPrompt(null) }, t('composer.cancelQueue')),
+                  )
+                : null,
               h(UnifiedComposer, {
                 value: tweakText,
-                onChange: setTweakText,
+                onChange: (val) => {
+                  setTweakText(val)
+                  if (previewReply && String(val || '').trim()) setPreviewReply(null)
+                },
                 onSubmit: () => {
                   const hasReady = attachments.some((a) => a.status === 'ready')
                   if (tweakText.trim() || hasReady) refine(tweakText)
+                },
+                onQueue: (val) => {
+                  const clean = String(val || '').trim()
+                  if (!clean) return
+                  setQueuedPrompt({ target: 'refine', text: clean })
+                  setTweakText('')
                 },
                 onStop: isRefining ? stopActiveRequest : null,
                 placeholder: t('preview.tweakPlaceholder'),
@@ -6558,7 +7015,46 @@ body:has(.lw) [class*="viewArea"] {
             return h(AssistantBubble, {
               key: idx,
               msg,
+              busy,
               t,
+              onCancelSkill: msg.skillGuard && msg.skillGuard.status === 'pending'
+                ? () => {
+                    if (busy) return
+                    setHistory((prev) => prev.map((m, i) => (
+                      i === idx && m.skillGuard ? { ...m, skillGuard: { ...m.skillGuard, status: 'cancelled' } } : m
+                    )))
+                  }
+                : null,
+              onConfirmSkill: msg.skillGuard && msg.skillGuard.status === 'pending'
+                ? async () => {
+                    if (busy) return
+                    const prevUser = [...history.slice(0, idx)].reverse().find((m) => m && m.role === 'user')
+                    setHistory((prev) => prev.map((m, i) => (
+                      i === idx && m.skillGuard ? { ...m, skillGuard: { ...m.skillGuard, status: 'done' } } : m
+                    )))
+                    setBusy('adjust')
+                    setAdjustError(null)
+                    try {
+                      const payload = await post('/adjust', {
+                        type: 'collab',
+                        confirmSkill: true,
+                        skillName: msg.skillGuard.skill,
+                        skillSteps: msg.skillGuard.steps,
+                        instruction: prevUser?.text || '',
+                        lang: activeLang,
+                        model: selectedModel ? selectedModel.id : undefined,
+                        provider: selectedModel ? selectedModel.provider : undefined,
+                      })
+                      if (alive.current) await finishAdjust(payload)
+                    } catch (err) {
+                      if (alive.current) {
+                        setHistory((prev) => [...prev, { role: 'assistant', text: humanize(err instanceof Error ? err.message : String(err), t), error: true }])
+                      }
+                    } finally {
+                      if (alive.current) setBusy(null)
+                    }
+                  }
+                : null,
               onRetry: prevUser ? () => applyAdjust(prevUser.text, { retryIndex: idx }) : null,
             })
           }),
@@ -6644,12 +7140,27 @@ body:has(.lw) [class*="viewArea"] {
                 'div',
                 { className: 'lw-composer-wrap' },
                 adjustError ? h(Banner, { tone: 'error', title: t('error.title'), children: humanize(adjustError, t) }) : null,
+                queuedPrompt && queuedPrompt.target === 'adjust'
+                  ? h(
+                      'div',
+                      { className: 'lw-queue-bar', role: 'status' },
+                      h('span', { className: 'lw-dot is-busy' }),
+                      h('span', { className: 'lw-queue-text' }, `${t('composer.queued')}${queuedPrompt.text}`),
+                      h('button', { type: 'button', className: 'lw-queue-cancel', onClick: () => setQueuedPrompt(null) }, t('composer.cancelQueue')),
+                    )
+                  : null,
                 h(UnifiedComposer, {
                   value: adjustText,
                   onChange: setAdjustText,
                   onSubmit: () => {
                     const hasReady = attachments.some((a) => a.status === 'ready')
                     if (adjustText.trim() || hasReady) applyAdjust()
+                  },
+                  onQueue: (val) => {
+                    const clean = String(val || '').trim()
+                    if (!clean) return
+                    setQueuedPrompt({ target: 'adjust', text: clean })
+                    setAdjustText('')
                   },
                   onStop: busy === 'adjust' ? stopActiveRequest : null,
                   placeholder: isTableMode ? t('view.tablePlaceholder') : t('view.collabPlaceholder'),

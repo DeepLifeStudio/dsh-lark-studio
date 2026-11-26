@@ -12,6 +12,7 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveLang } from './planner.js'
+import { normalizeSkillArgvWithDomain, validateReadonlySkillArgv } from './readonly-allowlist.js'
 
 const CLI_BIN_NAME = process.platform === 'win32' ? 'lark-cli.exe' : 'lark-cli'
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -239,6 +240,79 @@ export function createOperations({ ctx, config = {}, planner }) {
   const identity = typeof config.identity === 'string' && config.identity !== 'auto'
     ? config.identity
     : undefined
+  const normalizeBrand = (raw) => {
+    const val = String(raw ?? '').trim().toLowerCase()
+    if (val === 'lark' || val === 'feishu') return val
+    return undefined
+  }
+  const configuredBrand = normalizeBrand(config.brand)
+  let detectedBrandCache = ''
+
+  function consoleUrlFor(brand, appId) {
+    const host = brand === 'lark' ? 'open.larksuite.com' : 'open.feishu.cn'
+    return appId ? `https://${host}/app/${appId}/auth` : `https://${host}/app`
+  }
+
+  function adaptUrlTextForBrand(text, brand) {
+    if (typeof text !== 'string' || !text) return text
+    let out = text
+    if (brand === 'lark') {
+      out = out.replace(/https?:\/\/([a-z0-9-]+\.)?(?:feishu\.cn|larkoffice\.com)(?=\/|\?|$|\)|\]|"|'|\s)/gi, (match, sub) => {
+        const prefix = match.startsWith('http://') ? 'http://' : 'https://'
+        return `${prefix}${sub || ''}larksuite.com`
+      })
+    } else if (brand === 'feishu') {
+      out = out.replace(/https?:\/\/applink\.(?:larksuite\.com|larkoffice\.com)(?=\/|\?|$|\)|\]|"|'|\s)/gi, (match) => {
+        const prefix = match.startsWith('http://') ? 'http://' : 'https://'
+        return `${prefix}applink.feishu.cn`
+      })
+    }
+    if (brand === 'lark' || brand === 'feishu') {
+      // Official applink web redirects to shared `lark://` by default unless `lk_unique=true`
+      // is set, which selects `x-lark://` (LarkSuite) vs `x-feishu://` (Feishu) unambiguously.
+      out = out.replace(/https?:\/\/applink\.(?:larksuite\.com|feishu\.cn|larkoffice\.com)(?:\/[^\s)"'<>\]\\]*)?/gi, (rawUrl) => {
+        try {
+          const parsed = new URL(rawUrl)
+          if (parsed.searchParams.get('lk_unique') !== 'true') {
+            parsed.searchParams.set('lk_unique', 'true')
+          }
+          return parsed.toString()
+        } catch {
+          return rawUrl
+        }
+      })
+    }
+    return out
+  }
+
+  function adaptBrandData(value, brand) {
+    if (brand !== 'lark' && brand !== 'feishu') return value
+    if (typeof value === 'string') return adaptUrlTextForBrand(value, brand)
+    if (Array.isArray(value)) return value.map((item) => adaptBrandData(item, brand))
+    if (value && typeof value === 'object') {
+      const out = {}
+      for (const [k, v] of Object.entries(value)) out[k] = adaptBrandData(v, brand)
+      return out
+    }
+    return value
+  }
+
+  async function resolveEffectiveBrand(signal, fallbackCfg) {
+    if (configuredBrand) return configuredBrand
+    if (detectedBrandCache) return detectedBrandCache
+    const cfgBrand = normalizeBrand(fallbackCfg?.brand)
+    if (cfgBrand) {
+      detectedBrandCache = cfgBrand
+      return cfgBrand
+    }
+    const cfg = await readConfig(signal).catch(() => null)
+    const fromCfg = normalizeBrand(cfg?.brand)
+    if (fromCfg) {
+      detectedBrandCache = fromCfg
+      return fromCfg
+    }
+    return 'feishu'
+  }
   const cwd = typeof config.cwd === 'string' && config.cwd ? config.cwd : process.cwd()
 
   let resolvedCli
@@ -594,6 +668,19 @@ export function createOperations({ ctx, config = {}, planner }) {
     return (meaningful || fallback || '').slice(0, 240)
   }
 
+  function stripCliNotices(value) {
+    if (Array.isArray(value)) return value.map((item) => stripCliNotices(item))
+    if (value && typeof value === 'object') {
+      const out = {}
+      for (const [k, v] of Object.entries(value)) {
+        if (k === '_notice' || k === 'notice') continue
+        out[k] = stripCliNotices(v)
+      }
+      return out
+    }
+    return value
+  }
+
   async function runJson(argv, signal) {
     const { exitCode, stdout, stderr } = await invoke(argv, signal)
     const trimmed = stdout.trim()
@@ -602,6 +689,9 @@ export function createOperations({ ctx, config = {}, planner }) {
       payload = trimmed ? JSON.parse(trimmed) : undefined
     } catch {
       payload = firstJsonObject(trimmed)
+    }
+    if (payload && typeof payload === 'object') {
+      payload = stripCliNotices(payload)
     }
     if (payload === undefined && exitCode !== 0) {
       return {
@@ -827,6 +917,9 @@ export function createOperations({ ctx, config = {}, planner }) {
       if (detail.ok) url = extractBase(detail.value).url
     }
 
+    const brand = await resolveEffectiveBrand(signal)
+    url = adaptUrlTextForBrand(url, brand)
+
     return {
       ok: true,
       baseName,
@@ -891,24 +984,29 @@ export function createOperations({ ctx, config = {}, planner }) {
     }
 
     const auth = await authStatus(signal)
+    const effectiveBrand = configuredBrand || normalizeBrand(auth.brand) || normalizeBrand(config.brand) || 'feishu'
+    if (normalizeBrand(auth.brand) || normalizeBrand(config.brand)) {
+      detectedBrandCache = normalizeBrand(auth.brand) || normalizeBrand(config.brand)
+    }
     const base = {
       cli: { available: true, path: cliPath },
-      app: { appId: config.appId, brand: config.brand },
+      app: { appId: config.appId, brand: effectiveBrand },
       installCommand: INSTALL_COMMAND,
     }
     return (auth.ready && auth.userReady) ? { stage: 'ready', ...base, auth } : { stage: 'no-auth', ...base, auth }
   }
 
-  /** Step 1 for a brand-new user: create the Feishu app in a browser flow. */
+  /** Step 1 for a brand-new user: create the Feishu/Lark app in a browser flow. */
   let appInit = null
 
-  async function startAppInit(signal) {
+  async function startAppInit(signal, requestedBrand) {
     if (appInit && !appInit.done) {
       if (appInit.url) return { ok: true, url: appInit.url, pending: true }
     }
+    const targetBrand = normalizeBrand(requestedBrand) || configuredBrand || 'feishu'
     const executable = await resolveCli(signal)
     const handle = ctx.subprocess.spawn({
-      argv: [executable, 'config', 'init', '--new', '--brand', 'feishu'],
+      argv: [executable, 'config', 'init', '--new', '--brand', targetBrand],
       cwd,
       stdio: {
         stdin: 'ignore',
@@ -964,7 +1062,7 @@ export function createOperations({ ctx, config = {}, planner }) {
    * App ID + Secret once. The secret travels over stdin, never argv, so it
    * does not appear in a process list.
    */
-  async function bindApp(appId, appSecret, signal) {
+  async function bindApp(appId, appSecret, signal, requestedBrand) {
     const id = String(appId ?? '').trim()
     const secret = String(appSecret ?? '').trim()
     if (!/^cli_[A-Za-z0-9]+$/.test(id)) {
@@ -974,9 +1072,10 @@ export function createOperations({ ctx, config = {}, planner }) {
       return { ok: false, message: 'App Secret 好像没复制完整，再看一眼。' }
     }
 
+    const targetBrand = normalizeBrand(requestedBrand) || configuredBrand || 'feishu'
     const executable = await resolveCli(signal)
     const handle = ctx.subprocess.spawn({
-      argv: [executable, 'config', 'init', '--app-id', id, '--app-secret-stdin', '--brand', 'feishu'],
+      argv: [executable, 'config', 'init', '--app-id', id, '--app-secret-stdin', '--brand', targetBrand],
       cwd,
       stdio: {
         stdin: { data: `${secret}\n` },
@@ -1190,11 +1289,14 @@ export function createOperations({ ctx, config = {}, planner }) {
       },
     }
 
+    const cfg = await readConfig(signal).catch(() => null)
+    const brand = await resolveEffectiveBrand(signal, cfg)
     return {
       ok: true,
       appId,
+      brand,
       totalGranted: count,
-      consoleUrl: appId ? `https://open.feishu.cn/app/${appId}/auth` : 'https://open.feishu.cn/app',
+      consoleUrl: consoleUrlFor(brand, appId),
       domains,
     }
   }
@@ -1236,7 +1338,7 @@ export function createOperations({ ctx, config = {}, planner }) {
   }
 
   async function taskDelete(taskId, signal) {
-    return runJson(['task', 'tasks', 'delete', '--task-id', taskId, '--yes', '--json', ...asArgs()], signal)
+    return runJson(['task', 'tasks', 'delete', '--task-guid', taskId, '--yes', '--json', ...asArgs()], signal)
   }
 
   async function chatList(signal) {
@@ -1426,17 +1528,6 @@ export function createOperations({ ctx, config = {}, planner }) {
         contentText = contentText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
       }
 
-      // If contentText has an explicit internal thinking prelude before the actual answer
-      if (!reasoningText && /我们需要|用户要求|思路：|分析：|思考：|Let me think/i.test(contentText)) {
-        const tableIndex = contentText.indexOf('|')
-        const introIndex = contentText.indexOf('以下')
-        const splitIndex = introIndex !== -1 && (tableIndex === -1 || introIndex < tableIndex) ? introIndex : tableIndex
-        if (splitIndex > 0) {
-          reasoningText = contentText.slice(0, splitIndex).trim()
-          contentText = contentText.slice(splitIndex).trim()
-        }
-      }
-
       const resText = contentText.trim()
       const resReasoning = reasoningText.trim()
       if (!resText && !resReasoning) return null
@@ -1540,38 +1631,12 @@ export function createOperations({ ctx, config = {}, planner }) {
     return lang === 'en' ? fallbackEn : fallbackZh
   }
 
-  function isSafeSkillArgv(argv) {
+  function isWellFormedSkillArgv(argv) {
     if (!Array.isArray(argv) || argv.length === 0) return false
     if (!argv.every((tok) => typeof tok === 'string' && tok.length > 0 && !/[\r\n\0]/.test(tok))) return false
     const domain = argv[0].toLowerCase()
-    if (/^(config|auth|update|upgrade|skills)$/.test(domain)) return false
-    // Prevent blocking daemon event stream unless explicitly bounded by --max-events
-    if (domain === 'event' && argv[1] === 'consume' && !argv.some((t) => t === '--max-events' || t.startsWith('--max-events='))) {
-      return false
-    }
+    if (/^(config|auth|update|upgrade)$/.test(domain)) return false
     return /^[a-z0-9_-]+$/i.test(domain)
-  }
-
-  function looksMutatingArgv(argv) {
-    const commandTokens = []
-    for (let i = 0; i < argv.length; i++) {
-      const tok = String(argv[i])
-      if (tok === '--yes') return true
-      if (tok === '--method' || tok === '-X') {
-        const method = String(argv[i + 1] || '').toUpperCase()
-        if (method && method !== 'GET' && method !== 'HEAD') return true
-        i++
-        continue
-      }
-      if (tok.startsWith('-')) {
-        if (!tok.includes('=')) i++ // skip option value so user search text (e.g. --query "update") does not false-trigger
-        continue
-      }
-      commandTokens.push(tok)
-    }
-    const cmdHead = commandTokens.join(' ').toLowerCase()
-    return /\b(create|update|delete|remove|send|reply|reply-all|forward|edit|batch-create|batch-update|complete|approve|reject|bind|unbind|import|upload|grant|revoke|enable|disable|set|add|post|put|patch|triage-mark|archive|trash)\b/i.test(cmdHead)
-      || /(^|\s)\+[a-z0-9-]*(create|update|delete|remove|send|reply|edit|complete|approve|reject|upload|import|archive|move|copy)\b/i.test(cmdHead)
   }
 
   /**
@@ -1682,10 +1747,169 @@ export function createOperations({ ctx, config = {}, planner }) {
     }
   }
 
-  async function dispatchCollab({ instruction, history = [], model, provider, lang, attachmentContext, imageBlocks = [], onDelta }, signal) {
+  function humanizeCliError(rawMessage, isEn = false) {
+    const raw = String(rawMessage || '').trim()
+    if (!raw) return isEn ? 'Unknown error' : '未知错误'
+    if (/user access token not support/i.test(raw)) {
+      return isEn
+        ? `Feishu does not support personal user-token calls for this endpoint (${raw}).`
+        : `飞书平台暂不支持以个人用户身份调用该接口（${raw}）。`
+    }
+    if (/resolved identity "bot"|tenant_access_token.*not support|bot.*not supported/i.test(raw)) {
+      return isEn
+        ? 'This Feishu action requires a signed-in personal user account. Please sign in and retry.'
+        : '该飞书操作需要个人账号授权身份，请先在右上角完成飞书登录。'
+    }
+    if (/not_configured|not configured/i.test(raw)) {
+      return isEn
+        ? 'Feishu app or login is not configured yet. Complete setup in the top-right badge.'
+        : '尚未完成飞书应用或账号连接，请先在右上角完成授权配置。'
+    }
+    if (/required flag|missing required (?:query )?parameter/i.test(raw)) {
+      return isEn
+        ? `Missing required parameter (${raw}). Try adding more details in your request.`
+        : `缺少必要查询参数（${raw}），请在提问中补充具体对象或条件后重试。`
+    }
+    return raw
+  }
+
+  async function executeSkillSteps(skillName, label, plannedSteps, text, { model, provider, activeLang, isEn, onDelta, allowAutoRepair = false }, signal) {
+    const stepOutputs = []
+    for (let idx = 0; idx < plannedSteps.slice(0, 4).length; idx++) {
+      let stepArgv = plannedSteps[idx]
+      let cliResult = await runJson([...stepArgv, ...asArgs()], signal)
+      if (!cliResult.ok && allowAutoRepair && cliResult.error?.subtype !== 'missing_scope' && !/missing required scope/i.test(cliResult.message || '')) {
+        const checked = validateReadonlySkillArgv(stepArgv)
+        const prefixLen = checked.ok && checked.prefixLen ? checked.prefixLen : 2
+        const helpOut = await invoke([...stepArgv.slice(0, prefixLen), '--help'], signal).catch(() => null)
+        const helpText = helpOut?.stdout?.trim() || ''
+        let selfOpenId = ''
+        if (/user-id|user_id|open_id/i.test(cliResult.message || '')) {
+          const selfRes = await runJson(['contact', '+get-user', ...asArgs()], signal).catch(() => null)
+          const u = selfRes?.value?.data?.user || selfRes?.value?.user || selfRes?.value?.data || selfRes?.value
+          if (u && typeof u.open_id === 'string' && u.open_id) selfOpenId = u.open_id
+        }
+        if (helpText && ctx.llm && typeof ctx.llm.stream === 'function') {
+          const repairRaw = await callLlm({
+            system: `根据 lark-cli 命令真实 --help 修复失败的只读命令参数（禁止使用 --output、--params、--page-all、@file）。只返回 JSON：{"argv": ["domain", ...]}`,
+            messages: [
+              {
+                role: 'user',
+                text: `用户请求：${text}\n失败命令：${JSON.stringify(stepArgv)}\n错误信息：${cliResult.message}${selfOpenId ? `\n当前登录用户 open_id：${selfOpenId}` : ''}\n\n命令真实 --help：\n${helpText.slice(0, 6000)}`,
+              },
+            ],
+            model,
+            provider,
+            temperature: 0,
+          }, signal).catch(() => null)
+          const repaired = repairRaw ? parseModelJson(repairRaw) : null
+          if (repaired && Array.isArray(repaired.argv)) {
+            const normalized = normalizeSkillArgvWithDomain(repaired.argv, skillName)
+            if (validateReadonlySkillArgv(normalized).ok) {
+              stepArgv = normalized
+              cliResult = await runJson([...stepArgv, ...asArgs()], signal)
+            }
+          }
+        }
+      }
+      if (!cliResult.ok) {
+        if (cliResult.error?.subtype === 'missing_scope' || /missing required scope/i.test(cliResult.message || '')) {
+          const scopesInfo = await getScopes(signal)
+          const appId = scopesInfo.appId || ''
+          const brand = scopesInfo.brand || (await resolveEffectiveBrand(signal))
+          const consoleUrl = scopesInfo.consoleUrl || consoleUrlFor(brand, appId)
+          const domainTitle = skillLabel(skillName, activeLang)
+          return {
+            ok: false,
+            type: 'missing_scope',
+            domain: skillName,
+            domainTitle,
+            requiredScopes: cliResult.error?.missing_scopes || [],
+            categoryName: skillLabel(skillName, activeLang, '飞书服务', 'Feishu Service'),
+            consoleUrl,
+            reply: isEn
+              ? `Authorization for "${domainTitle}" is required to load this data. Click "Authorize & continue" below.`
+              : `需要授权访问「${domainTitle}」以获取相关数据，请点击下方「授权并继续」。`,
+            summary: isEn ? `Permission required: ${domainTitle}` : `需要「${domainTitle}」访问授权`,
+          }
+        }
+        const friendlyMsg = humanizeCliError(cliResult.message, isEn)
+        return {
+          ok: false,
+          type: 'answer',
+          domain: skillName,
+          reply: isEn
+            ? `Failed to run ${label}: ${friendlyMsg}`
+            : `${label}查询未能完成：${friendlyMsg}`,
+        }
+      }
+      stepOutputs.push({
+        command: stepArgv.slice(0, 2).join(' '),
+        data: cliResult.value !== undefined ? cliResult.value : (cliResult.rawText || ''),
+      })
+    }
+
+    const brand = await resolveEffectiveBrand(signal)
+    const rawPayload = stripCliNotices(stepOutputs.length === 1 ? stepOutputs[0].data : stepOutputs)
+    const payloadForModel = adaptBrandData(rawPayload, brand)
+    const payloadText = typeof payloadForModel === 'string'
+      ? payloadForModel
+      : JSON.stringify(payloadForModel ?? {}, null, 2)
+    const brandHint = brand === 'lark'
+      ? 'Use larksuite.com for Lark URLs (never feishu.cn or larkoffice.com), and preserve query parameters (such as lk_unique=true) verbatim.'
+      : 'Preserve returned URLs and query parameters (such as lk_unique=true) verbatim.'
+    const summarized = await callLlm({
+      system: isEn
+        ? `Summarize the data returned by the official Feishu CLI (${skillName}) into a concise, clear, human-readable English answer (using Markdown lists or tables where helpful). Never mention internal CLI version notices or suggest running \`lark-cli update\`. ${brandHint}`
+        : `请把官方飞书命令（${skillName}）返回的数据整理成简洁清晰、人类易读的中文回答（支持 Markdown 列表或表格）。绝不要提及内部 CLI 版本提示或建议用户运行 \`lark-cli update\`。${brand === 'lark' ? '请使用 larksuite.com 域名链接（不要使用 feishu.cn 或 larkoffice.com），并完整保留链接中的查询参数（如 lk_unique=true）。' : '请完整保留返回链接及其查询参数（如 lk_unique=true）。'}`,
+      messages: [
+        { role: 'user', text: `${isEn ? 'User request' : '用户问题'}：${text}\n${isEn ? 'Returned data' : '返回数据'}：\n${payloadText.slice(0, 12000)}` },
+      ],
+      model,
+      provider,
+      onDelta: createPlainReplyForwarder(onDelta),
+    }, signal)
+    const finalReply = adaptUrlTextForBrand(
+      summarized
+        ? (summarized.text || summarized)
+        : (isEn
+            ? `Fetched via official skill **${label}**:\n${typeof payloadForModel === 'string' ? payloadText.slice(0, 2000) : `\`\`\`json\n${payloadText.slice(0, 2000)}\n\`\`\``}`
+            : `已通过官方技能 **${label}** 获取数据：\n${typeof payloadForModel === 'string' ? payloadText.slice(0, 2000) : `\`\`\`json\n${payloadText.slice(0, 2000)}\n\`\`\``}`),
+      brand,
+    )
+    return {
+      ok: true,
+      type: 'collab',
+      domain: skillName,
+      skill: skillName,
+      reply: finalReply,
+      reasoning: summarized?.reasoning || null,
+      summary: isEn ? `Completed query via ${skillName}` : `已通过 ${skillName} 完成查询`,
+      data: payloadForModel,
+    }
+  }
+
+  async function dispatchCollab({ instruction, history = [], model, provider, lang, attachmentContext, imageBlocks = [], confirmSkill = false, skillSteps, skillName: confirmedSkillName, onDelta }, signal) {
     const rawText = (instruction || '').trim()
     const activeLang = resolveLang(lang, rawText)
     const isEn = activeLang === 'en'
+
+    if (confirmSkill === true && Array.isArray(skillSteps) && skillSteps.length > 0) {
+      const sName = String(confirmedSkillName || 'feishu').trim() || 'feishu'
+      const label = skillLabel(sName, activeLang, sName, sName)
+      const safeConfirmedSteps = skillSteps
+        .map((s) => normalizeSkillArgvWithDomain(s, sName))
+        .filter((s) => isWellFormedSkillArgv(s) && s[0].toLowerCase() !== 'skills')
+      if (safeConfirmedSteps.length === 0) {
+        return {
+          ok: false,
+          type: 'answer',
+          domain: sName,
+          reply: isEn ? 'No valid Feishu command steps to execute.' : '没有可执行的合法飞书命令。',
+        }
+      }
+      return await executeSkillSteps(sName, label, safeConfirmedSteps, rawText || label, { model, provider, activeLang, isEn, onDelta, allowAutoRepair: false }, signal)
+    }
     const attachPrompt = attachmentContext?.promptBlock || ''
     const hasAttachments = Boolean(attachPrompt) || imageBlocks.length > 0
     const text = rawText || (hasAttachments
@@ -1695,7 +1919,8 @@ export function createOperations({ ctx, config = {}, planner }) {
       : '')
     const scopesInfo = await getScopes(signal)
     const appId = scopesInfo.appId || ''
-    const consoleUrl = scopesInfo.consoleUrl || (appId ? `https://open.feishu.cn/app/${appId}/auth` : 'https://open.feishu.cn/app')
+    const brand = scopesInfo.brand || (await resolveEffectiveBrand(signal))
+    const consoleUrl = scopesInfo.consoleUrl || consoleUrlFor(brand, appId)
 
     const scopeError = (domainKey, requiredScopes, domainTitleZh, categoryNameZh, domainTitleEn, categoryNameEn) => {
       const domainTitle = isEn ? (domainTitleEn || domainTitleZh) : domainTitleZh
@@ -1861,19 +2086,22 @@ export function createOperations({ ctx, config = {}, planner }) {
         if (guide) {
           const skillPlanRaw = await callLlm({
             system: `你是一名精通飞书 CLI 的智能执行器。请严格依据下面这份官方 Skill 文档，把用户请求翻译为安全、只读查询的 lark-cli 子命令参数（不含 lark-cli 本身与 --as 等全局参数）。
-- 若属于单一查询命令，填 "argv": ["subcommand", "..."]；
-- 若属于组合工作流（如站会摘要/会议纪要汇总需连续查多个接口），填 "steps": [["subcommand1", ...], ["subcommand2", ...]]；
-- 若该需求需要修改/新建/删除/发送等写操作，请把 "readonly" 设为 false 并说明影响；绝不可擅自执行写操作或认证管理命令。${isEn ? '\n- Always write confirmReason and reply in natural English.' : ''}
+- argv/steps 的第 1 个元素**必须**是飞书域名（如 "approval"、"attendance"、"okr"、"minutes"、"vc"、"sheets"、"docs"、"task"），不能省略！例如 ["approval", "tasks", "query", "--topic", "1"] 或 ["okr", "+cycle-list"]；
+- 若用户请求包含多个不相关领域，只聚焦处理当前 Skill（${skillName}）对应的部分，不要强行跨领域拼装无关命令；
+- 若属于单一查询命令，填 "argv": ["domain", "subcommand", "..."]；
+- 若属于组合工作流（如站会摘要/会议纪要汇总需连续查多个接口），填 "steps": [["domain", "subcommand1", ...], ["domain", "subcommand2", ...]]；
+- 只读查询必须使用具体的 typed flags（例如 attendance 必须带 "--employee-type", "employee_no"），严禁使用 --output、--output-dir、--output-path、--overwrite、--download-resources、--params、--page-all 或 @file 参数；
+- 若该需求需要修改/新建/删除/发送/下载写盘等操作，或无法用纯只读查询完成，请把 "readonly" 设为 false，并用 1-2 句简洁通俗的人话填写 "confirmReason"（说明将对飞书做什么、有何影响，绝不要出现 lark-cli、--xxx 参数名等技术术语）。${isEn ? '\n- Always write confirmReason and reply in natural English.' : ''}
 
 官方 Skill（${skillName}）文档：
 ${guide.slice(0, 28000)}
 
 仅返回 JSON：
 {
-  "argv": ["subcommand", "..."],
-  "steps": [["subcommand1", "..."], ["subcommand2", "..."]],
+  "argv": ["domain", "subcommand", "..."],
+  "steps": [["domain", "subcommand1", "..."]],
   "readonly": true | false,
-  "confirmReason": "当 readonly=false 时向用户说明影响",
+  "confirmReason": "当 readonly=false 时，用通俗人话说明即将执行的操作及影响（不含技术参数）",
   "reply": "当文档提示无法直接运行或需要用户在主对话/特定链接操作时的直接回答"
 }`,
             messages: [
@@ -1885,14 +2113,21 @@ ${guide.slice(0, 28000)}
             temperature: 0.1,
           }, signal)
           const skillPlan = skillPlanRaw ? parseModelJson(skillPlanRaw) : null
-          const plannedSteps = Array.isArray(skillPlan?.steps) && skillPlan.steps.length > 0
-            ? skillPlan.steps.filter((s) => isSafeSkillArgv(s))
-            : (skillPlan && isSafeSkillArgv(skillPlan.argv) ? [skillPlan.argv] : [])
+          const rawSteps = Array.isArray(skillPlan?.steps) && skillPlan.steps.length > 0
+            ? skillPlan.steps
+            : (skillPlan && Array.isArray(skillPlan.argv) ? [skillPlan.argv] : [])
+          const plannedSteps = rawSteps
+            .map((s) => normalizeSkillArgvWithDomain(s, skillName))
+            .filter((s) => isWellFormedSkillArgv(s))
 
           if (plannedSteps.length > 0) {
-            if (skillPlan.readonly === false || plannedSteps.some((step) => looksMutatingArgv(step))) {
+            const allAllowlistedReadonly = plannedSteps.every((step) => validateReadonlySkillArgv(step).ok)
+            if (skillPlan.readonly === false || !allAllowlistedReadonly) {
               const firstCmd = plannedSteps.map((s) => `lark-cli ${s.join(' ')}`).join(' && ')
-              const reason = skillPlan.confirmReason || (isEn ? `Will run Feishu action: ${firstCmd}` : `将执行飞书操作：${firstCmd}`)
+              const fallbackReason = isEn
+                ? `This action (${label}) will modify or export Feishu data and requires your confirmation before running.`
+                : `即将执行「${label}」相关操作，可能变更数据或产生外部影响，请确认后继续。`
+              const reason = skillPlan.confirmReason || fallbackReason
               return {
                 ok: true,
                 type: 'answer',
@@ -1900,73 +2135,19 @@ ${guide.slice(0, 28000)}
                 needsConfirm: true,
                 confirmKind: 'skill_guard',
                 skill: skillName,
+                skillLabel: label,
+                confirmReason: reason,
+                commandPreview: firstCmd,
                 argv: plannedSteps[0],
                 steps: plannedSteps,
                 reply: isEn
-                  ? `Parsed action via official skill **${label}**:\n\n> ${reason}\n\nTo prevent unintended writes, Sidebar Assistant runs read-only queries automatically. Please confirm in the main chat or directly in Feishu to run write operations.`
-                  : `已依据官方技能 **${label}** 解析操作：\n\n> ${reason}\n\n为防止误操作，侧边栏自动协同模式默认仅自动执行只读查询；如需执行变更，请在主对话中授权运行或在飞书中直接确认。`,
-                summary: isEn ? `Confirmation needed (${label})` : `需要确认变更操作 (${label})`,
+                  ? `${reason}\n\nCommand: \`${firstCmd}\``
+                  : `${reason}`,
+                summary: isEn ? `Confirm action (${label})` : `待确认操作（${label}）`,
               }
             }
 
-            const stepOutputs = []
-            for (const stepArgv of plannedSteps.slice(0, 4)) {
-              const cliResult = await runJson([...stepArgv, ...asArgs()], signal)
-              if (!cliResult.ok) {
-                if (cliResult.error?.subtype === 'missing_scope' || /missing required scope/i.test(cliResult.message || '')) {
-                  return scopeError(
-                    skillName,
-                    cliResult.error?.missing_scopes || [],
-                    skillLabel(skillName, 'zh'),
-                    skillLabel(skillName, 'zh', '飞书服务', 'Feishu Service'),
-                    skillLabel(skillName, 'en'),
-                    skillLabel(skillName, 'en', '飞书服务', 'Feishu Service'),
-                  )
-                }
-                return {
-                  ok: false,
-                  type: 'answer',
-                  domain: skillName,
-                  reply: isEn
-                    ? `Failed to run ${skillName} query: ${cliResult.message || 'Unknown error'}`
-                    : `执行 ${skillName} 查询失败：${cliResult.message || '未知错误'}`,
-                }
-              }
-              stepOutputs.push({
-                command: stepArgv.slice(0, 2).join(' '),
-                data: cliResult.value !== undefined ? cliResult.value : (cliResult.rawText || ''),
-              })
-            }
-
-            const payloadForModel = stepOutputs.length === 1 ? stepOutputs[0].data : stepOutputs
-            const payloadText = typeof payloadForModel === 'string'
-              ? payloadForModel
-              : JSON.stringify(payloadForModel ?? {}, null, 2)
-            const summarized = await callLlm({
-              system: isEn
-                ? `Summarize the data returned by the official Feishu CLI (${skillName}) into a concise, clear, human-readable English answer (using Markdown lists or tables where helpful).`
-                : `请把官方飞书命令（${skillName}）返回的数据整理成简洁清晰、人类易读的中文回答（支持 Markdown 列表或表格）。`,
-              messages: [
-                { role: 'user', text: `${isEn ? 'User request' : '用户问题'}：${text}\n${isEn ? 'Returned data' : '返回数据'}：\n${payloadText.slice(0, 12000)}` },
-              ],
-              model,
-              provider,
-              onDelta: createPlainReplyForwarder(onDelta),
-            }, signal)
-            return {
-              ok: true,
-              type: 'collab',
-              domain: skillName,
-              skill: skillName,
-              reply: summarized
-                ? (summarized.text || summarized)
-                : (isEn
-                    ? `Fetched via official skill **${label}**:\n${typeof payloadForModel === 'string' ? payloadText.slice(0, 2000) : `\`\`\`json\n${payloadText.slice(0, 2000)}\n\`\`\``}`
-                    : `已通过官方技能 **${skillName}** 获取数据：\n${typeof payloadForModel === 'string' ? payloadText.slice(0, 2000) : `\`\`\`json\n${payloadText.slice(0, 2000)}\n\`\`\``}`),
-              reasoning: summarized?.reasoning || null,
-              summary: isEn ? `Completed query via ${skillName}` : `已通过 ${skillName} 完成查询`,
-              data: payloadForModel,
-            }
+            return await executeSkillSteps(skillName, label, plannedSteps, text, { model, provider, activeLang, isEn, onDelta, allowAutoRepair: true }, signal)
           }
           if (skillPlan?.reply) {
             return {
@@ -1986,7 +2167,7 @@ ${guide.slice(0, 28000)}
         return {
           ok: true,
           type: 'collab',
-          reply: String(replyText).trim(),
+          reply: adaptUrlTextForBrand(String(replyText).trim(), brand),
           reasoning: agentRaw?.reasoning || null,
           summary: isEn ? 'Replied' : '已回复',
         }
@@ -1996,31 +2177,17 @@ ${guide.slice(0, 28000)}
       return {
         ok: true,
         type: 'collab',
-        reply: String(agentRaw.text).trim(),
+        reply: adaptUrlTextForBrand(String(agentRaw.text).trim(), brand),
         reasoning: agentRaw.reasoning || null,
         summary: isEn ? 'Replied' : '已回复',
       }
     }
 
-    // 3. 工具调度与离线降级分支
-    // 优先遵循大模型决策的 action；若环境处于无 LLM 支持的离线状态 (isOffline)，降级使用基础关键词匹配
+    // 3. 大模型结构化调度分支（无硬编码关键词兜底）
     const chosenAction = agentDecision?.action
-    const isOffline = !agentRaw
-
-    // 多维表格建表引导（离线降级）
-    if (isOffline && /(新建|创建|建一张|建个|想建一张|想建个|我要建|create|build|make).*(多维表格|多维表|业务表|数据表|台账|表格|base|table|bitable)/i.test(text)) {
-      return {
-        ok: true,
-        type: 'suggest_table',
-        reply: isEn
-          ? 'Looks like you want to create a Base. Go back to the home view to generate one from a single sentence, or tell me which columns you need.'
-          : `检测到您想创建多维表格。您可以点击左上角「← 返回」在首页输入需求一键建表，或者告诉我需要包含什么字段，我为您规划生成！`,
-        summary: isEn ? 'Suggest creating a Base' : '建议前往多维表格模式',
-      }
-    }
 
     // 日程与会议查询
-    if (chosenAction === 'get_calendar' || (isOffline && /日程|日历|会议|议程|空闲|今天有什么事|agenda|calendar|meeting|schedule/i.test(text))) {
+    if (chosenAction === 'get_calendar') {
       const res = await calendarList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
@@ -2030,7 +2197,7 @@ ${guide.slice(0, 28000)}
           ok: false,
           type: 'answer',
           domain: 'calendar',
-          reply: isEn ? `Failed to load calendar: ${res.message || 'Unknown error'}` : `查询日程失败：${res.message || '未知错误'}`,
+          reply: isEn ? `Failed to load calendar: ${humanizeCliError(res.message, isEn)}` : `查询日程失败：${humanizeCliError(res.message, isEn)}`,
         }
       }
       const events = res.value?.events || res.value?.data?.events || res.value?.data?.items || res.value?.items || []
@@ -2057,7 +2224,7 @@ ${guide.slice(0, 28000)}
     }
 
     // 5. 任务与待办清单
-    if (chosenAction === 'get_tasks' || (isOffline && /待办|任务|清单|todo|还有什么没做|task/i.test(text))) {
+    if (chosenAction === 'get_tasks') {
       const res = await taskList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
@@ -2067,7 +2234,7 @@ ${guide.slice(0, 28000)}
           ok: false,
           type: 'answer',
           domain: 'task',
-          reply: isEn ? `Failed to load tasks: ${res.message || 'Unknown error'}` : `查询待办失败：${res.message || '未知错误'}`,
+          reply: isEn ? `Failed to load tasks: ${humanizeCliError(res.message, isEn)}` : `查询待办失败：${humanizeCliError(res.message, isEn)}`,
         }
       }
       const tasks = res.value?.tasks || res.value?.data?.tasks || res.value?.data?.items || res.value?.items || []
@@ -2092,7 +2259,7 @@ ${guide.slice(0, 28000)}
     }
 
     // 6. 即时消息与群聊检索
-    if (chosenAction === 'get_chats' || (isOffline && /群聊|群组|chat|群列表|聊天群|群|group/i.test(text))) {
+    if (chosenAction === 'get_chats') {
       const res = await chatList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
@@ -2101,7 +2268,7 @@ ${guide.slice(0, 28000)}
         return {
           ok: false,
           type: 'answer',
-          reply: isEn ? `Failed to load chats: ${res.message || 'Unknown error'}` : `查询群聊失败：${res.message || '未知错误'}`,
+          reply: isEn ? `Failed to load chats: ${humanizeCliError(res.message, isEn)}` : `查询群聊失败：${humanizeCliError(res.message, isEn)}`,
         }
       }
       const chats = res.value?.data?.chats || res.value?.chats || res.value?.items || res.value?.data?.items || []
@@ -2128,7 +2295,7 @@ ${guide.slice(0, 28000)}
     }
 
     // 7. 邮件速览
-    if (chosenAction === 'get_mails' || (isOffline && /邮件|email|mail|inbox|收件箱|发件箱|未读邮件/i.test(text))) {
+    if (chosenAction === 'get_mails') {
       const res = await mailList(signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
@@ -2138,7 +2305,7 @@ ${guide.slice(0, 28000)}
           ok: false,
           type: 'answer',
           domain: 'mail',
-          reply: isEn ? `Failed to load mail: ${res.message || 'Unknown error'}` : `查询邮件失败：${res.message || '未知错误'}`,
+          reply: isEn ? `Failed to load mail: ${humanizeCliError(res.message, isEn)}` : `查询邮件失败：${humanizeCliError(res.message, isEn)}`,
         }
       }
       const mails = res.value?.messages || res.value?.data?.messages || []
@@ -2149,33 +2316,6 @@ ${guide.slice(0, 28000)}
           domain: 'mail',
           reply: isEn ? 'Inbox:\n\nNo recent messages found.' : '飞书邮件速览：\n\n最近暂无新邮件。',
           summary: isEn ? 'No recent mail' : '暂无新邮件',
-        }
-      }
-
-      // 如果用户直接在提问中要求了表格形式，使用 LLM 输出表格
-      if (/表格|排版|table|markdown/i.test(text)) {
-        const mailTable = await callLlm({
-          system: isEn
-            ? 'Format the fetched Feishu mail list as a clean Markdown table with columns: #, Subject, Sender.'
-            : '你是一个飞书协同助手。请将查询到的邮件列表整理为标准的 Markdown 表格。列包含：序号、主题、发件人。',
-          messages: [{
-            role: 'user',
-            content: `${isEn ? 'Format these messages as a Markdown table' : '请将以下邮件整理成表格'}：\n${JSON.stringify(mails, null, 2)}`,
-          }],
-          model,
-          provider,
-          onDelta: createPlainReplyForwarder(onDelta),
-        }, signal)
-        if (mailTable) {
-          return {
-            ok: true,
-            type: 'collab',
-            domain: 'mail',
-            reply: isEn ? `Recent mail:\n\n${mailTable.text || mailTable}` : `为您找到以下近期邮件：\n\n${mailTable.text || mailTable}`,
-            reasoning: mailTable.reasoning || null,
-            summary: isEn ? `Found ${mails.length} message(s)` : `已查询到 ${mails.length} 封邮件`,
-            data: mails,
-          }
         }
       }
 
@@ -2191,8 +2331,8 @@ ${guide.slice(0, 28000)}
     }
 
     // 8. 通讯录联系人检索
-    if (chosenAction === 'search_contacts' || (isOffline && /通讯录|联系人|搜人|查同事|找同事|联系方式|电话|contact/i.test(text))) {
-      const q = agentDecision?.query || text.replace(/帮我|查一下|查|搜一下|搜|找一下|找|的联系方式|联系人|通讯录|同事/g, '').trim() || 'me'
+    if (chosenAction === 'search_contacts') {
+      const q = String(agentDecision?.query || text || '').trim() || 'me'
       const res = await contactSearch(q, signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
@@ -2202,7 +2342,7 @@ ${guide.slice(0, 28000)}
           ok: false,
           type: 'answer',
           domain: 'contact',
-          reply: isEn ? `Failed to search contacts: ${res.message || 'Unknown error'}` : `查询通讯录失败：${res.message || '未知错误'}`,
+          reply: isEn ? `Failed to search contacts: ${humanizeCliError(res.message, isEn)}` : `查询通讯录失败：${humanizeCliError(res.message, isEn)}`,
         }
       }
       const users = res.value?.data?.users || res.value?.users || []
@@ -2227,9 +2367,8 @@ ${guide.slice(0, 28000)}
     }
 
     // 9. 知识库与云文档检索
-    if (chosenAction === 'search_wiki' || (isOffline && /知识库|文档|wiki|规范|指南|手册|制度|docs/i.test(text))) {
-      let q = agentDecision?.query || text.replace(/在团队知识库中搜索|在知识库中搜索|知识库|搜索|查一下|查找|查|搜/g, '').trim()
-      if (!q) q = isEn ? 'guide' : '规范'
+    if (chosenAction === 'search_wiki') {
+      const q = String(agentDecision?.query || text || '').trim() || (isEn ? 'guide' : '规范')
       const res = await docsSearch(q, signal)
       if (!res.ok) {
         if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
@@ -2239,7 +2378,7 @@ ${guide.slice(0, 28000)}
           ok: false,
           type: 'answer',
           domain: 'wiki',
-          reply: isEn ? `Failed to search docs & wiki: ${res.message || 'Unknown error'}` : `检索知识库与文档失败：${res.message || '未知错误'}`,
+          reply: isEn ? `Failed to search docs & wiki: ${humanizeCliError(res.message, isEn)}` : `检索知识库与文档失败：${humanizeCliError(res.message, isEn)}`,
         }
       }
       const results = res.value?.data?.results || res.value?.results || []
@@ -2256,7 +2395,7 @@ ${guide.slice(0, 28000)}
       }
       const lines = results.slice(0, 5).map((item, i) => {
         const title = (item.title_highlighted || item.result_meta?.title || (isEn ? 'Untitled doc' : '未命名文档')).replace(/<\/?h>/g, '')
-        const url = item.result_meta?.url || ''
+        const url = adaptUrlTextForBrand(item.result_meta?.url || '', brand)
         const summary = (item.summary_highlighted || '').replace(/<\/?h>/g, '')
         const link = url ? `[${title}](${url})` : title
         return `${i + 1}. **${link}**\n   ${summary || (isEn ? 'No preview available' : '暂无摘要')}`
@@ -2273,8 +2412,19 @@ ${guide.slice(0, 28000)}
       }
     }
 
-    if (chosenAction === 'list_spaces' || (isOffline && /知识库列表|有哪些知识库|知识库空间|wiki space/i.test(text))) {
+    if (chosenAction === 'list_spaces') {
       const res = await wikiSpaceList(signal)
+      if (!res.ok) {
+        if (res.error?.subtype === 'missing_scope' || /missing required scope/i.test(res.message || '')) {
+          return scopeError('wiki', res.error?.missing_scopes || ['wiki:space:read'], '飞书知识库', '知识库', 'Feishu Wiki', 'Wiki')
+        }
+        return {
+          ok: false,
+          type: 'answer',
+          domain: 'wiki',
+          reply: isEn ? `Failed to list Wiki spaces: ${humanizeCliError(res.message, isEn)}` : `查询知识库失败：${humanizeCliError(res.message, isEn)}`,
+        }
+      }
       if (res.ok && res.value?.data?.spaces) {
         const spaces = res.value.data.spaces
         const lines = spaces.map((sp, i) => `${i + 1}. **${sp.name}** (${sp.space_type === 'team' ? (isEn ? 'Team Wiki' : '团队知识库') : (isEn ? 'Personal Wiki' : '个人知识库')})`)
@@ -3411,6 +3561,8 @@ Always answer in natural, friendly English using Markdown lists or tables when h
     } catch {
       // the summary still works without the Base name
     }
+    const brand = await resolveEffectiveBrand(signal)
+    url = adaptUrlTextForBrand(url, brand)
 
     const allOk = results.every((entry) => entry.ok)
     const onlyDescribe = results.length === 1 && results[0].op === 'describe'

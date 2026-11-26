@@ -47,12 +47,12 @@ Write ALL user-facing fields in natural, idiomatic English:
 const EN_REFINE_DIRECTIVE = `
 
 IMPORTANT OUTPUT LANGUAGE RULE:
-The active UI/user language is English. Keep existing fields consistent and write any newly added or modified column names, descriptions, options, or sample values in natural English.`
+The active UI/user language is English. Keep existing fields consistent and write any newly added or modified column names, descriptions, options, sample values, or "reply" text in natural English.`
 
 const SYSTEM_PROMPT = `你在帮一个用户设计飞书多维表格（Bitable Base）。
 
 【重要意图判断】：
-如果用户的输入明显不是想要创建、管理、跟踪或统计某类业务数据/表格（例如用户只是日常打招呼“你好”、致谢“谢谢”、询问日常问题“今天天气”、“现在几点”、提出办公查询“查日程/看邮件/搜群聊”等），绝对不要生搬硬套编造表格结构！
+如果用户的输入明显不是想要创建、管理、跟踪或统计某类业务数据/表格（例如日常打招呼“你好”、致谢“谢谢”、询问日常问题，或提出单次飞书协同操作/查询，如“帮我创建一个待办”“加个任务提醒”“约个明天的会”“给张三发条消息”“查日程/看邮件/搜群聊/查审批/新建文档”等且未明确要求建表或台账），绝对不要生搬硬套编造表格结构！
 此时你必须且只能返回如下 JSON：
 {
   "isTable": false,
@@ -60,7 +60,7 @@ const SYSTEM_PROMPT = `你在帮一个用户设计飞书多维表格（Bitable B
 }
 
 【建表需求响应】：
-当用户明确描述了需要记录、管理、跟踪的事情（例如"我想记一下客户"、"帮我管管任务"、"想整理一下读书笔记"、"建一张项目进度表"）：
+当用户明确描述了需要记录、管理、跟踪的业务集合（例如"我想记一下客户"、"建一张项目任务跟踪表"、"想整理一下读书笔记"、"建一张项目进度表"）：
 你的任务：只输出合法的 JSON，不要解释、不要 Markdown 代码块、不要问问题。
 
 输出格式：
@@ -120,10 +120,14 @@ const REFINE_SYSTEM_PROMPT = `你在帮用户微调一张已经设计好的飞�
 
 【第一原则：严格增量修改，禁止推倒重来】
 你会收到「当前草稿 JSON」和用户的「本次修改意见」。
-1. 如果用户的话是在表达满意、认可或确认（例如「不错」「挺好」「可以」「就这样」），没有提出具体修改要求，请只返回：
+1. 如果用户是在表达满意、认可或确认（例如「不错」「挺好」「可以」「就这样」），没有提出具体修改要求，请只返回：
    {"action": "keep"}
    如果用户明确要求立刻创建/建表（例如「确认建表」「就按这个建吧」「开始生成」），请只返回：
    {"action": "build"}
+   如果用户只是日常打招呼、闲聊或提问（例如「你好」「你能做什么」「这是什么」），且没有修改表格或执行其他飞书操作的要求，请只返回：
+   {"action": "reply", "reply": "自然简短的中文回复（1-2句话内说清，语气亲切克制；不要重复播报字段数量或教用户怎么点按钮；不要在末尾加 \\n）"}
+   如果用户明确提出与当前建表无关的飞书协同操作（例如「帮我创建一个待办」「查一下今天的日程」「发消息」），请只返回：
+   {"isTable": false, "reason": "非多维表格设计需求"}
 2. 如果用户提出了局部修改（例如「加一列负责人」「去掉预计金额」「状态加上已流失」「把公司名称改成客户名称」）：
    - 必须**原封不动保留**未涉及的 baseName、intro、表名、kanbanField、所有未改动字段（名称、类型、选项、description 均保持一致）以及所有已有示例记录的值！
    - 严禁编造新的公司名/人名/金额去替换原有示例数据！
@@ -131,9 +135,6 @@ const REFINE_SYSTEM_PROMPT = `你在帮用户微调一张已经设计好的飞�
    - 若删除了一列，只删除该字段及示例记录中对应的 key。
    - 只有当用户明确要求「补充示例」「多加几条数据」或「换一批数据」时，才追加或替换示例记录（字段结构仍保持不变）。
 3. 只输出合法的 JSON 对象，不要解释、不要 Markdown 代码块。修改时返回完整的表格 JSON（结构与当前草稿一致，包含 "isTable": true, "baseName", "intro", "tables"）。`
-
-const PURE_BUILD_RE = /^(?:(?:不错|挺好(?:的)?|很好|可以(?:的)?|行(?:的)?|好的|没问题|就这样(?:吧)?|就这个(?:吧)?|满意)[，,\s]*)?(?:确认(?:并)?建表|确认创建|确认生成|确认|开始建表|直接建(?:表)?|建表吧?|建吧|创建吧|生成吧|就(?:按|用)这个建(?:表)?|帮我建(?:表)?吧?|confirm|create(?:\s+base)?|build(?:\s+it)?)[！!。.~～\s]*$/i
-const PURE_KEEP_RE = /^(?:不错|挺好(?:的)?|很好|蛮好(?:的)?|好(?:的|呀|啊|滴)?|可以(?:的|呀|啊)?|行(?:的|呀|啊)?|没问题|就这样(?:吧)?|就这个(?:吧)?|很满意|满意|太棒了|棒|赞|ok|okay|nice|great|good|looks\s+good|lgtm)[！!。.~～\s]*$/i
 
 function diffChangedFields(prevPlan, nextPlan) {
   const changed = []
@@ -163,6 +164,16 @@ function diffChangedFields(prevPlan, nextPlan) {
 function clip(value, limit = MAX_NAME) {
   if (typeof value !== 'string') return ''
   return value.trim().replace(/\s+/g, ' ').slice(0, limit)
+}
+
+function cleanReplyText(value) {
+  if (typeof value !== 'string') return ''
+  return value
+    .replace(/\\r\\n|\\n/g, '\n')
+    .replace(/\\t/g, '  ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 const PLAN_TIMEOUT_MS = 120000
@@ -462,22 +473,33 @@ export function parsePlanText(text) {
   return undefined
 }
 
-export function collectText(stream, onDelta) {
+export function collectText(stream, onDelta, opts = {}) {
   return (async () => {
     let text = ''
-    let emittedBuilding = false
+    let emittedStage = ''
     let failure
+    const detectIntent = opts && opts.detectIntent === true
     for await (const chunk of stream) {
       let piece = ''
       if (typeof chunk === 'string') piece = chunk
       else if (chunk?.type === 'text-delta' || chunk?.type === 'text') piece = chunk.text || ''
       else if (chunk?.text && !chunk?.type) piece = chunk.text
       if (piece) {
-        if (!emittedBuilding && typeof onDelta === 'function') {
-          emittedBuilding = true
-          onDelta({ type: 'stage', stage: 'building_preview' })
-        }
         text += piece
+        if (typeof onDelta === 'function') {
+          if (detectIntent) {
+            if (emittedStage !== 'building_preview' && (/"isTable"\s*:\s*true/i.test(text) || /"tables"\s*:\s*\[/i.test(text))) {
+              emittedStage = 'building_preview'
+              onDelta({ type: 'stage', stage: 'building_preview' })
+            } else if (!emittedStage && /"isTable"\s*:\s*false/i.test(text)) {
+              emittedStage = 'routing_collab'
+              onDelta({ type: 'stage', stage: 'routing_collab' })
+            }
+          } else if (!emittedStage) {
+            emittedStage = 'building_preview'
+            onDelta({ type: 'stage', stage: 'building_preview' })
+          }
+        }
       } else if (chunk?.type === 'reasoning-delta' || chunk?.type === 'thinking-delta' || chunk?.type === 'thinking_delta') {
         if (typeof onDelta === 'function') {
           onDelta({ type: 'reasoning', delta: chunk.text || chunk.thinking || chunk.delta || '' })
@@ -551,6 +573,7 @@ export function createPlanner({ ctx, config = {} }) {
         signal,
       }),
       opts.onDelta,
+      { detectIntent: !isRefine },
     )
     return text
   }
@@ -577,14 +600,8 @@ export function createPlanner({ ctx, config = {} }) {
       ? opts.currentPlan
       : null
 
-    if (currentPlan) {
-      if (!rawText && !hasAttachments) return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
-      if (PURE_BUILD_RE.test(rawText)) {
-        return { ok: true, action: 'build', plan: currentPlan, changedFields: [] }
-      }
-      if (PURE_KEEP_RE.test(rawText)) {
-        return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
-      }
+    if (currentPlan && !rawText && !hasAttachments) {
+      return { ok: true, action: 'keep', plan: currentPlan, changedFields: [] }
     }
 
     if (text.length < 2 && !hasAttachments) {
@@ -601,6 +618,15 @@ export function createPlanner({ ctx, config = {} }) {
       const firstReply = await ask(text, guard.signal, { ...opts, lang })
       let raw = parsePlanText(firstReply)
       if (!raw) {
+        if (currentPlan && firstReply && firstReply.trim() && !firstReply.trim().startsWith('{')) {
+          return {
+            ok: true,
+            action: 'reply',
+            reply: cleanReplyText(firstReply),
+            plan: currentPlan,
+            changedFields: [],
+          }
+        }
         if (!currentPlan && !opts.forceTable && firstReply && firstReply.trim() && !firstReply.trim().startsWith('{')) {
           return {
             ok: false,
@@ -667,6 +693,13 @@ export function createPlanner({ ctx, config = {} }) {
             ? 'Could not parse the generated Base schema. Please try rephrasing.'
             : '模型没有返回可解析的表结构，请换一种说法再试。',
         }
+      }
+      if (currentPlan && raw.action === 'reply') {
+        const parsedReply = cleanReplyText(raw.reply)
+        const replyText = parsedReply || (isEn
+          ? 'Hi! Tell me how you’d like to adjust this table.'
+          : '你好！告诉我你想怎么调整这张表就行。')
+        return { ok: true, action: 'reply', reply: replyText, plan: currentPlan, changedFields: [] }
       }
       if (currentPlan && (raw.action === 'keep' || raw.action === 'build')) {
         return { ok: true, action: raw.action, plan: currentPlan, changedFields: [] }

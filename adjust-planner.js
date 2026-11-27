@@ -12,7 +12,7 @@ The active UI/user language is English.
 - Always write the "reply" field in natural, helpful English.
 - Write any newly added or modified column names, view names, option names, and record examples in English (matching the existing table language if editing a Chinese table unless instructed otherwise).`
 
-const MAX_OPS = 8
+const MAX_OPS = 20
 const PLAN_TIMEOUT_MS = 45000
 
 const OPS = new Set([
@@ -96,7 +96,7 @@ const SYSTEM_PROMPT = `你是一个专业的飞书多维表格 AI 助手。用�
 硬性规则：
 1. 当用户询问数据内容、统计指标、权限情况时，绝对不要伪造 ops，务必使用 {"type":"answer", "reply":"..."} 亲切回答。
 2. table 使用现状中的真实表名，只有一张表时可省略。
-3. 一次最多 8 条改动。`
+3. 一次最多 20 条改动。`
 
 function clip(value, limit = 60) {
   if (typeof value !== 'string') return ''
@@ -532,7 +532,7 @@ export function createAdjustPlanner({ ctx, config = {} }) {
     }
 
     const options = typeof input === 'string' ? { instruction: input } : (input || {})
-    const rawInstruction = clip(options.instruction || '', 500)
+    const rawInstruction = clip(options.instruction || '', 4000)
     const history = Array.isArray(options.history) ? options.history : []
     const attachmentPrompt = options.attachmentContext?.promptBlock || ''
     const imageBlocks = Array.isArray(options.imageBlocks) ? options.imageBlocks : []
@@ -590,7 +590,7 @@ export function createAdjustPlanner({ ctx, config = {} }) {
       messages.push({
         role: isAssistant ? 'assistant' : 'user',
         ...(isAssistant ? { source: assistantSource } : {}),
-        content: [{ type: 'text', text: clip(msg.text, 500) }],
+        content: [{ type: 'text', text: clip(msg.text, 1500) }],
       })
     }
 

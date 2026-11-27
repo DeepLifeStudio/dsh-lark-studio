@@ -555,11 +555,16 @@ window.__ModuleLoader__.load({
       'account.notConfigured': '未配置',
       'account.cliReady': '已就绪',
       'account.cliMissing': '不可用',
-      'account.scopesTitle': '已开通能力',
+      'account.scopesTitle': '能力权限',
       'account.console': '开放平台',
       'account.scopeChecking': '核验中',
+      'account.scopesCheckingLine': '正在核验飞书能力权限…',
       'account.scopeReady': '已开通',
       'account.scopeOff': '未开通',
+      'account.scopeRetry': '重新核验',
+      'account.scopeError': '权限核验失败，请检查网络或重试',
+      'account.reauthBanner': '飞书授权已过期，重新授权后可继续操作（若频繁过期请在开放平台开启「刷新 user_access_token」）',
+      'account.reauthCta': '重新授权',
       'account.allReady': '全域协同能力已就绪',
       'account.grantAll': '补充授权',
       'account.granting': '正在等待确认…',
@@ -583,6 +588,23 @@ window.__ModuleLoader__.load({
       'scope.im': '消息群聊',
       'scope.mail': '飞书邮箱',
       'scope.contact': '通讯录',
+      'scope.approval': '审批流程',
+      'scope.docs': '云文档',
+      'scope.drive': '飞书云盘',
+      'scope.wiki': '知识库',
+      'scope.sheets': '电子表格',
+      'scope.slides': '幻灯片',
+      'scope.markdown': 'Markdown',
+      'scope.mindnotes': '思维笔记',
+      'scope.whiteboard': '文档画板',
+      'scope.vc': '视频会议',
+      'scope.minutes': '会议妙记',
+      'scope.note': '会议笔记',
+      'scope.okr': '飞书 OKR',
+      'scope.attendance': '考勤打卡',
+      'scope.apps': '妙搭应用',
+      'scope.event': '实时事件',
+      'scope.application': '应用管理',
       'scope.defaultDomain': '飞书功能',
 
       'kind.text': '文本',
@@ -805,8 +827,13 @@ window.__ModuleLoader__.load({
       'account.scopesTitle': 'Capabilities',
       'account.console': 'Console',
       'account.scopeChecking': 'Checking',
+      'account.scopesCheckingLine': 'Checking Feishu capability permissions…',
       'account.scopeReady': 'Active',
       'account.scopeOff': 'Inactive',
+      'account.scopeRetry': 'Recheck',
+      'account.scopeError': 'Could not verify capabilities. Check network and retry.',
+      'account.reauthBanner': 'Feishu sign-in expired. Re-authorize to continue (enable "Refresh user_access_token" in Feishu Console to avoid 2-hour expiry).',
+      'account.reauthCta': 'Re-authorize',
       'account.allReady': 'All capabilities ready',
       'account.grantAll': 'Grant permissions',
       'account.granting': 'Waiting…',
@@ -824,12 +851,29 @@ window.__ModuleLoader__.load({
       'settings.convTabLabel': 'Conversation header tab',
       'settings.convTabDesc': 'Show Lark Workbench tab beside Chat / Trajectory in conversations',
       'settings.convTabSaving': 'Saving…',
-      'scope.base': 'Base & Docs',
+      'scope.base': 'Base',
       'scope.calendar': 'Calendar',
       'scope.task': 'Tasks',
       'scope.im': 'Chats',
       'scope.mail': 'Mail',
       'scope.contact': 'Contacts',
+      'scope.approval': 'Approvals',
+      'scope.docs': 'Docs',
+      'scope.drive': 'Drive',
+      'scope.wiki': 'Wiki',
+      'scope.sheets': 'Sheets',
+      'scope.slides': 'Slides',
+      'scope.markdown': 'Markdown',
+      'scope.mindnotes': 'Mindnotes',
+      'scope.whiteboard': 'Whiteboard',
+      'scope.vc': 'Meetings',
+      'scope.minutes': 'Minutes',
+      'scope.note': 'Meeting Notes',
+      'scope.okr': 'OKR',
+      'scope.attendance': 'Attendance',
+      'scope.apps': 'Miaoda Apps',
+      'scope.event': 'Live Events',
+      'scope.application': 'App Admin',
       'scope.defaultDomain': 'Feishu Feature',
 
       'kind.text': 'Text',
@@ -2723,7 +2767,9 @@ window.__ModuleLoader__.load({
   background: var(--lw-surface);
   border-radius: var(--r-xl);
   width: 100%;
-  max-width: 400px;
+  max-width: 440px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 20px 22px;
   box-shadow: var(--lw-e-modal);
   display: flex;
@@ -2880,27 +2926,54 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-tertiary, #8E95A5);
 }
 
-.lw-scope-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-.lw-scope-pill {
+.lw-scope-loading-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 7px 10px;
-  border-radius: var(--r-sm);
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
   background: var(--lw-surface-2);
   border: 0.5px solid var(--lw-line);
   font-size: 12px;
-  color: var(--lw-ink);
+  color: var(--lw-ink-3);
 }
-.lw-scope-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lw-scope-state { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; flex: none; }
-.lw-scope-state.is-ready { color: var(--lw-ok); }
-.lw-scope-state.is-off { color: var(--lw-ink-3); }
+.lw-scope-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lw-scope-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lw-scope-group-head {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lw-ink-3);
+}
+.lw-scope-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lw-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--lw-ink);
+  white-space: nowrap;
+}
+.lw-scope-chip.is-off {
+  color: var(--lw-ink-3);
+  opacity: 0.85;
+}
 
 .lw-modal-footer {
   display: flex;
@@ -3005,7 +3078,6 @@ window.__ModuleLoader__.load({
 .lw.is-compact .lw-card { padding: 18px; border-radius: var(--r-lg); }
 
 .lw.is-narrow .lw-hero-title { font-size: 22px; }
-.lw.is-narrow .lw-scope-grid { grid-template-columns: 1fr; }
 .lw.is-narrow .lw-picker-trigger { max-width: 132px; }
 
 @media (max-width: 640px) {
@@ -5065,7 +5137,33 @@ body:has(.lw) [class*="viewArea"] {
       )
     }
 
-    function AccountModal({ open, onClose, health, connected, scopesInfo, syncingAuth, busyAccount, onGrantAll, onLogout, onUnbind, convTabProps, t }) {
+    const DEFAULT_SCOPE_DOMAINS = [
+      { key: 'base', icon: 'table' },
+      { key: 'calendar', icon: 'calendar' },
+      { key: 'task', icon: 'checkSquare' },
+      { key: 'im', icon: 'people' },
+      { key: 'mail', icon: 'mail' },
+      { key: 'contact', icon: 'user' },
+      { key: 'approval', icon: 'shieldCheck' },
+      { key: 'docs', icon: 'fileText' },
+      { key: 'drive', icon: 'layout' },
+      { key: 'wiki', icon: 'book' },
+      { key: 'sheets', icon: 'chart' },
+      { key: 'slides', icon: 'layout' },
+      { key: 'markdown', icon: 'fileText' },
+      { key: 'mindnotes', icon: 'spark' },
+      { key: 'whiteboard', icon: 'image' },
+      { key: 'vc', icon: 'people' },
+      { key: 'minutes', icon: 'fileText' },
+      { key: 'note', icon: 'fileText' },
+      { key: 'okr', icon: 'chart' },
+      { key: 'attendance', icon: 'check' },
+      { key: 'apps', icon: 'spark' },
+      { key: 'event', icon: 'refresh' },
+      { key: 'application', icon: 'shieldCheck' },
+    ]
+
+    function AccountModal({ open, onClose, health, connected, scopesInfo, scopesLoading, scopesError, onRetryScopes, syncingAuth, busyAccount, onGrantAll, onLogout, onUnbind, convTabProps, t }) {
       const { mounted, phase } = useAnimatedPresence(open, 160)
       const [confirmMode, setConfirmMode] = useState(null)
       const boxRef = useRef(null)
@@ -5097,15 +5195,31 @@ body:has(.lw) [class*="viewArea"] {
 
       if (!mounted) return null
 
-      const domainList = [
-        { key: 'base', icon: 'table', ready: scopesInfo?.domains?.base?.ready ?? true },
-        { key: 'calendar', icon: 'calendar', ready: scopesInfo?.domains?.calendar?.ready ?? false },
-        { key: 'task', icon: 'checkSquare', ready: scopesInfo?.domains?.task?.ready ?? false },
-        { key: 'im', icon: 'people', ready: scopesInfo?.domains?.im?.ready ?? false },
-        { key: 'mail', icon: 'mail', ready: scopesInfo?.domains?.mail?.ready ?? false },
-        { key: 'contact', icon: 'user', ready: scopesInfo?.domains?.contact?.ready ?? false },
-      ]
-      const allReady = Boolean(scopesInfo && domainList.every((d) => d.ready))
+      const isEnUi = t('app.name') === 'Lark Workbench'
+      const defaultIconByKey = Object.fromEntries(DEFAULT_SCOPE_DOMAINS.map((d) => [d.key, d.icon]))
+      const orderedKeys = Array.isArray(scopesInfo?.domainOrder) && scopesInfo.domainOrder.length > 0
+        ? scopesInfo.domainOrder
+        : (scopesInfo?.domains && Object.keys(scopesInfo.domains).length > 0
+            ? Object.keys(scopesInfo.domains)
+            : DEFAULT_SCOPE_DOMAINS.map((d) => d.key))
+      const domainList = orderedKeys.map((key) => {
+        const entry = scopesInfo?.domains?.[key]
+        const iconName = entry?.icon && ICONS[entry.icon] ? entry.icon : (defaultIconByKey[key] || 'checkSquare')
+        const fallbackLabel = t(`scope.${key}`)
+        const label = (isEnUi ? entry?.nameEn : entry?.name) || (fallbackLabel !== `scope.${key}` ? fallbackLabel : key)
+        return {
+          key,
+          icon: iconName,
+          label,
+          ready: Boolean(entry?.ready),
+        }
+      })
+      const verified = Boolean(scopesInfo && scopesInfo.scopesVerified !== false)
+      const readyDomains = domainList.filter((d) => d.ready)
+      const offDomains = domainList.filter((d) => !d.ready)
+      const readyCount = readyDomains.length
+      const allReady = Boolean(verified && domainList.length > 0 && readyCount === domainList.length)
+      const checkingNow = Boolean(scopesLoading && !scopesInfo)
 
       return h(
         'div',
@@ -5185,46 +5299,114 @@ body:has(.lw) [class*="viewArea"] {
             { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
             h(
               'div',
-              { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-              h('span', { className: 'lw-meta', style: { fontWeight: 500, color: 'var(--lw-ink-2)' } }, t('account.scopesTitle')),
-              scopesInfo?.consoleUrl
-                ? h(
-                    'a',
-                    {
-                      href: scopesInfo.consoleUrl,
-                      target: '_blank',
-                      rel: 'noopener noreferrer',
-                      className: 'lw-md-link',
-                      style: { fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 3 },
-                    },
-                    t('account.console'),
-                    h(Icon, { name: 'arrowUpRight', size: 11 }),
-                  )
-                : null,
-            ),
-            h(
-              'div',
-              { className: 'lw-scope-grid' },
-              domainList.map((item) =>
-                h(
-                  'div',
-                  { key: item.key, className: 'lw-scope-pill' },
-                  h(
-                    'span',
-                    { className: 'lw-scope-name' },
-                    h(Icon, { name: item.icon, size: 13, style: { color: 'var(--lw-ink-3)' } }),
-                    t(`scope.${item.key}`),
-                  ),
-                  h(
-                    'span',
-                    { className: `lw-scope-state ${item.ready ? 'is-ready' : 'is-off'}` },
-                    h('span', { className: `lw-dot ${item.ready ? 'is-ok' : !scopesInfo ? 'is-busy' : ''}` }),
-                    item.ready ? t('account.scopeReady') : !scopesInfo ? t('account.scopeChecking') : t('account.scopeOff'),
-                  ),
-                ),
+              { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
+              h(
+                'span',
+                { className: 'lw-meta', style: { fontWeight: 500, color: 'var(--lw-ink-2)' } },
+                verified ? `${t('account.scopesTitle')} (${readyCount}/${domainList.length})` : t('account.scopesTitle'),
+              ),
+              h(
+                'div',
+                { style: { display: 'inline-flex', alignItems: 'center', gap: 10 } },
+                onRetryScopes
+                  ? h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'lw-md-link',
+                        disabled: Boolean(scopesLoading),
+                        onClick: onRetryScopes,
+                        style: {
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          cursor: scopesLoading ? 'default' : 'pointer',
+                          fontSize: 11.5,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          opacity: scopesLoading ? 0.6 : 1,
+                        },
+                      },
+                      h(Icon, { name: 'refresh', size: 11, className: scopesLoading ? 'lw-spin' : undefined }),
+                      t('account.scopeRetry'),
+                    )
+                  : null,
+                scopesInfo?.consoleUrl
+                  ? h(
+                      'a',
+                      {
+                        href: scopesInfo.consoleUrl,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'lw-md-link',
+                        style: { fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 3 },
+                      },
+                      t('account.console'),
+                      h(Icon, { name: 'arrowUpRight', size: 11 }),
+                    )
+                  : null,
               ),
             ),
-            !allReady && scopesInfo
+            (scopesError || (scopesInfo && scopesInfo.scopesVerified === false))
+              ? h(
+                  'div',
+                  { className: 'lw-meta', style: { color: 'var(--lw-warn)' } },
+                  scopesError || scopesInfo?.scopesError || t('account.scopeError'),
+                )
+              : null,
+            checkingNow
+              ? h(
+                  'div',
+                  { className: 'lw-scope-loading-row' },
+                  h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }),
+                  h('span', null, t('account.scopesCheckingLine')),
+                )
+              : h(
+                  'div',
+                  { className: 'lw-scope-groups' },
+                  readyDomains.length > 0
+                    ? h(
+                        'div',
+                        { className: 'lw-scope-group' },
+                        h('div', { className: 'lw-scope-group-head' }, `${t('account.scopeReady')} (${readyDomains.length})`),
+                        h(
+                          'div',
+                          { className: 'lw-scope-flow' },
+                          readyDomains.map((item) =>
+                            h(
+                              'span',
+                              { key: item.key, className: 'lw-scope-chip is-ready' },
+                              h('span', { className: 'lw-dot is-ok' }),
+                              h(Icon, { name: item.icon, size: 12, style: { color: 'var(--lw-ink-3)' } }),
+                              h('span', null, item.label),
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
+                  offDomains.length > 0
+                    ? h(
+                        'div',
+                        { className: 'lw-scope-group' },
+                        h('div', { className: 'lw-scope-group-head' }, `${t('account.scopeOff')} (${offDomains.length})`),
+                        h(
+                          'div',
+                          { className: 'lw-scope-flow' },
+                          offDomains.map((item) =>
+                            h(
+                              'span',
+                              { key: item.key, className: 'lw-scope-chip is-off' },
+                              h('span', { className: 'lw-dot' }),
+                              h(Icon, { name: item.icon, size: 12, style: { color: 'var(--lw-ink-3)' } }),
+                              h('span', null, item.label),
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
+                ),
+            !allReady && (verified || !checkingNow)
               ? h(
                   Button,
                   { size: 'sm', variant: 'primary', disabled: busyAccount || syncingAuth, onClick: onGrantAll, style: { width: '100%' } },
@@ -5825,6 +6007,7 @@ body:has(.lw) [class*="viewArea"] {
             {
               role: 'assistant',
               missingScope: true,
+              domain: payload.domain || '',
               domainTitle: payload.domainTitle || t('scope.defaultDomain'),
               requiredScopes: payload.requiredScopes || [],
               consoleUrl: payload.consoleUrl,
@@ -6363,14 +6546,43 @@ body:has(.lw) [class*="viewArea"] {
       const [showAccountModal, setShowAccountModal] = useState(false)
       const [busyAccount, setBusyAccount] = useState(false)
       const [scopesInfo, setScopesInfo] = useState(null)
+      const [scopesLoading, setScopesLoading] = useState(false)
+      const [scopesError, setScopesError] = useState(null)
+
+      const refreshScopes = useCallback(async (force = false) => {
+        setScopesLoading(true)
+        setScopesError(null)
+        try {
+          const resp = await authFetch(`${API}/connect/scopes${force ? '?force=1' : ''}`)
+          const data = await resp.json().catch(() => null)
+          if (!alive.current) return null
+          if (data && data.ok) {
+            setScopesInfo(data)
+            if (data.scopesVerified === false && data.scopesError) {
+              setScopesError(data.scopesError)
+            }
+            return data
+          }
+          setScopesError(data?.message || data?.error || t('account.scopeError'))
+        } catch {
+          if (alive.current) setScopesError(t('account.scopeError'))
+        } finally {
+          if (alive.current) setScopesLoading(false)
+        }
+        return null
+      }, [t])
+
+      useEffect(() => {
+        if (!connected) return
+        if (!scopesInfo && !scopesLoading) {
+          refreshScopes(false)
+        }
+      }, [connected, scopesInfo, scopesLoading, refreshScopes])
 
       useEffect(() => {
         if (!showAccountModal) return
-        authFetch(`${API}/connect/scopes`)
-          .then((r) => r.json())
-          .then((data) => { if (data && data.ok && alive.current) setScopesInfo(data) })
-          .catch(() => {})
-      }, [showAccountModal])
+        refreshScopes(false)
+      }, [showAccountModal, refreshScopes])
 
       const handleGrantAll = useCallback(async () => {
         setSyncingAuth(true)
@@ -6383,28 +6595,35 @@ body:has(.lw) [class*="viewArea"] {
             while (Date.now() < deadline && alive.current) {
               await new Promise((r) => setTimeout(r, pollCount < 4 ? 400 : 1200))
               pollCount++
-              const sc = await authFetch(`${API}/connect/scopes`).then((r) => r.json()).catch(() => null)
+              const sc = await authFetch(`${API}/connect/scopes?force=1`).then((r) => r.json()).catch(() => null)
               if (sc && sc.ok && alive.current) {
                 setScopesInfo(sc)
-                if (Object.values(sc.domains || {}).every((d) => d.ready)) {
+                const entries = Object.values(sc.domains || {})
+                if (sc.scopesVerified !== false && entries.length > 0 && entries.every((d) => d.ready)) {
                   refreshHealth()
                   break
                 }
               }
               const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-              if (st && st.ok) { refreshHealth(); break }
+              if (st && st.ok) {
+                refreshHealth()
+                refreshScopes(true)
+                break
+              }
             }
           }
         } catch {} finally {
           if (alive.current) setSyncingAuth(false)
         }
-      }, [post, refreshHealth])
+      }, [post, refreshHealth, refreshScopes])
 
       const handleLogout = useCallback(async () => {
         if (busyAccount) return
         setBusyAccount(true)
         try {
           await post('/connect/logout', {})
+          setScopesInfo(null)
+          setScopesError(null)
           setShowAccountModal(false)
           if (stage === 'view') restart()
           await refreshHealth()
@@ -6420,6 +6639,8 @@ body:has(.lw) [class*="viewArea"] {
         setBusyAccount(true)
         try {
           await post('/connect/unbind', {})
+          setScopesInfo(null)
+          setScopesError(null)
           setShowAccountModal(false)
           if (stage === 'view') restart()
           await refreshHealth()
@@ -6455,6 +6676,12 @@ body:has(.lw) [class*="viewArea"] {
 
       // ── Screen Rendering ─────────────────────────────────────────────────
 
+      const preserveWorkspaceOnAuthDrop = Boolean(
+        !connected
+        && health?.stage === 'no-auth'
+        && ((stage === 'view' && history.length > 0) || (stage === 'preview' && Boolean(plan))),
+      )
+
       let content = null
 
       if (!health) {
@@ -6471,7 +6698,7 @@ body:has(.lw) [class*="viewArea"] {
           h('div', { className: 'lw-sect' }, h('h2', { className: 'lw-h' }, t('status.offline')), h('p', { className: 'lw-p' }, t('gate.retryBody'))),
           h('div', { className: 'lw-actions' }, h(Button, { variant: 'primary', size: 'sm', onClick: refreshHealth }, t('status.recheck'))),
         )
-      } else if (!connected) {
+      } else if (!connected && !preserveWorkspaceOnAuthDrop) {
         content = h(ConnectGate, { health, t, onRecheck: refreshHealth, onToast: showToast })
       } else if (stage === 'pick') {
         const planning = busy === 'plan'
@@ -6926,7 +7153,10 @@ body:has(.lw) [class*="viewArea"] {
                           authAbortRef.current = curAbort
                           setSyncingAuth(true)
                           try {
-                            const payload = await post('/connect/login/start', {})
+                            const payload = await post('/connect/login/start', {
+                              ...(msg.domain ? { domain: msg.domain } : {}),
+                              ...(Array.isArray(msg.requiredScopes) && msg.requiredScopes.length > 0 ? { scopes: msg.requiredScopes } : {}),
+                            })
                             if (payload.ok && payload.url) {
                               window.open(payload.url, '_blank', 'noopener')
                               if (payload.deviceCode) {
@@ -6939,6 +7169,8 @@ body:has(.lw) [class*="viewArea"] {
                                 const st = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
                                 if (st && st.ok) {
                                   setSyncingAuth(false)
+                                  refreshHealth()
+                                  refreshScopes()
                                   const lastUser = [...history.slice(0, idx)].reverse().find((m) => m && m.role === 'user')
                                   if (lastUser && lastUser.text) applyAdjust(lastUser.text, { retryIndex: idx })
                                   return
@@ -7113,6 +7345,17 @@ body:has(.lw) [class*="viewArea"] {
         const adjustBlock = h(
           'div',
           { className: 'lw-ws-dock' },
+          preserveWorkspaceOnAuthDrop
+            ? h(Banner, {
+                tone: 'warn',
+                children: t('account.reauthBanner'),
+                action: h(
+                  Button,
+                  { size: 'sm', variant: 'primary', disabled: syncingAuth, onClick: handleGrantAll },
+                  syncingAuth ? t('account.granting') : t('account.reauthCta'),
+                ),
+              })
+            : null,
           confirmPlan
             ? h(
                 'div',
@@ -7391,6 +7634,9 @@ body:has(.lw) [class*="viewArea"] {
           health,
           connected,
           scopesInfo,
+          scopesLoading,
+          scopesError,
+          onRetryScopes: () => refreshScopes(true),
           syncingAuth,
           busyAccount,
           onGrantAll: handleGrantAll,

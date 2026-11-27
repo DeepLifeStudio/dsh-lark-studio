@@ -556,17 +556,36 @@ test('9.2 协同指令意图分发与权限优雅降级引导 (ops.dispatchColla
     subprocess: realSubprocess,
     agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
     llm: {
-      stream({ system, messages }) {
-        const userText = String(messages?.[messages.length - 1]?.content?.[0]?.text || messages?.[messages.length - 1]?.text || '')
-        let out = { action: 'reply', reply: '您好，有什么可以帮您？' }
-        if (system.includes('可用 action 列表')) {
-          if (userText.includes('日程')) out = { action: 'get_calendar' }
-          else if (userText.includes('待办清单')) out = { action: 'get_tasks' }
-          else if (userText.includes('台账数据表')) out = { action: 'suggest_create_table' }
-          else if (userText.includes('谢谢')) out = { action: 'reply', reply: '不客气，随时为您效劳！' }
-        }
+      stream({ messages }) {
+        const last = messages?.[messages.length - 1]
+        const userText = String(last?.content?.[0]?.text || last?.text || '')
+        const isToolResult = last?.role === 'tool'
         return (async function* () {
-          yield { type: 'text-delta', text: JSON.stringify(out) }
+          if (isToolResult) {
+            yield { type: 'text-delta', text: '已为您处理完成。' }
+            return
+          }
+          if (userText.includes('日程')) {
+            yield {
+              type: 'block-end',
+              index: 0,
+              block: { type: 'tool-call', id: 'c_cal', name: 'run_readonly', arguments: JSON.stringify({ argv: ['calendar', '+agenda'], skill: 'calendar' }) },
+            }
+          } else if (userText.includes('待办清单')) {
+            yield {
+              type: 'block-end',
+              index: 0,
+              block: { type: 'tool-call', id: 'c_task', name: 'run_readonly', arguments: JSON.stringify({ argv: ['task', '+get-my-tasks'], skill: 'task' }) },
+            }
+          } else if (userText.includes('台账数据表')) {
+            yield {
+              type: 'block-end',
+              index: 0,
+              block: { type: 'tool-call', id: 'c_tbl', name: 'suggest_base_table', arguments: JSON.stringify({ title: '项目台账数据表' }) },
+            }
+          } else {
+            yield { type: 'text-delta', text: '不客气，随时为您效劳！' }
+          }
         })()
       },
     },
@@ -574,7 +593,7 @@ test('9.2 协同指令意图分发与权限优雅降级引导 (ops.dispatchColla
   const ops = createOperations({ ctx: collabMockCtx }, process.cwd())
   assert.strictEqual(typeof ops.dispatchCollab, 'function')
 
-  // 测试日历意图识别与缺失权限引导卡片数据结构
+  // 测试日历工具循环调度（支持原生 tool-call 块）
   const calRes = await ops.dispatchCollab({ instruction: '查下我今天的日程安排' })
   assert.strictEqual(typeof calRes.ok, 'boolean')
   if (!calRes.ok && calRes.type === 'missing_scope') {
@@ -583,7 +602,7 @@ test('9.2 协同指令意图分发与权限优雅降级引导 (ops.dispatchColla
     assert(calRes.consoleUrl.startsWith('https://open.feishu.cn'))
   }
 
-  // 测试待办任务意图识别
+  // 测试待办任务工具循环调度
   const taskRes = await ops.dispatchCollab({ instruction: '列出我所有未完成的待办清单' })
   assert.strictEqual(typeof taskRes.ok, 'boolean')
   if (!taskRes.ok && taskRes.type === 'missing_scope') {
@@ -600,7 +619,7 @@ test('9.2 协同指令意图分发与权限优雅降级引导 (ops.dispatchColla
     instruction: '谢谢',
     history: [
       { role: 'user', text: '查看飞书群聊' },
-      { role: 'assistant', text: '💬 为您找到以下飞书群聊：1. 深度生活工作室' },
+      { role: 'assistant', text: '为您找到以下飞书群聊：1. 深度生活工作室' },
     ],
   })
   assert.strictEqual(thanksRes.ok, true)
@@ -670,9 +689,18 @@ test('9.4 飞书全域协同指令与 lark_collab 调度验证', async () => {
       subprocess: realSubprocess,
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream() {
+        stream({ messages }) {
+          const last = messages?.[messages.length - 1]
           return (async function* () {
-            yield { type: 'text-delta', text: JSON.stringify({ action: 'get_calendar' }) }
+            if (last?.role === 'tool') {
+              yield { type: 'text-delta', text: '已查询今日日程安排与会议状态。' }
+            } else {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'c_cal_94', name: 'run_readonly', arguments: JSON.stringify({ argv: ['calendar', '+agenda'], skill: 'calendar' }) },
+              }
+            }
           })()
         },
       },
@@ -690,9 +718,18 @@ test('9.5 飞书团队知识库与云文档检索调度验证', async () => {
       subprocess: realSubprocess,
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream() {
+        stream({ messages }) {
+          const last = messages?.[messages.length - 1]
           return (async function* () {
-            yield { type: 'text-delta', text: JSON.stringify({ action: 'search_wiki', query: '最新规范' }) }
+            if (last?.role === 'tool') {
+              yield { type: 'text-delta', text: '已为您检索团队知识库与云文档：最新规范。' }
+            } else {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'c_wiki_95', name: 'run_readonly', arguments: JSON.stringify({ argv: ['docs', '+search', '--query', '最新规范'], skill: 'wiki' }) },
+              }
+            }
           })()
         },
       },
@@ -2184,8 +2221,8 @@ test('15.3 DSH 原生能力可选注入全分支 (skills / storageDomain 落盘�
   }
 })
 
-test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读取、执行与写操作确认拦截)', async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } = await import('node:fs')
+test('15.4 侧边栏对话动态复用官方 lark-cli Skill (ReAct 工具循环、渐进引用读取与写操作确认拦截)', async () => {
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const pathMod = await import('node:path')
   const root = mkdtempSync(pathMod.join(tmpdir(), 'dsh-lark-skill-collab-'))
@@ -2202,24 +2239,48 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
       ctx: {
         agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-chat' }) },
         llm: {
-          stream({ system, messages }) {
-            const promptText = `${system}\n${messages.map((m) => (Array.isArray(m.content) ? m.content.map((c) => c.text).join('') : m.content || '')).join('')}`
+          stream({ tools, messages }) {
+            assert.ok(Array.isArray(tools) && tools.some((t) => t.name === 'read_skill' && t.name), '应向模型暴露标准工具列表')
+            const last = messages[messages.length - 1]
+            const prevCalls = messages.filter((m) => m.role === 'tool').length
             return (async function* () {
-              if (promptText.includes('可用 action 列表')) {
-                yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
-              } else if (promptText.includes('精通飞书 CLI 的智能执行器')) {
+              if (prevCalls === 0) {
+                yield {
+                  type: 'block-end',
+                  index: 0,
+                  block: { type: 'tool-call', id: 'tc_read', name: 'read_skill', arguments: JSON.stringify({ skill: 'lark-approval' }) },
+                }
+              } else if (prevCalls === 1) {
                 if (mode === 'mutating') {
                   yield {
-                    type: 'text-delta',
-                    text: JSON.stringify({ argv: ['approval', '+instance-create', '--code', 'LEAVE'], readonly: false, confirmReason: '将发起请假审批实例' }),
+                    type: 'block-end',
+                    index: 0,
+                    block: {
+                      type: 'tool-call',
+                      id: 'tc_write',
+                      name: 'propose_write',
+                      arguments: JSON.stringify({
+                        skill: 'lark-approval',
+                        steps: [['approval', '+instance-create', '--code', 'LEAVE']],
+                        reason: '将发起请假审批实例',
+                      }),
+                    },
                   }
                 } else {
                   yield {
-                    type: 'text-delta',
-                    text: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], readonly: true }),
+                    type: 'block-end',
+                    index: 0,
+                    block: {
+                      type: 'tool-call',
+                      id: 'tc_query',
+                      name: 'run_readonly',
+                      arguments: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], skill: 'lark-approval' }),
+                    },
                   }
                 }
               } else {
+                const toolText = String(last?.content?.[0]?.text || '')
+                assert.ok(toolText.includes('年假申请'), '真实查询数据必须回传给模型上下文')
                 yield { type: 'text-delta', text: '当前共有 1 条待处理审批（年假申请）。' }
               }
             })()
@@ -2248,6 +2309,12 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
                 terminate() {},
               }
             }
+            if (argv.includes('--help')) {
+              if (argv.includes('+instance-create')) {
+                return { done: Promise.resolve({ exitCode: 0, stdout: 'Create approval instance\nRisk: write\nFlags:\n  --code string\n', stderr: '' }), terminate() {} }
+              }
+              return { done: Promise.resolve({ exitCode: 0, stdout: 'Query approval tasks\nRisk: read\nFlags:\n  --topic string\n', stderr: '' }), terminate() {} }
+            }
             if (argv.includes('approval') && argv.includes('tasks') && argv.includes('query')) {
               if (mode === 'missing_scope') {
                 return {
@@ -2275,14 +2342,14 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
       config: { larkCliPath: cliExe },
     })
 
-    // 1. 只读动态 Skill 执行（读取 skills list -> 读取 lark-approval 文档 -> 执行 approval +task-list -> 摘要回复）
+    // 1. 只读动态 Skill 执行（read_skill -> run_readonly (--help Risk: read 校验) -> 回复）
     const res1 = await opsSkill.dispatchCollab({ instruction: '帮我查一下待我处理的飞书审批' })
     assert.strictEqual(res1.ok, true)
     assert.strictEqual(res1.skill, 'lark-approval')
     assert.strictEqual(readSkillGuideCalled, true, '必须按官方规范先读取对应 skill 指南再规划命令')
     assert.ok(res1.reply.includes('待处理审批'))
 
-    // 2. 动态 Skill 遇到权限不足时走统一 scopeError 授权卡片，且展示人类可读中文领域名（不暴露 lark-approval 代码名）
+    // 2. 动态 Skill 遇到权限不足时立即中断循环并走统一 scopeError 授权卡片
     mode = 'missing_scope'
     const res2 = await opsSkill.dispatchCollab({ instruction: '帮我查一下待我处理的飞书审批' })
     assert.strictEqual(res2.ok, false)
@@ -2290,7 +2357,7 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
     assert.strictEqual(res2.domain, 'lark-approval')
     assert.strictEqual(res2.domainTitle, '飞书审批')
 
-    // 3. 写入/变更型动态 Skill 命令必须被拦截为 needsConfirm + skill_guard，绝不静默直接运行
+    // 3. 写入/变更型动态 Skill 命令必须通过 propose_write 拦截为 needsConfirm + skill_guard，绝不静默直接运行
     mode = 'mutating'
     const prevCmdCount = seenArgs.length
     const res3 = await opsSkill.dispatchCollab({ instruction: '帮我提交一个请假审批' })
@@ -2299,32 +2366,35 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
     assert.strictEqual(res3.confirmKind, 'skill_guard')
     assert.ok(res3.reply.includes('将发起请假审批实例'))
     assert.strictEqual(
-      seenArgs.slice(prevCmdCount).some((a) => a.includes('+instance-create')),
+      seenArgs.slice(prevCmdCount).some((a) => a.includes('+instance-create') && !a.includes('--help')),
       false,
       '未确认的变更型 CLI 命令绝不能自动执行',
     )
 
-    // 4. 多步骤工作流 (steps)、纯文本表格输出 (rawText) 以及 --query 包含 update 字样不误判写操作
+    // 4. 多步骤工作流 (连续调用 run_readonly)、纯文本表格输出 (rawText) 以及 --query 包含 update 字样不误判写操作
     let sawRawTextInSummarizer = false
     const opsWorkflow = createOperations({
       ctx: {
         agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
         llm: {
-          stream({ system, messages }) {
-            const p = `${system}\n${messages.map((m) => (Array.isArray(m.content) ? m.content.map((c) => c.text).join('') : m.content || '')).join('')}`
+          stream({ messages }) {
+            const toolMsgs = messages.filter((m) => m.role === 'tool')
+            const allText = messages.map((m) => (Array.isArray(m.content) ? m.content.map((c) => c.text || '').join('') : '')).join('')
             return (async function* () {
-              if (p.includes('可用 action 列表')) {
-                yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-workflow-standup-report' }) }
-              } else if (p.includes('精通飞书 CLI 的智能执行器')) {
+              if (toolMsgs.length === 0) {
                 yield {
-                  type: 'text-delta',
-                  text: JSON.stringify({
-                    steps: [['calendar', '+agenda'], ['docs', '+search', '--query', 'update']],
-                    readonly: true,
-                  }),
+                  type: 'block-end',
+                  index: 0,
+                  block: { type: 'tool-call', id: 'wf_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['calendar', '+agenda'], skill: 'lark-workflow-standup-report' }) },
+                }
+              } else if (toolMsgs.length === 1) {
+                yield {
+                  type: 'block-end',
+                  index: 0,
+                  block: { type: 'tool-call', id: 'wf_2', name: 'run_readonly', arguments: JSON.stringify({ argv: ['docs', '+search', '--query', 'update'], skill: 'lark-workflow-standup-report' }) },
                 }
               } else {
-                if (p.includes('plain text agenda row')) sawRawTextInSummarizer = true
+                if (allText.includes('plain text agenda row')) sawRawTextInSummarizer = true
                 yield { type: 'text-delta', text: '早报汇总已完成' }
               }
             })()
@@ -2335,8 +2405,9 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
             if (argv.includes('skills') && argv.includes('list')) {
               return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-workflow-standup-report', description: 'Standup' }] }), stderr: '' }), terminate() {} }
             }
-            if (argv.includes('skills') && argv.includes('read')) {
-              return { done: Promise.resolve({ exitCode: 0, stdout: '# Standup Workflow\nRuns calendar +agenda and docs +search', stderr: '' }), terminate() {} }
+            if (argv.includes('--help')) {
+              if (argv.includes('+agenda')) return { done: Promise.resolve({ exitCode: 0, stdout: 'Agenda\nRisk: read\nFlags:\n', stderr: '' }), terminate() {} }
+              if (argv.includes('+search')) return { done: Promise.resolve({ exitCode: 0, stdout: 'Search\nRisk: read\nFlags:\n  --query string\n', stderr: '' }), terminate() {} }
             }
             if (argv.includes('calendar') && argv.includes('+agenda')) {
               return { done: Promise.resolve({ exitCode: 0, stdout: 'plain text agenda row', stderr: '' }), terminate() {} }
@@ -2352,9 +2423,9 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
     })
     const wfRes = await opsWorkflow.dispatchCollab({ instruction: '给我生成今天的晨会待办摘要' })
     assert.strictEqual(wfRes.ok, true)
-    assert.strictEqual(sawRawTextInSummarizer, true, '纯文本输出（非 JSON）与多步骤 steps 必须完整喂给摘要模型')
+    assert.strictEqual(sawRawTextInSummarizer, true, '纯文本输出（非 JSON）与多步骤 tool result 必须完整喂给后续推理')
 
-    // 5. 真机内置 @larksuite/cli 全部 25 份 Skill 实测与别名解析校验
+    // 5. 真机内置 @larksuite/cli 全部 25 份 Skill 实测、别名解析与 references 子文档读取校验
     const realCliOps = createOperations({ ctx: { subprocess: realSubprocess }, config: { skipSystemCliLookup: true } })
     if (realCliOps.resolveCliSync()) {
       const realCatalog = await realCliOps.readOfficialSkillsCatalog()
@@ -2376,7 +2447,7 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
             return (async function* () {
               yield {
                 type: 'text-delta',
-                text: '{"action": "reply", "reply": "你好！👋\n\n我可以帮你：\n- 日历日程"}',
+                text: '{"action": "reply", "reply": "你好！\n\n我可以帮你：\n- 日历日程"}',
               }
             })()
           },
@@ -2392,7 +2463,7 @@ test('15.4 侧边栏对话动态复用官方 lark-cli Skill (25+ 领域动态读
     const brokenRes = await opsBrokenJson.dispatchCollab({ instruction: 'hello' })
     assert.strictEqual(brokenRes.ok, true)
     assert.strictEqual(brokenRes.reply.includes('"action"'), false, '畸形 action JSON 绝不能裸露在回复气泡中')
-    assert.ok(brokenRes.reply.includes('你好！👋') && brokenRes.reply.includes('日历日程'))
+    assert.ok(brokenRes.reply.includes('你好！') && brokenRes.reply.includes('日历日程'))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -2425,24 +2496,25 @@ test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与�
   assert.strictEqual(sanitizePlan(null, 'en').message, 'The model did not return a valid JSON object.')
   assert.strictEqual(sanitizeOps(null, 'hello', [], 'en').message, 'The model response format was invalid. Please try rephrasing.')
 
-  // 4. dispatchCollab 在 lang='en' 时必须下发英文格式化系统提示与英文空数据回复
+  // 4. dispatchCollab 在 lang='en' 时必须下发英文规则并在工具完成后返回自然英文回答
   let capturedPlannerSys = ''
-  let capturedSummarySys = ''
   const mockCliPath = fileURLToPath(new URL('./package.json', import.meta.url))
   const opsEn = createOperations({
     ctx: {
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream({ system }) {
-          if (system.includes('可用 action 列表')) capturedPlannerSys = system
-          if (system.includes('Summarize the data')) capturedSummarySys = system
+        stream({ system, messages }) {
+          if (system.includes('Collaboration Agent')) capturedPlannerSys = system
+          const last = messages[messages.length - 1]
           return (async function* () {
-            if (system.includes('可用 action 列表')) {
-              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
-            } else if (system.includes('精通飞书 CLI')) {
-              yield { type: 'text-delta', text: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], readonly: true }) }
-            } else {
+            if (last?.role === 'tool') {
               yield { type: 'text-delta', text: 'You have 1 pending leave approval.' }
+            } else {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'en_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], skill: 'lark-approval' }) },
+              }
             }
           })()
         },
@@ -2452,8 +2524,8 @@ test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与�
           if (argv.includes('skills') && argv.includes('list')) {
             return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Approval' }] }), stderr: '' }), terminate() {} }
           }
-          if (argv.includes('skills') && argv.includes('read')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\napproval +task-list', stderr: '' }), terminate() {} }
+          if (argv.includes('--help')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'Query tasks\nRisk: read\nFlags:\n  --topic string\n', stderr: '' }), terminate() {} }
           }
           return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: [] } }), stderr: '' }), terminate() {} }
         },
@@ -2464,7 +2536,6 @@ test('15.5 双语国际化全链路校验 (ZH/EN 1:1 词典、英文 Prompt 与�
   const enCollabRes = await opsEn.dispatchCollab({ instruction: 'Check my pending approvals', lang: 'en' })
   assert.strictEqual(enCollabRes.ok, true)
   assert.ok(capturedPlannerSys.includes('The active language is English'))
-  assert.ok(capturedSummarySys.includes('human-readable English answer'))
   assert.strictEqual(enCollabRes.reply, 'You have 1 pending leave approval.')
 
   // 5. planner.plan 在 lang='en' 时注入英文表结构输出规范
@@ -2652,72 +2723,148 @@ test('16.3 前端上传交互、零 Emoji、动效与防错契约验证', async 
   assert.ok(clientSrc.includes('liveReply') && clientSrc.includes('reply_delta'), '前端应支持实时流式渲染 reply_delta')
 })
 
-test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护', async () => {
+test('17.1 cli-introspect 运行时 Risk 门禁、schema/references 自省、安全边界阻断与自愈闭环', async () => {
   const { fileURLToPath } = await import('node:url')
-  const { validateReadonlySkillArgv, normalizeSkillArgvWithDomain, READONLY_SKILL_COMMANDS } = await import('./readonly-allowlist.js')
-  assert.ok(Object.keys(READONLY_SKILL_COMMANDS).length >= 200)
+  const { createCliIntrospector, normalizeSkillArgvWithDomain, parseHelpMetadata } = await import('./cli-introspect.js')
 
-  // 0. 官方 SKILL.md 省略域名时的自动补全（防止误杀且确保命令真实可执行）
+  // 0. 官方 SKILL.md 省略域名时的自动补全
   assert.deepStrictEqual(normalizeSkillArgvWithDomain(['tasks', 'query', '--topic', '1'], 'lark-approval'), ['approval', 'tasks', 'query', '--topic', '1'])
   assert.deepStrictEqual(normalizeSkillArgvWithDomain(['+cycle-list'], 'lark-okr'), ['okr', '+cycle-list'])
   assert.deepStrictEqual(normalizeSkillArgvWithDomain(['+detail', '--minute-tokens', 'm1'], 'lark-meeting'), ['minutes', '+detail', '--minute-tokens', 'm1'])
   assert.deepStrictEqual(normalizeSkillArgvWithDomain(['+search', '--query', '周会'], 'lark-workflow-meeting-summary'), ['minutes', '+search', '--query', '周会'])
 
-  // 1. 允许清单内合法只读查询 + 参数放行（含带短横线参数、重复数组参数、纯 JSON 对象 --data、内置只读）
-  assert.strictEqual(validateReadonlySkillArgv(['approval', 'tasks', 'query', '--topic', '1', '--page-size', '20']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['calendar', '+agenda', '--start', '-7d', '--json']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['docs', '+search', '--query', 'update']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['sheets', '+cells-get', '--spreadsheet-token', 'sht1', '--sheet-id', 'sh1', '--range', 'A1:C5', '--skip-hidden']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['attendance', 'user_tasks', 'query', '--employee-type', 'employee_id', '--data', '{"user_ids":["u1"]}']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['contact', 'user_profiles', 'batch_query', '--data', '{"user_ids":["ou_1"]}']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['minutes', '+detail', '--minute-tokens', 'm1', '--summary', '--todo', '--keyword']).ok, true)
-  assert.strictEqual(validateReadonlySkillArgv(['whoami', '--json']).ok, true)
+  // 1. 解析真实 --help 元数据 + 运行时 Risk: read 放行 vs 全部危险旁路拦截
+  const helpMap = {
+    'approval tasks query': 'Query tasks\nRisk: read\nFlags:\n  --topic string\n  --page-size int\n',
+    'calendar +agenda': 'Agenda\nRisk: read\nFlags:\n  --start string\n',
+    'docs +search': 'Search docs\nRisk: read\nFlags:\n  --query string\n  --page-size int\n  -o, --output string\n',
+    'sheets +cells-get': 'Cells get\nRisk: read\nFlags:\n  --spreadsheet-token string\n  --sheet-id string\n  --range string\n  --skip-hidden\n',
+    'attendance user_tasks query': 'Attendance query\nRisk: read\nFlags:\n  --employee-type string\n  --data string\n',
+    'contact user_profiles batch_query': 'Batch query\nRisk: read\nFlags:\n  --data string\n',
+    'minutes +detail': 'Minutes detail\nRisk: read\nFlags:\n  --minute-tokens string\n  --summary\n  --todo\n  --keyword\n  --transcript\n',
+    'task +delete': 'Delete task\nRisk: high-risk-write\nFlags:\n  --task-id string\n',
+    'task tasks delete': 'Delete task\nRisk: high-risk-write\nRequired:\n  --task-guid string\n',
+    'im +chat-messages-list': 'List messages\nRisk: read\nFlags:\n  --chat-id string\n  --download-resources\n  --page-all\n',
+  }
+  const parsedSample = parseHelpMetadata(helpMap['task tasks delete'])
+  assert.strictEqual(parsedSample.risk, 'high-risk-write')
+  assert.ok(parsedSample.requiredFlags.has('--task-guid'))
 
-  // 2. 严厉拦截：布尔 flag 吞参数绕过、未收录子命令、api/apps/event、本地写盘、@file、--params、--page-all
-  assert.strictEqual(validateReadonlySkillArgv(['task', '--json', '+delete', '--task-id', '1']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['task', 'tasks', 'delete', '--task-id', '1', '--yes']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['api', 'GET', '/open-apis/calendar/v4/calendars']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['apps', '+env-list', '--app-id', 'cli_1', '--include-values']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['event', 'consume', '--max-events', '1']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['drive', '+download', '--file-token', 'f1', '--output', '/tmp/x']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['docs', '+script', '--doc', 'd1']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['minutes', '+detail', '--minute-tokens', 'm1', '--transcript']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['im', '+chat-messages-list', '--chat-id', 'oc_1', '--download-resources']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['im', '+chat-messages-list', '--chat-id', 'oc_1', '--page-all']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['approval', 'tasks', 'query', '--params', '{"topic":"1"}']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['contact', 'user_profiles', 'batch_query', '--data', '@/etc/passwd']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['contact', 'user_profiles', 'batch_query', '--data', '-']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['docs', '+search', '--query', 'a', '--output', '/tmp/out.json']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['sheets', '+cells-get', '--spreadsheet-token', 's1', '--skip-hidden', 'true']).ok, false)
-  assert.strictEqual(validateReadonlySkillArgv(['docs', '+search', '--query', '--page-size', '10']).ok, false)
+  const introspect = createCliIntrospector({
+    getCliPath: async () => 'mock-cli',
+    async invoke(args) {
+      const prefix = args.slice(0, args.indexOf('--help')).join(' ')
+      const stdout = helpMap[prefix] || ''
+      return stdout ? { exitCode: 0, stdout, stderr: '' } : { exitCode: 1, stdout: '', stderr: 'not found' }
+    },
+    async runJson() {
+      return { ok: true, value: {} }
+    },
+  })
 
-  // 3. 端到端集成测试：模型即使谎称 readonly: true 且伪造了带 --json 绕过或 --output 的命令，dispatchCollab 必须拦截进 skill_guard，绝不自动调用 spawn
+  // 合法 Risk: read 命令放行
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['approval', 'tasks', 'query', '--topic', '1', '--page-size', '20'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['calendar', '+agenda', '--start', '-7d', '--json'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['docs', '+search', '--query', 'update'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['sheets', '+cells-get', '--spreadsheet-token', 'sht1', '--sheet-id', 'sh1', '--range', 'A1:C5', '--skip-hidden'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['attendance', 'user_tasks', 'query', '--employee-type', 'employee_id', '--data', '{"user_ids":["u1"]}'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['contact', 'user_profiles', 'batch_query', '--data', '{"user_ids":["ou_1"]}'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['minutes', '+detail', '--minute-tokens', 'm1', '--summary', '--todo', '--keyword'])).ok, true)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['whoami', '--json'])).ok, true)
+
+  // 严格 Fail-Closed 拦截全部绕过/写操作/导出/未验证命令
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['task', '--json', '+delete', '--task-id', '1'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['task', 'tasks', 'delete', '--task-id', '1', '--yes'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['api', 'GET', '/open-apis/calendar/v4/calendars'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['apps', '+env-list', '--app-id', 'cli_1', '--include-values'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['event', 'consume', '--max-events', '1'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['drive', '+download', '--file-token', 'f1', '--output', '/tmp/x'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['docs', '+script', '--doc', 'd1'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['minutes', '+detail', '--minute-tokens', 'm1', '--transcript'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['im', '+chat-messages-list', '--chat-id', 'oc_1', '--download-resources'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['im', '+chat-messages-list', '--chat-id', 'oc_1', '--page-all'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['approval', 'tasks', 'query', '--params', '{"topic":"1"}'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['contact', 'user_profiles', 'batch_query', '--data', '@/etc/passwd'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['contact', 'user_profiles', 'batch_query', '--data', '-'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['docs', '+search', '--query', 'a', '--output', '/tmp/out.json'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['sheets', '+cells-get', '--spreadsheet-token', 's1', '--skip-hidden', 'true'])).ok, false)
+  assert.strictEqual((await introspect.evaluateReadonlySafety(['docs', '+search', '--query', '--page-size', '10'])).ok, false)
+
+  // 2. 真实内置 @larksuite/cli 实测（零 Mock）：验证 Risk: read / high-risk-write / schema / references/*.md 读取
+  const realOpsForIntrospect = createOperations({ ctx: { subprocess: realSubprocess }, config: { skipSystemCliLookup: true } })
+  const bundledCli = realOpsForIntrospect.resolveCliSync()
+  if (bundledCli) {
+    const realIntrospect = createCliIntrospector({
+      getCliPath: async () => bundledCli,
+      async invoke(args) {
+        const handle = realSubprocess.spawn({ argv: [bundledCli, ...args] })
+        const done = await handle.done
+        return {
+          exitCode: done?.exitCode ?? 1,
+          stdout: handle.collected?.stdout?.readFrom?.()?.text || done?.stdout || '',
+          stderr: handle.collected?.stderr?.readFrom?.()?.text || done?.stderr || '',
+        }
+      },
+      async runJson(args) {
+        const handle = realSubprocess.spawn({ argv: [bundledCli, ...args] })
+        const done = await handle.done
+        const stdout = handle.collected?.stdout?.readFrom?.()?.text || done?.stdout || ''
+        return { ok: done?.exitCode === 0, value: JSON.parse(stdout || '{}') }
+      },
+    })
+    const roReal = await realIntrospect.evaluateReadonlySafety(['task', '+get-related-tasks', '--created-by-me'])
+    assert.strictEqual(roReal.ok, true)
+    assert.strictEqual(roReal.risk, 'read')
+    const delReal = await realIntrospect.evaluateReadonlySafety(['task', 'tasks', 'delete', '--task-guid', 'g1'])
+    assert.strictEqual(delReal.ok, false)
+    assert.strictEqual(delReal.risk, 'high-risk-write')
+    const schemaReal = await realIntrospect.inspectSchema('task.tasks.delete')
+    assert.strictEqual(schemaReal.ok, true)
+    assert.ok(schemaReal.schema._meta?.risk === 'high-risk-write')
+    const refDoc = await realIntrospect.readSkillDoc('lark-task', 'references/lark-task-get-related-tasks.md')
+    assert.ok(refDoc && refDoc.includes('--created-by-me'), '应能渐进读取官方 references/*.md 子文档')
+  }
+
+  // 3. 端到端安全护栏测试：尝试用 run_readonly 走私 --json +delete / --output / --include-values 会被原地阻断，并触发 skill_guard
   let executedCmds = []
-  let modelPayload = { argv: ['task', '--json', '+delete', '--task-id', 't1'], readonly: true }
+  let guardTestPayload = ['task', '--json', '+delete', '--task-id', 't1']
   const opsGuard = createOperations({
     ctx: {
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream({ system }) {
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
           return (async function* () {
-            if (system.includes('可用 action 列表')) {
-              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-task' }) }
+            if (toolMsgs.length === 0) {
+              // 尝试通过只读工具夹带执行危险/写命令
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'g_1', name: 'run_readonly', arguments: JSON.stringify({ argv: guardTestPayload, skill: 'lark-task' }) },
+              }
             } else {
-              yield { type: 'text-delta', text: JSON.stringify(modelPayload) }
+              // 被 run_readonly 拦截并返回 blocked/requiresConfirmation 后转入唯一写确认闸门 propose_write
+              const lastJson = JSON.parse(String(toolMsgs[toolMsgs.length - 1].content[0].text))
+              assert.strictEqual(lastJson.blocked, true)
+              assert.strictEqual(lastJson.requiresConfirmation, true)
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: {
+                  type: 'tool-call',
+                  id: 'g_2',
+                  name: 'propose_write',
+                  arguments: JSON.stringify({ skill: 'lark-task', steps: [guardTestPayload], reason: '需要确认后才可执行' }),
+                },
+              }
             }
           })()
         },
       },
       subprocess: {
         spawn({ argv }) {
-          if (argv.includes('auth') || argv.includes('config')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
-          }
-          if (argv.includes('skills') && argv.includes('list')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-task', description: 'Tasks' }] }), stderr: '' }), terminate() {} }
-          }
-          if (argv.includes('skills') && argv.includes('read')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-task\ntask +get-my-tasks', stderr: '' }), terminate() {} }
+          if (argv.includes('auth') || argv.includes('config') || argv.includes('--help') || (argv.includes('skills') && argv.includes('list'))) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: argv.includes('list') ? JSON.stringify({ skills: [{ name: 'lark-task', description: 'Tasks' }] }) : '{}', stderr: '' }), terminate() {} }
           }
           executedCmds.push(argv)
           return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
@@ -2732,30 +2879,33 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
   assert.strictEqual(r1.confirmKind, 'skill_guard')
   assert.strictEqual(executedCmds.length, 0, '布尔 flag 绕过写操作绝不能自动执行')
 
-  modelPayload = { argv: ['docs', '+search', '--query', 'ok', '--output', '/tmp/leak.json'], readonly: true }
+  guardTestPayload = ['docs', '+search', '--query', 'ok', '--output', '/tmp/leak.json']
   const r2 = await opsGuard.dispatchCollab({ instruction: '导出文档搜索结果' })
   assert.strictEqual(r2.needsConfirm, true)
   assert.strictEqual(r2.confirmKind, 'skill_guard')
   assert.strictEqual(executedCmds.length, 0, '带 --output 的只读命令绝不能自动执行')
 
-  modelPayload = { argv: ['apps', '+env-list', '--app-id', 'app_1', '--include-values'], readonly: true }
+  guardTestPayload = ['apps', '+env-list', '--app-id', 'app_1', '--include-values']
   const r3 = await opsGuard.dispatchCollab({ instruction: '查看环境变量' })
   assert.strictEqual(r3.needsConfirm, true)
   assert.strictEqual(r3.confirmKind, 'skill_guard')
   assert.strictEqual(executedCmds.length, 0, 'apps 环境变量读取绝不能自动执行')
 
-  // 4. 模型省略域名前缀（tasks query --topic 1）时自动补全 approval 域名并放行只读白名单；用户点击确认执行 confirmSkill=true 时正常跑通
+  // 4. 域名省略自动补全 + --help Risk: read 验证通过直接执行；confirmSkill=true 正常落地
   const executedAllowed = []
   const opsDomainNorm = createOperations({
     ctx: {
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream({ system }) {
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
           return (async function* () {
-            if (system.includes('可用 action 列表')) {
-              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
-            } else if (system.includes('精通飞书 CLI')) {
-              yield { type: 'text-delta', text: JSON.stringify({ argv: ['tasks', 'query', '--topic', '1'], readonly: true }) }
+            if (toolMsgs.length === 0) {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'n_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['tasks', 'query', '--topic', '1'], skill: 'lark-approval' }) },
+              }
             } else {
               yield { type: 'text-delta', text: '查询完成：共 0 条审批。' }
             }
@@ -2770,8 +2920,8 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
           if (argv.includes('skills') && argv.includes('list')) {
             return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Approval' }] }), stderr: '' }), terminate() {} }
           }
-          if (argv.includes('skills') && argv.includes('read')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\ntasks query', stderr: '' }), terminate() {} }
+          if (argv.includes('--help')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'Query tasks\nRisk: read\nFlags:\n  --topic string\n', stderr: '' }), terminate() {} }
           }
           executedAllowed.push(argv.slice(1))
           return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: [] } }), stderr: '' }), terminate() {} }
@@ -2797,24 +2947,29 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
   assert.strictEqual(confirmedRes.ok, true)
   assert.ok(executedAllowed[1][0] === 'task' && executedAllowed[1][1] === '+create')
 
-  // 5. 全仓排查补强：taskDelete 使用 --task-guid、okr 缺 user-id 自动查 contact +get-user 自愈、user access token not support 友好提示
-  const opsSrc = (await import('node:fs')).readFileSync(new URL('./ops.js', import.meta.url), 'utf8')
-  assert.ok(opsSrc.includes("'--task-guid'"), 'taskDelete 必须使用 lark-cli 真实的 --task-guid 参数')
-
+  // 5. okr 缺 user-id 时 tool result 自动注入 currentUserOpenId，模型在循环内自愈重试成功
   let okrAttempts = 0
   const opsOkrRepair = createOperations({
     ctx: {
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream({ system }) {
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
           return (async function* () {
-            if (system.includes('可用 action 列表')) {
-              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-okr' }) }
-            } else if (system.includes('精通飞书 CLI')) {
-              yield { type: 'text-delta', text: JSON.stringify({ argv: ['+cycle-list'], readonly: true }) }
-            } else if (system.includes('修复失败的只读命令参数')) {
-              assert.ok(true)
-              yield { type: 'text-delta', text: JSON.stringify({ argv: ['okr', '+cycle-list', '--user-id', 'ou_self_123'] }) }
+            if (toolMsgs.length === 0) {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'o_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['+cycle-list'], skill: 'lark-okr' }) },
+              }
+            } else if (toolMsgs.length === 1) {
+              const errData = JSON.parse(String(toolMsgs[0].content[0].text))
+              assert.strictEqual(errData.currentUserOpenId, 'ou_self_123', '缺 open_id 时 run_readonly 工具返回应附带当前登录用户 open_id')
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'o_2', name: 'run_readonly', arguments: JSON.stringify({ argv: ['okr', '+cycle-list', '--user-id', errData.currentUserOpenId], skill: 'lark-okr' }) },
+              }
             } else {
               yield { type: 'text-delta', text: '您的当前 OKR 周期共 1 个。' }
             }
@@ -2829,11 +2984,8 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
           if (argv.includes('skills') && argv.includes('list')) {
             return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-okr', description: 'OKR' }] }), stderr: '' }), terminate() {} }
           }
-          if (argv.includes('skills') && argv.includes('read')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-okr\n+cycle-list', stderr: '' }), terminate() {} }
-          }
           if (argv.includes('--help')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: 'Flags:\n  --user-id string  required', stderr: '' }), terminate() {} }
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'Cycle list\nRisk: read\nFlags:\n  --user-id string\n', stderr: '' }), terminate() {} }
           }
           if (argv.includes('contact') && argv.includes('+get-user')) {
             return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { user: { open_id: 'ou_self_123' } } }), stderr: '' }), terminate() {} }
@@ -2853,24 +3005,27 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
   })
   const okrRes = await opsOkrRepair.dispatchCollab({ instruction: '查一下我当前的 OKR' })
   assert.strictEqual(okrRes.ok, true)
-  assert.strictEqual(okrAttempts, 2, 'okr +cycle-list 缺 user-id 应自动取 open_id 并自愈重试成功')
+  assert.strictEqual(okrAttempts, 2, 'okr +cycle-list 缺 user-id 应自动取 open_id 并在循环内自愈重试成功')
 
-  // 6. 自动剥离 lark-cli 返回体中的 _notice 版本提醒，防止透传给摘要模型和最终用户
-  let sawNoticeInSummary = false
+  // 6. 自动剥离 lark-cli 返回体中的 _notice 版本提醒，防止透传给模型与用户
+  let sawNoticeInLoop = false
   const opsNoticeStrip = createOperations({
     ctx: {
       agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
       llm: {
-        stream({ system, messages }) {
-          const msgText = messages.map((m) => (typeof m.content === 'string' ? m.content : m.text || '')).join('')
-          if (system.includes('整理成简洁清晰') && (msgText.includes('_notice') || msgText.includes('lark-cli update'))) {
-            sawNoticeInSummary = true
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
+          for (const m of toolMsgs) {
+            const s = String(m.content?.[0]?.text || '')
+            if (s.includes('_notice') || s.includes('lark-cli update')) sawNoticeInLoop = true
           }
           return (async function* () {
-            if (system.includes('可用 action 列表')) {
-              yield { type: 'text-delta', text: JSON.stringify({ action: 'run_skill', skill: 'lark-approval' }) }
-            } else if (system.includes('精通飞书 CLI')) {
-              yield { type: 'text-delta', text: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], readonly: true }) }
+            if (toolMsgs.length === 0) {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'nt_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['approval', 'tasks', 'query', '--topic', '1'], skill: 'lark-approval' }) },
+              }
             } else {
               yield { type: 'text-delta', text: '目前没有待处理的审批。' }
             }
@@ -2885,8 +3040,8 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
           if (argv.includes('skills') && argv.includes('list')) {
             return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-approval', description: 'Approval' }] }), stderr: '' }), terminate() {} }
           }
-          if (argv.includes('skills') && argv.includes('read')) {
-            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-approval\ntasks query', stderr: '' }), terminate() {} }
+          if (argv.includes('--help')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'Query tasks\nRisk: read\nFlags:\n  --topic string\n', stderr: '' }), terminate() {} }
           }
           return {
             done: Promise.resolve({
@@ -2907,7 +3062,7 @@ test('17.1 run_skill 自动执行严格只读子命令与参数白名单防护',
   })
   const noticeRes = await opsNoticeStrip.dispatchCollab({ instruction: '帮我查审批' })
   assert.strictEqual(noticeRes.ok, true)
-  assert.strictEqual(sawNoticeInSummary, false, 'runJson 与摘要流程必须剥离 _notice 内部版本提醒')
+  assert.strictEqual(sawNoticeInLoop, false, 'runJson 与 ReAct 循环必须剥离 _notice 内部版本提醒')
 
   // 7. Lark 国际版 / 飞书双品牌：consoleUrl、larkoffice.com/feishu.cn 域名适配，以及 applink 追加 lk_unique=true 防跨端劫持
   const larkOps = createOperations({
@@ -3087,6 +3242,526 @@ test('17.2 纯 LLM-Native 意图分流、预览页非改表对话回复及无硬
   )
   assert.ok(eventsCollab.some((e) => e.type === 'stage' && e.stage === 'routing_collab'))
   assert.strictEqual(eventsCollab.some((e) => e.stage === 'building_preview'), false)
+})
+
+test('17.3 stderr 错误信封解析、先查后做多步批量确认执行、增量授权与 23 领域能力大盘回归测试', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { fileURLToPath } = await import('node:url')
+  const cliPath = fileURLToPath(new URL('./package.json', import.meta.url))
+
+  // 1. stderr JSON 错误信封（missing_scope / exit 10）、先查后删（>4 条）、自动补 --yes、0 条空结果与 path parameter 中文提示
+  const deletedGuids = []
+  let deleteFirstCallHadNoYes = false
+  let mockTasks = [
+    { guid: 'g-1', summary: '待办一' },
+    { guid: 'g-2', summary: '待办二' },
+    { guid: 'g-3', summary: '待办三' },
+    { guid: 'g-4', summary: '待办四' },
+    { guid: 'g-5', summary: '待办五' },
+  ]
+  let scopeMissingMode = false
+  const seenLoginArgs = []
+
+  const opsTwoPhase = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
+          return (async function* () {
+            if (toolMsgs.length === 0) {
+              // 第 1 步：先查只读列表
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'tp_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['task', '+get-my-tasks', '--complete=false'], skill: 'lark-task' }) },
+              }
+            } else if (toolMsgs.length === 1) {
+              const resJson = JSON.parse(String(toolMsgs[0].content[0].text))
+              const tasks = resJson?.data?.tasks || resJson?.tasks || []
+              if (tasks.length === 0) {
+                yield { type: 'text-delta', text: '当前没有未完成的待办，不需要删除任何任务。' }
+              } else {
+                yield {
+                  type: 'block-end',
+                  index: 0,
+                  block: {
+                    type: 'tool-call',
+                    id: 'tp_2',
+                    name: 'propose_write',
+                    arguments: JSON.stringify({
+                      skill: 'lark-task',
+                      steps: tasks.map((tk) => ['task', 'tasks', 'delete', '--task-guid', tk.guid]),
+                      reason: `已查到 ${tasks.length} 条未完成待办，确认后将逐条删除。`,
+                    }),
+                  },
+                }
+              }
+            } else {
+              yield { type: 'text-delta', text: `已成功删除全部 ${deletedGuids.length} 条待办。` }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('--help')) {
+            if (argv.includes('delete')) {
+              return { done: Promise.resolve({ exitCode: 0, stdout: 'Delete task\nRisk: high-risk-write\nRequired:\n  --task-guid string\n', stderr: '' }), terminate() {} }
+            }
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'Get my tasks\nRisk: read\nFlags:\n  --complete\n', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('config') && argv.includes('show')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_test', brand: 'feishu' }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('auth') && argv.includes('scopes')) {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({
+                  ok: true,
+                  user_scopes: [
+                    'base:app:read', 'calendar:calendar:readonly', 'task:task:read',
+                    'im:chat:read', 'mail:user_mailbox:readonly', 'contact:user.base:readonly',
+                    'approval:task:read', 'docx:document:readonly', 'drive:drive.metadata:readonly',
+                    'wiki:space:read', 'sheets:spreadsheet:read', 'slides:presentation:read',
+                    'mindnote:node:read', 'board:whiteboard:node:read', 'vc:meeting.search:read',
+                    'minutes:minutes.basic:read', 'vc:note:read', 'okr:okr.period:readonly',
+                    'attendance:task:readonly', 'spark:app:read', 'application:bot.basic_info:read',
+                  ],
+                }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('auth') && argv.includes('status')) {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({ ok: true, appId: 'cli_test', identities: { user: { available: true, userName: 'Tester', status: 'valid', scope: 'task:task:write' } } }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('auth') && argv.includes('login')) {
+            seenLoginArgs.push(argv.slice(1))
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({ ok: true, verification_url: 'https://open.feishu.cn/verify', device_code: 'dc_1' }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-task', description: 'Tasks' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('read')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: '# lark-task\ntask +get-my-tasks\ntask tasks delete --task-guid', stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('task') && argv.includes('+get-my-tasks')) {
+            if (scopeMissingMode) {
+              // lark-cli 真实错误输出到 stderr 且 stdout 为空
+              return {
+                done: Promise.resolve({
+                  exitCode: 1,
+                  stdout: '',
+                  stderr: JSON.stringify({
+                    ok: false,
+                    identity: 'user',
+                    error: { type: 'authorization', subtype: 'missing_scope', code: 99991679, message: 'forbidden', missing_scopes: ['task:task:read', 'task:task:write'] },
+                  }),
+                }),
+                terminate() {},
+              }
+            }
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: mockTasks } }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('task') && argv.includes('tasks') && argv.includes('delete')) {
+            const guidIdx = argv.indexOf('--task-guid')
+            const guid = guidIdx !== -1 ? argv[guidIdx + 1] : ''
+            if (!guid) {
+              return {
+                done: Promise.resolve({
+                  exitCode: 1,
+                  stdout: '',
+                  stderr: JSON.stringify({ ok: false, error: { message: 'missing required path parameter: task_guid' } }),
+                }),
+                terminate() {},
+              }
+            }
+            if (!argv.includes('--yes')) {
+              deleteFirstCallHadNoYes = true
+              return {
+                done: Promise.resolve({
+                  exitCode: 10,
+                  stdout: '',
+                  stderr: JSON.stringify({ ok: false, error: { type: 'confirmation', subtype: 'confirmation_required', message: 'requires confirmation', hint: 'add --yes to confirm' } }),
+                }),
+                terminate() {},
+              }
+            }
+            deletedGuids.push(guid)
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { deleted: guid } }), stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: cliPath },
+  })
+
+  // A. 先查后删：自动查出 5 条待办，确认卡片中已带真实 task_guid，未提前删除任何数据
+  const planDelete = await opsTwoPhase.dispatchCollab({ instruction: '帮我删除所有待办' })
+  assert.strictEqual(planDelete.ok, true, `planDelete.ok should be true, got reply=${planDelete.reply}`)
+  assert.strictEqual(planDelete.needsConfirm, true, `planDelete.needsConfirm should be true, got ${JSON.stringify(planDelete)}`)
+  assert.strictEqual(planDelete.confirmKind, 'skill_guard')
+  assert.strictEqual(planDelete.steps.length, 5, '5 条待办应全部物化为独立带 --task-guid 的删除命令')
+  assert.ok(planDelete.steps.every((s) => s.includes('--task-guid')))
+  assert.strictEqual(deletedGuids.length, 0, '确认前绝对不能执行任何删除')
+
+  // B. 确认执行：突破旧 4 步截断、根据 Risk: high-risk-write 自动携带 --yes 并删完 5 条
+  const execDelete = await opsTwoPhase.dispatchCollab({
+    instruction: '帮我删除所有待办',
+    confirmSkill: true,
+    skillName: 'lark-task',
+    skillSteps: planDelete.steps,
+  })
+  assert.strictEqual(execDelete.ok, true, `execDelete.ok should be true, got ${execDelete.reply}`)
+  assert.deepStrictEqual(deletedGuids, ['g-1', 'g-2', 'g-3', 'g-4', 'g-5'])
+
+  // C. 无待办时直接友好回复，不弹错误确认卡
+  mockTasks = []
+  const emptyRes = await opsTwoPhase.dispatchCollab({ instruction: '帮我删除所有待办' })
+  assert.strictEqual(emptyRes.ok, true, `emptyRes.ok should be true, got ${emptyRes.reply}`)
+  assert.strictEqual(emptyRes.needsConfirm, undefined)
+  assert.ok(emptyRes.reply.includes('没有未完成的待办'))
+
+  // D. stderr 中的 missing_scope 与 missing_scopes 必须完整透传，不因 stdout 为空丢失
+  scopeMissingMode = true
+  const missingScopeRes = await opsTwoPhase.dispatchCollab({ instruction: '帮我删除所有待办' })
+  assert.strictEqual(missingScopeRes.ok, false)
+  assert.strictEqual(missingScopeRes.type, 'missing_scope')
+  assert.deepStrictEqual(missingScopeRes.requiredScopes, ['task:task:read', 'task:task:write'])
+  scopeMissingMode = false
+
+  // E. 确认执行若仍缺失 path parameter，提示为「操作未能完成」而非「查询未能完成」且翻译 path parameter
+  const brokenConfirmed = await opsTwoPhase.dispatchCollab({
+    instruction: '删除待办',
+    confirmSkill: true,
+    skillName: 'lark-task',
+    skillSteps: [['task', 'tasks', 'delete']],
+  })
+  assert.strictEqual(brokenConfirmed.ok, false)
+  assert.ok(brokenConfirmed.reply.includes('操作未能完成') && !brokenConfirmed.reply.includes('查询未能完成'))
+  assert.ok(brokenConfirmed.reply.includes('缺少必要参数'))
+
+  // F. 增量授权：传 scopes 用 --scope，传 skillName 用 --domain，都不传走 --recommend
+  await opsTwoPhase.startLogin(undefined, 'lark-task', ['task:task:read', 'task:task:write'])
+  await opsTwoPhase.startLogin(undefined, 'lark-task')
+  await opsTwoPhase.startLogin(undefined)
+  const initLoginCalls = seenLoginArgs.filter((a) => a.includes('--no-wait'))
+  assert.strictEqual(initLoginCalls.length, 3)
+  assert.ok(initLoginCalls[0].includes('--scope') && initLoginCalls[0].includes('task:task:read,task:task:write'))
+  assert.ok(initLoginCalls[1].includes('--domain') && initLoginCalls[1].includes('task'))
+  assert.ok(initLoginCalls[2].includes('--recommend'))
+
+  // G. 23 领域能力大盘解析（含 user_scopes + identities.user.scope）
+  const fullScopes = await opsTwoPhase.getScopes()
+  assert.strictEqual(fullScopes.ok, true)
+  assert.strictEqual(fullScopes.scopesVerified, true)
+  const expectedDomains = [
+    'base', 'calendar', 'task', 'im', 'mail', 'contact', 'approval',
+    'docs', 'drive', 'wiki', 'sheets', 'slides', 'markdown', 'mindnotes',
+    'whiteboard', 'vc', 'minutes', 'note', 'okr', 'attendance', 'apps', 'event', 'application',
+  ]
+  for (const key of expectedDomains) {
+    assert.ok(fullScopes.domains[key], `getScopes 必须包含领域 ${key}`)
+    assert.strictEqual(fullScopes.domains[key].ready, true, `领域 ${key} 应正确识别已授权状态`)
+  }
+  assert.strictEqual(fullScopes.domainOrder.length, 23)
+
+  // H. client.js 前端契约：全量 23 领域、无假绿 ?? true、缺权传 domain/scopes、紧凑分组标签流、单一加载提示、无 Node API、无 Emoji
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  for (const key of expectedDomains) {
+    assert.ok(clientSrc.includes(`'scope.${key}'`), `client.js 中英文词典必须注册 scope.${key}`)
+  }
+  assert.strictEqual(/scopesInfo\?\.domains\?\.base\?\.ready\s*\?\?\s*true/.test(clientSrc), false, 'base 不能在 scopes 未返回时假绿')
+  assert.ok(clientSrc.includes('lw-scope-loading-row') && clientSrc.includes('lw-scope-flow') && clientSrc.includes('lw-scope-chip'))
+  assert.strictEqual(clientSrc.includes('lw-scope-grid'), false, '不应使用截断且冗杂的 23 格双列核验中网格')
+  assert.ok(clientSrc.includes('domain: msg.domain') && clientSrc.includes('scopes: msg.requiredScopes'))
+  assert.strictEqual(/[\u{1F300}-\u{1FAFF}]/u.test(clientSrc), false, 'client.js 不应包含 Emoji')
+  assert.strictEqual(/\b(Buffer\.from|process\.env|require\(['"]node:?(fs|path)['"]\))/.test(clientSrc), false, 'client.js 严禁使用 Node API')
+})
+
+test('17.4 saveImage(data) 宿主契约、全领域条件查询走 run_skill 与 get_tasks 相关任务兜底', async () => {
+  const { apply } = await import('./index.js')
+  const { fileURLToPath } = await import('node:url')
+  const registeredRoutes = new Map()
+  let savedImageInput = null
+  let llmSawImageBlock = false
+  let llmSawAttachmentRule = false
+
+  const mockCtx = {
+    subprocess: realSubprocess,
+    connection: {
+      fetch: {
+        register: (route) => {
+          registeredRoutes.set(route.path, route)
+          return () => registeredRoutes.delete(route.path)
+        },
+      },
+    },
+    commands: { register: () => () => {} },
+    tools: { register: () => () => {} },
+    effect: (fn) => fn(),
+    inject: (deps, cb) => {
+      if (Array.isArray(deps) && deps.includes('attachments')) {
+        cb({
+          attachments: {
+            async saveImage(input) {
+              savedImageInput = input
+              assert.ok(input && input.data instanceof Uint8Array, 'saveImage 必须传 data: Uint8Array，不能传 bytes')
+              assert.strictEqual(input.bytes, undefined)
+              return { attachmentId: 'att_img_1', mediaType: input.mediaType, bytes: input.data.byteLength }
+            },
+          },
+        })
+      }
+    },
+    agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+    llm: {
+      stream({ system, messages }) {
+        if (system.includes('Direct Reply') && system.includes('Discover Contract Before Calling')) {
+          llmSawAttachmentRule = true
+        }
+        const last = messages[messages.length - 1]
+        if (Array.isArray(last?.content) && last.content.some((c) => c.type === 'image' && c.attachment?.attachmentId === 'att_img_1')) {
+          llmSawImageBlock = true
+        }
+        return (async function* () {
+          yield { type: 'text-delta', text: '这是一张截图。' }
+        })()
+      },
+    },
+  }
+  apply(mockCtx)
+
+  // 上传 1x1 PNG 到 /upload，再发 /adjust 带图提问
+  const pngHeader = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex')
+  const uploadRoute = registeredRoutes.get('/api/dsh-lark/upload')
+  const upRes = await uploadRoute.fetch(new Request('http://127.0.0.1/api/dsh-lark/upload?name=shot.png&mime=image%2Fpng', {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: pngHeader,
+  }))
+  const upJson = await upRes.json()
+  assert.strictEqual(upJson.ok, true)
+
+  const adjustRoute = registeredRoutes.get('/api/dsh-lark/adjust')
+  const adjRes = await adjustRoute.fetch(new Request('http://127.0.0.1/api/dsh-lark/adjust', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'collab', instruction: '那这是啥', attachments: [upJson.file.id] }),
+  }))
+  const adjJson = await adjRes.json()
+  assert.strictEqual(adjJson.ok, true)
+  assert.ok(savedImageInput && savedImageInput.data instanceof Uint8Array)
+  assert.strictEqual(llmSawImageBlock, true, 'imageBlocks 必须成功透传给大模型')
+  assert.strictEqual(llmSawAttachmentRule, true, 'ReAct 系统提示词必须包含直接识图回复与先查契约规则')
+  assert.ok(adjJson.reply.includes('截图'))
+
+  // 多跳工具链：+get-my-tasks 为空时在单轮 ReAct 循环内继续查 +get-related-tasks 并汇总结论
+  const opsRelated = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
+          return (async function* () {
+            if (toolMsgs.length === 0) {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'rel_1', name: 'run_readonly', arguments: JSON.stringify({ argv: ['task', '+get-my-tasks', '--complete=false'], skill: 'lark-task' }) },
+              }
+            } else if (toolMsgs.length === 1) {
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: { type: 'tool-call', id: 'rel_2', name: 'run_readonly', arguments: JSON.stringify({ argv: ['task', '+get-related-tasks', '--include-complete=false'], skill: 'lark-task' }) },
+              }
+            } else {
+              const lastJson = String(toolMsgs[1].content[0].text || '')
+              assert.ok(lastJson.includes('我创建但指派给同事的任务'))
+              yield { type: 'text-delta', text: '分配给你的待办为空，但与你相关的待办有 1 条：我创建但指派给同事的任务。' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          if (argv.includes('config') && argv.includes('show')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_t', brand: 'feishu' }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('auth') && (argv.includes('scopes') || argv.includes('status'))) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, user_scopes: ['task:task:read'] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('--help')) {
+            return {
+              done: Promise.resolve({ exitCode: 0, stdout: 'Tasks\nRisk: read\nFlags:\n  --complete\n  --include-complete\n', stderr: '' }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('task') && argv.includes('+get-my-tasks')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: [] } }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('task') && argv.includes('+get-related-tasks')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, data: { tasks: [{ summary: '我创建但指派给同事的任务' }] } }), stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: fileURLToPath(new URL('./package.json', import.meta.url)) },
+  })
+  const relRes = await opsRelated.dispatchCollab({ instruction: '查待办' })
+  assert.strictEqual(relRes.ok, true)
+  assert.ok(relRes.reply.includes('我创建但指派给同事的任务'), 'ReAct 循环内查不到指派任务时应能继续查询相关任务并回答')
+})
+
+test('17.5 错误 query flag、多余 --as 及误调 propose_write 的只读查询在 ReAct 循环内直接自愈执行，绝不弹出待确认写卡片', async () => {
+  let helpQueried = false
+  let testScenario = 'bad_flag' // bad_flag | wrong_propose_write
+  const executedCommands = []
+
+  const opsReadonlyRepair = createOperations({
+    ctx: {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        stream({ messages }) {
+          const toolMsgs = messages.filter((m) => m.role === 'tool')
+          return (async function* () {
+            if (toolMsgs.length === 0) {
+              if (testScenario === 'wrong_propose_write') {
+                // 场景 B：模型误把纯 Risk: read 查询塞进了 propose_write
+                yield {
+                  type: 'block-end',
+                  index: 0,
+                  block: {
+                    type: 'tool-call',
+                    id: 'ro_pw_1',
+                    name: 'propose_write',
+                    arguments: JSON.stringify({ skill: 'lark-task', steps: [['task', '+get-related-tasks', '--created-by-me', 'true', '--as', 'user']], reason: '只读查询' }),
+                  },
+                }
+              } else {
+                // 场景 A：模型幻觉出 --creator 与多余 --as user
+                yield {
+                  type: 'block-end',
+                  index: 0,
+                  block: {
+                    type: 'tool-call',
+                    id: 'ro_1',
+                    name: 'run_readonly',
+                    arguments: JSON.stringify({ argv: ['task', '+get-related-tasks', '--creator', 'ou_abc', '--as', 'user'], skill: 'lark-task' }),
+                  },
+                }
+              }
+            } else if (toolMsgs.length === 1) {
+              const feedback = JSON.parse(String(toolMsgs[0].content[0].text))
+              if (testScenario === 'wrong_propose_write') {
+                assert.ok(feedback.error.includes('strictly read-only'), 'propose_write 应拒绝纯只读查询并引导改用 run_readonly')
+              } else {
+                assert.strictEqual(feedback.blocked, true)
+                assert.ok(feedback.availableBoolFlags.includes('--created-by-me'), 'run_readonly 拒绝错误参数时应在工具结果中回传真实 --help flags')
+              }
+              yield {
+                type: 'block-end',
+                index: 0,
+                block: {
+                  type: 'tool-call',
+                  id: 'ro_2',
+                  name: 'run_readonly',
+                  arguments: JSON.stringify({ argv: ['task', '+get-related-tasks', '--created-by-me', 'true', '--as', 'user'], skill: 'lark-task' }),
+                },
+              }
+            } else {
+              const okRes = JSON.parse(String(toolMsgs[toolMsgs.length - 1].content[0].text))
+              assert.ok(Array.isArray(okRes.data?.tasks) && okRes.data.tasks.length === 2)
+              yield { type: 'text-delta', text: '你创建的待办共有 2 条：编程测试、测试确认卡片。' }
+            }
+          })()
+        },
+      },
+      subprocess: {
+        spawn({ argv }) {
+          executedCommands.push(argv)
+          if (argv.includes('config') && argv.includes('show')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_t', brand: 'feishu' }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('auth') && (argv.includes('scopes') || argv.includes('status'))) {
+            return {
+              done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, configured: true, user_scopes: ['task:task:read'] }), stderr: '' }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('skills') && argv.includes('list')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ skills: [{ name: 'lark-task', description: '待办' }] }), stderr: '' }), terminate() {} }
+          }
+          if (argv.includes('--help')) {
+            helpQueried = true
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: 'Get related tasks\nRisk: read\nUsage:\n  lark-cli task +get-related-tasks [flags]\nFlags:\n  --created-by-me  Filter tasks created by current user',
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (argv.includes('task') && argv.includes('+get-related-tasks')) {
+            if (argv.includes('--creator')) {
+              return { done: Promise.resolve({ exitCode: 1, stdout: '', stderr: 'unknown flag: --creator' }), terminate() {} }
+            }
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({ ok: true, data: { tasks: [{ summary: '编程测试' }, { summary: '测试确认卡片' }] } }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: decodeURIComponent(new URL('./package.json', import.meta.url).pathname) },
+  })
+
+  const res = await opsReadonlyRepair.dispatchCollab({ instruction: '我创建的待办也没有吗' })
+  assert.strictEqual(res.ok, true)
+  assert.strictEqual(res.needsConfirm, undefined, '纯只读查询绝对不能触发待确认卡片')
+  assert.strictEqual(helpQueried, true, '应对已知只读子命令的错误 query flag 自动基于 --help 反馈自愈')
+  assert.ok(
+    executedCommands.some((cmd) => cmd.includes('+get-related-tasks') && cmd.includes('--created-by-me=true') && !cmd.includes('--as')),
+    '修复并执行后的参数应剥离多余 --as 并折叠为 --created-by-me=true',
+  )
+  assert.ok(res.reply.includes('编程测试'), '应直接总结并返回查询到的待办列表')
+
+  testScenario = 'wrong_propose_write'
+  executedCommands.length = 0
+  const resFromRejectedPropose = await opsReadonlyRepair.dispatchCollab({ instruction: '我创建的待办也没有吗' })
+  assert.strictEqual(resFromRejectedPropose.ok, true)
+  assert.strictEqual(resFromRejectedPropose.needsConfirm, undefined, '即使模型误调用 propose_write 提交纯只读查询，也会被闸门退回改用 run_readonly')
+  assert.ok(resFromRejectedPropose.reply.includes('测试确认卡片'))
 })
 
 Promise.all(pendingTests).then(() => {

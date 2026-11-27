@@ -512,6 +512,7 @@ export function apply(ctx, config = {}) {
   let cliAccountHandle = null
   let skillsHostRef = null
   let skillControlRef = null
+  let attachmentsHostRef = null
   const setLatestActive = (next) => {
     latestActive = next
     if (activeDomain && next && !next.preview && next.url) {
@@ -536,18 +537,30 @@ export function apply(ctx, config = {}) {
     }
     const attachmentContext = buildAttachmentContext(items)
     const imageBlocks = []
-    const attachmentsSvc = typeof ctx.get === 'function' ? ctx.get('attachments') : undefined
-    if (attachmentsSvc && typeof attachmentsSvc.saveImage === 'function') {
-      for (const img of attachmentContext.images) {
-        try {
-          const ref = await attachmentsSvc.saveImage({
-            bytes: img.buffer,
-            mediaType: img.mime,
-            name: img.name,
-          })
-          if (ref) imageBlocks.push({ type: 'image', attachment: ref })
-        } catch {}
+    const imageErrors = []
+    const attachmentsSvc = attachmentsHostRef || (typeof ctx.get === 'function' ? ctx.get('attachments') : undefined)
+    if (attachmentContext.images.length > 0) {
+      if (attachmentsSvc && typeof attachmentsSvc.saveImage === 'function') {
+        for (const img of attachmentContext.images) {
+          try {
+            const ref = await attachmentsSvc.saveImage({
+              data: img.buffer,
+              mediaType: img.mime,
+              name: img.name,
+            })
+            if (ref) imageBlocks.push({ type: 'image', attachment: ref })
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            imageErrors.push(`${img.name}: ${msg}`)
+            console.warn('[dsh-lark] saveImage failed:', msg)
+          }
+        }
+      } else {
+        imageErrors.push('Host attachments service unavailable')
       }
+    }
+    if (imageErrors.length > 0 && imageBlocks.length === 0) {
+      attachmentContext.promptBlock = `${attachmentContext.promptBlock}\n\n[Image loading warning: ${imageErrors.join('; ')}]`
     }
     return {
       attachmentContext,
@@ -1039,7 +1052,8 @@ export function apply(ctx, config = {}) {
               }
 
               if (method === 'GET' && route === '/connect/scopes') {
-                const result = await ops.getScopes(undefined)
+                const force = url.searchParams.get('force') === '1'
+                const result = await ops.getScopes(undefined, { force })
                 return jsonResponse(200, result)
               }
 
@@ -1076,7 +1090,7 @@ export function apply(ctx, config = {}) {
 
               if (method === 'POST' && route === '/connect/login/start') {
                 const body = await request.json().catch(() => ({}))
-                const result = await ops.startLogin(undefined, body?.domain)
+                const result = await ops.startLogin(undefined, body?.domain, body?.scopes)
                 return jsonResponse(result.ok ? 200 : 500, result)
               }
 
@@ -1423,7 +1437,7 @@ export function apply(ctx, config = {}) {
           'Lark Workbench (`dsh-lark-studio`) provides structured Feishu tools (`lark_base_build`, `lark_base_adjust`, `lark_collab`) and a `/lark` shortcut.',
           '- Use `lark_base_build` (supports `preview=true`) when the user wants to design and create a new Feishu Base from natural language.',
           '- Use `lark_base_adjust` to inspect or reshape an existing Base cleanly (always ask user confirmation before passing `confirm=true` for edits/deletions).',
-          '- Use `lark_collab` for quick calendar, task, chat, mail, contact, doc, or wiki queries; for specialized Feishu domains (approval, OKR, sheets, slides, minutes), follow the official `feishu` skill and `lark-cli skills read <guide>`.',
+          '- Use `lark_collab` when operating Feishu domains via the workbench introspection loop, or directly use the official `feishu` skill and `lark-cli skills read <guide>` in host shell.',
           '- Never ask users to install Node.js, npm, or `@larksuite/cli`; the workbench auto-installs the component on first open.',
         ].join('\n'),
       })
@@ -1480,6 +1494,13 @@ export function apply(ctx, config = {}) {
           invocation: { modelInvocable: true, userInvocable: true },
           content: buildFallbackFeishuContent(ops, ops.resolveCliSync() || null, []),
         })
+      }
+    })
+
+    ctx.inject(['attachments'], (scoped) => {
+      attachmentsHostRef = scoped.attachments || null
+      return () => {
+        if (attachmentsHostRef === scoped.attachments) attachmentsHostRef = null
       }
     })
 

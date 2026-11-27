@@ -218,12 +218,12 @@ function buildCliAccountRegistration(ops, preferredBrand = 'feishu') {
     'badge.connecting': '连接中',
     'badge.unavailable': '待确认',
     'signOut.title': '退出飞书登录？',
-    'signOut.body': '退出后需要重新扫码登录；已关联的飞书应用配置会保留。',
+    'signOut.body': '退出后将同时清除当前飞书账号登录态与已关联的应用配置，之后可重新关联其他应用并登录。',
     'activation.title': '连接飞书工作台',
     'activation.body': '连接你的飞书账号后，即可生成多维表格并协同处理日程、待办、群聊和邮件。',
     'notice.app-linked': '飞书应用已关联，下一步请登录账号',
     'notice.connected': '飞书工作台已连接',
-    'notice.signed-out': '已退出飞书登录',
+    'notice.signed-out': '已退出登录并解绑飞书应用',
   }
 
   const en = {
@@ -260,12 +260,12 @@ function buildCliAccountRegistration(ops, preferredBrand = 'feishu') {
     'badge.connecting': 'Connecting',
     'badge.unavailable': 'Unconfirmed',
     'signOut.title': 'Sign out of Feishu?',
-    'signOut.body': 'You will need to authorize again later. The linked Feishu app configuration is kept.',
+    'signOut.body': 'This clears your local Feishu sign-in and unbinds the linked app so you can connect another account or app.',
     'activation.title': 'Connect Lark Workbench',
     'activation.body': 'Connect your Feishu account to generate Bases and manage calendar, tasks, chats, and mail.',
     'notice.app-linked': 'Feishu app linked. Sign in next.',
     'notice.connected': 'Lark Workbench connected',
-    'notice.signed-out': 'Signed out of Feishu',
+    'notice.signed-out': 'Signed out and unbound Feishu app',
   }
 
   const URL_RE = /(https:\/\/[^\s"'<>]+)/
@@ -301,8 +301,15 @@ function buildCliAccountRegistration(ops, preferredBrand = 'feishu') {
       control.publish(next)
       return next
     }
-    const userName = auth.userName || auth.user_name || auth.name
-    const userReady = Boolean(auth.userReady ?? auth.user_ready ?? auth.authenticated ?? (auth.user && auth.user.ready))
+    const userIdentity = auth.identities && auth.identities.user
+    const userName = (userIdentity && userIdentity.userName) || auth.userName || auth.user_name || auth.name
+    const userReady = Boolean(
+      (userIdentity && typeof userIdentity.available === 'boolean' ? userIdentity.available : undefined)
+      ?? auth.userReady
+      ?? auth.user_ready
+      ?? auth.authenticated
+      ?? (auth.user && auth.user.ready),
+    )
     const next = userReady
       ? { state: 'connected', appId: cfg.appId, ...(userName ? { userName } : {}) }
       : { state: 'signed-out', appId: cfg.appId }
@@ -439,8 +446,7 @@ function buildCliAccountRegistration(ops, preferredBrand = 'feishu') {
       if (kind === 'link-app') {
         await ensureCliForAccount(control, signal)
         control.stage('configuring')
-        const targetBrand = (preferredBrand === 'lark' || preferredBrand === 'feishu') ? preferredBrand : 'feishu'
-        const res = await control.run('config-init', ['config', 'init', '--new', '--brand', targetBrand], signal, {
+        const res = await control.run('config-init', ['config', 'init', '--new'], signal, {
           awaitsUser: true,
           onLine: offerUrlFromLine(control),
         })
@@ -463,8 +469,16 @@ function buildCliAccountRegistration(ops, preferredBrand = 'feishu') {
       }
       if (kind === 'sign-out') {
         control.stage('signing-out')
-        const res = await control.run('auth-logout', ['auth', 'logout'], signal)
-        if (res.exitCode !== 0) throw new Error(`auth logout exited ${res.exitCode}`)
+        if (typeof ops.clearConnectionCaches === 'function') ops.clearConnectionCaches()
+        await control.run('auth-logout', ['auth', 'logout', '--json'], signal).catch(() => null)
+        const removeRes = await control.run('config-remove', ['config', 'remove'], signal)
+        if (typeof ops.clearConnectionCaches === 'function') ops.clearConnectionCaches()
+        if (removeRes.exitCode !== 0) {
+          const combined = `${removeRes.stderr || ''}\n${removeRes.stdout || ''}`
+          if (!/not configured|no config|not found|未配置|不存在/i.test(combined)) {
+            throw new Error(`config remove exited ${removeRes.exitCode}`)
+          }
+        }
         control.stage('checking')
         await inspectAccount(control, signal)
       }
@@ -1072,8 +1086,7 @@ export function apply(ctx, config = {}) {
               }
 
               if (method === 'POST' && route === '/connect/app/start') {
-                const body = await request.json().catch(() => ({}))
-                const result = await ops.startAppInit(undefined, body?.brand)
+                const result = await ops.startAppInit(undefined)
                 return jsonResponse(result.ok ? 200 : 500, result)
               }
 

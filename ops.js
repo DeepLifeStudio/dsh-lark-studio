@@ -972,6 +972,54 @@ export function createOperations({ ctx, config = {}, planner }) {
     return firstJsonObject(stdout)
   }
 
+  let appNameCache = { appId: '', name: '', at: 0, promise: null }
+  const APP_NAME_RETRY_MS = 60000
+
+  function extractAppName(payload) {
+    if (!payload || typeof payload !== 'object') return ''
+    const candidates = [
+      payload.bot?.app_name,
+      payload.bot?.appName,
+      payload.data?.bot?.app_name,
+      payload.data?.bot?.appName,
+      payload.data?.app_name,
+      payload.data?.appName,
+      payload.app_name,
+      payload.appName,
+    ]
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim()) return c.trim()
+    }
+    return ''
+  }
+
+  async function resolveAppName(appId, signal, fallbackName) {
+    if (!appId) return ''
+    if (typeof fallbackName === 'string' && fallbackName.trim()) {
+      const clean = fallbackName.trim()
+      appNameCache = { appId, name: clean, at: Date.now(), promise: null }
+      return clean
+    }
+    if (appNameCache.appId === appId) {
+      if (appNameCache.name) return appNameCache.name
+      if (appNameCache.promise) return await appNameCache.promise
+      if (appNameCache.at > 0 && (Date.now() - appNameCache.at) < APP_NAME_RETRY_MS) return ''
+    }
+    const task = (async () => {
+      try {
+        const res = await runJson(['api', 'GET', '/open-apis/bot/v3/info', '--as', 'bot', '--json'], signal)
+        const name = res.ok ? extractAppName(res.value) : ''
+        appNameCache = { appId, name, at: Date.now(), promise: null }
+        return name
+      } catch {
+        appNameCache = { appId, name: '', at: Date.now(), promise: null }
+        return ''
+      }
+    })()
+    appNameCache = { appId, name: '', at: appNameCache.at, promise: task }
+    return await task
+  }
+
   /** Where does this installation stand? Drives the panel's whole first screen. */
   async function connectStatus(signal) {
     let cliPath
@@ -1000,14 +1048,17 @@ export function createOperations({ ctx, config = {}, planner }) {
       }
     }
 
-    const auth = await authStatus(signal)
+    const [auth, appName] = await Promise.all([
+      authStatus(signal),
+      resolveAppName(config.appId, signal, config.appName || config.app_name),
+    ])
     const effectiveBrand = configuredBrand || normalizeBrand(auth.brand) || normalizeBrand(config.brand) || 'feishu'
     if (normalizeBrand(auth.brand) || normalizeBrand(config.brand)) {
       detectedBrandCache = normalizeBrand(auth.brand) || normalizeBrand(config.brand)
     }
     const base = {
       cli: { available: true, path: cliPath },
-      app: { appId: config.appId, brand: effectiveBrand },
+      app: { appId: config.appId, ...(appName ? { appName } : {}), brand: effectiveBrand },
       installCommand: INSTALL_COMMAND,
     }
     return (auth.ready && auth.userReady) ? { stage: 'ready', ...base, auth } : { stage: 'no-auth', ...base, auth }
@@ -1016,14 +1067,13 @@ export function createOperations({ ctx, config = {}, planner }) {
   /** Step 1 for a brand-new user: create the Feishu/Lark app in a browser flow. */
   let appInit = null
 
-  async function startAppInit(signal, requestedBrand) {
+  async function startAppInit(signal) {
     if (appInit && !appInit.done) {
       if (appInit.url) return { ok: true, url: appInit.url, pending: true }
     }
-    const targetBrand = normalizeBrand(requestedBrand) || configuredBrand || 'feishu'
     const executable = await resolveCli(signal)
     const handle = ctx.subprocess.spawn({
-      argv: [executable, 'config', 'init', '--new', '--brand', targetBrand],
+      argv: [executable, 'config', 'init', '--new'],
       cwd,
       stdio: {
         stdin: 'ignore',
@@ -1033,11 +1083,16 @@ export function createOperations({ ctx, config = {}, planner }) {
       graceMs: 4000,
       env: childEnv(),
     })
-    const record = { handle, url: undefined, done: false, exitCode: null, timer: undefined }
+    const record = { handle, url: undefined, done: false, exitCode: null, error: undefined, timer: undefined }
     appInit = record
     handle.done.then((outcome) => {
       record.done = true
       record.exitCode = outcome.exitCode
+      if (outcome.exitCode !== 0) {
+        const stderr = handle.collected?.stderr ? handle.collected.stderr.readFrom(0).text : (outcome?.stderr || '')
+        const stdout = handle.collected?.stdout ? handle.collected.stdout.readFrom(0).text : (outcome?.stdout || '')
+        record.error = tidyMessage(`${stderr}\n${stdout}`, `创建应用流程已结束（退出码 ${outcome.exitCode}）`)
+      }
       if (record.timer) clearTimeout(record.timer)
     })
     // If the user walks away, do not leave a process waiting forever.
@@ -1120,11 +1175,21 @@ export function createOperations({ ctx, config = {}, planner }) {
     return { ok: true, appId: config.appId }
   }
 
-  async function pollAppInit() {    if (!appInit) {
-      const config = await readConfig(undefined)
-      return { ok: true, done: Boolean(config && config.appId), url: undefined }
+  async function pollAppInit() {
+    const config = await readConfig(undefined).catch(() => null)
+    const configured = Boolean(config && config.appId)
+    if (!appInit) {
+      return { ok: true, done: configured, configured, url: undefined }
     }
-    return { ok: true, done: appInit.done, url: appInit.url, exitCode: appInit.exitCode }
+    return {
+      ok: true,
+      done: appInit.done || configured,
+      configured,
+      url: appInit.url,
+      exitCode: appInit.exitCode,
+      abandoned: Boolean(appInit.abandoned),
+      ...(appInit.error ? { message: appInit.error } : {}),
+    }
   }
 
   function resolveLoginDomains(rawDomain) {
@@ -1242,22 +1307,38 @@ export function createOperations({ ctx, config = {}, planner }) {
     return { ok: true, auth: await authStatus(signal) }
   }
 
-  async function logout(signal) {
+  function clearConnectionCaches() {
     invalidateScopesCache()
-    const result = await runJson(['auth', 'logout', '--json'], signal)
-    if (!result.ok) {
-      const raw = await invoke(['auth', 'logout'], signal)
-      if (raw.exitCode === 0) return { ok: true }
-      return { ok: false, message: result.message || raw.stderr || '退出登录失败' }
+    detectedBrandCache = ''
+    appNameCache = { appId: '', name: '', at: 0, promise: null }
+    appInit = null
+    exchange = null
+  }
+
+  async function logout(signal) {
+    clearConnectionCaches()
+    await runJson(['auth', 'logout', '--json'], signal).catch(() => ({ ok: false }))
+    const raw = await invoke(['config', 'remove'], signal)
+    clearConnectionCaches()
+    if (raw.exitCode === 0) return { ok: true }
+    const combined = `${raw.stderr || ''}\n${raw.stdout || ''}`
+    if (/not configured|no config|not found|未配置|不存在/i.test(combined)) {
+      return { ok: true }
     }
-    return { ok: true }
+    return { ok: false, message: tidyMessage(combined, '退出登录并解绑应用失败') }
   }
 
   async function unbindApp(signal) {
-    invalidateScopesCache()
+    clearConnectionCaches()
+    await runJson(['auth', 'logout', '--json'], signal).catch(() => ({ ok: false }))
     const raw = await invoke(['config', 'remove'], signal)
+    clearConnectionCaches()
     if (raw.exitCode === 0) return { ok: true }
-    return { ok: false, message: raw.stderr || raw.stdout || '解绑应用失败' }
+    const combined = `${raw.stderr || ''}\n${raw.stdout || ''}`
+    if (/not configured|no config|not found|未配置|不存在/i.test(combined)) {
+      return { ok: true }
+    }
+    return { ok: false, message: tidyMessage(combined, '解绑应用失败') }
   }
 
   function collectScopeTokens(value, targetSet) {
@@ -1532,24 +1613,53 @@ export function createOperations({ ctx, config = {}, planner }) {
     }
 
     const fetchTask = (async () => {
-      const [raw, statusRes, conf] = await Promise.all([
-        runJson(['auth', 'scopes', '--json'], signal).catch(() => ({ ok: false })),
+      const [statusRes, conf] = await Promise.all([
         runJson(['auth', 'status', '--json'], signal).catch(() => ({ ok: false })),
         readConfig(signal).catch(() => ({})),
       ])
-      const appId = conf?.appId || (raw.ok && (raw.value?.appId || raw.value?.app_id)) || (statusRes.ok && statusRes.value?.appId) || ''
-      const userScopes = new Set()
-      if (raw.ok && raw.value) {
-        collectScopeTokens(raw.value.user_scopes, userScopes)
-        collectScopeTokens(raw.value.userScopes, userScopes)
-        collectScopeTokens(raw.value.scopes, userScopes)
-        collectScopeTokens(raw.value.tenant_scopes, userScopes)
-        collectScopeTokens(raw.value.data?.user_scopes, userScopes)
-        collectScopeTokens(raw.value.data?.scopes, userScopes)
+      const statusVal = statusRes.ok && statusRes.value && typeof statusRes.value === 'object' ? statusRes.value : null
+      const userIdentity = statusVal?.identities?.user
+      const hasExplicitUserState = Boolean(
+        (userIdentity && typeof userIdentity.available === 'boolean')
+        || typeof statusVal?.userReady === 'boolean',
+      )
+      const userReady = userIdentity && typeof userIdentity.available === 'boolean'
+        ? Boolean(userIdentity.available)
+        : typeof statusVal?.userReady === 'boolean'
+          ? Boolean(statusVal.userReady)
+          : null
+
+      const userTokenScopes = new Set()
+      if (userIdentity && userReady !== false) {
+        collectScopeTokens(userIdentity.scope, userTokenScopes)
+        collectScopeTokens(userIdentity.scopes, userTokenScopes)
       }
-      if (statusRes.ok && statusRes.value?.identities?.user) {
-        collectScopeTokens(statusRes.value.identities.user.scope, userScopes)
-        collectScopeTokens(statusRes.value.identities.user.scopes, userScopes)
+
+      const appIdFromStatus = (statusVal && (statusVal.appId || statusVal.app_id)) || ''
+      const hasApp = Boolean(conf?.appId || appIdFromStatus)
+      const notConfiguredErr = statusRes.error?.subtype === 'not_configured'
+
+      let raw = { ok: false }
+      if (userReady !== false && userTokenScopes.size === 0 && !notConfiguredErr && (hasApp || !hasExplicitUserState)) {
+        raw = await runJson(['auth', 'scopes', '--json'], signal).catch(() => ({ ok: false }))
+      }
+
+      const appId = conf?.appId
+        || appIdFromStatus
+        || (raw.ok && (raw.value?.appId || raw.value?.app_id))
+        || ''
+
+      const userScopes = new Set()
+      if (userReady !== false) {
+        if (userTokenScopes.size > 0) {
+          for (const s of userTokenScopes) userScopes.add(s)
+        } else if (raw.ok && raw.value) {
+          collectScopeTokens(raw.value.user_scopes, userScopes)
+          collectScopeTokens(raw.value.userScopes, userScopes)
+          collectScopeTokens(raw.value.scopes, userScopes)
+          collectScopeTokens(raw.value.data?.user_scopes, userScopes)
+          collectScopeTokens(raw.value.data?.scopes, userScopes)
+        }
       }
       const count = userScopes.size
 
@@ -1578,11 +1688,13 @@ export function createOperations({ ctx, config = {}, planner }) {
 
       const cfg = conf && typeof conf === 'object' ? conf : await readConfig(signal).catch(() => null)
       const brand = await resolveEffectiveBrand(signal, cfg)
-      const scopesVerified = Boolean(raw.ok || statusRes.ok)
+      const effectiveUserReady = userReady !== null ? userReady : Boolean(count > 0)
+      const scopesVerified = Boolean(statusRes.ok || raw.ok)
       const result = {
         ok: true,
         scopesVerified,
-        ...(!scopesVerified && (raw.message || statusRes.message) ? { scopesError: raw.message || statusRes.message } : {}),
+        userReady: effectiveUserReady,
+        ...(!scopesVerified && (statusRes.message || raw.message) ? { scopesError: statusRes.message || raw.message } : {}),
         appId,
         brand,
         totalGranted: count,
@@ -3208,6 +3320,7 @@ export function createOperations({ ctx, config = {}, planner }) {
     finishLogin,
     logout,
     unbindApp,
+    clearConnectionCaches,
     exchangeState,
     getScopes,
     dispatchCollab,

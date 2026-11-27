@@ -2157,8 +2157,10 @@ test('15.3 DSH 原生能力可选注入全分支 (skills / storageDomain 落盘�
     await reg.perform('check', ctrlCheckSignedOut, new AbortController().signal)
     assert.strictEqual(ctrlCheckSignedOut.published.at(-1).state, 'signed-out')
 
-    const ctrlLinkApp = makeControl((cmd, _args, opts) => {
+    let linkAppInitArgs = null
+    const ctrlLinkApp = makeControl((cmd, args, opts) => {
       if (cmd === 'config-init') {
+        linkAppInitArgs = args
         opts?.onLine?.('stdout', 'Open https://open.feishu.cn/create-app.')
         return { exitCode: 0, stdout: '', stderr: '' }
       }
@@ -2166,6 +2168,7 @@ test('15.3 DSH 原生能力可选注入全分支 (skills / storageDomain 落盘�
       return { exitCode: 0, stdout: '{"userReady":true,"userName":"Bob"}', stderr: '' }
     })
     await reg.perform('link-app', ctrlLinkApp, new AbortController().signal)
+    assert.deepStrictEqual(linkAppInitArgs, ['config', 'init', '--new'], '网页流程 config init --new 严禁附带 --brand')
     assert.deepStrictEqual(ctrlLinkApp.offers, ['https://open.feishu.cn/create-app'])
     assert.deepStrictEqual(ctrlLinkApp.published.at(-1), { state: 'connected', appId: 'cli_123', userName: 'Bob' })
 
@@ -2180,14 +2183,25 @@ test('15.3 DSH 原生能力可选注入全分支 (skills / storageDomain 落盘�
     await reg.perform('sign-in', ctrlSignIn, new AbortController().signal)
     assert.deepStrictEqual(ctrlSignIn.offers, ['https://accounts.feishu.cn/device?code=abc'])
 
+    const signOutCommands = []
+    let appRemoved = false
     const ctrlSignOut = makeControl((cmd) => {
-      if (cmd === 'config-show') return { exitCode: 0, stdout: '{"appId":"cli_123"}', stderr: '' }
-      if (cmd === 'auth-status') return { exitCode: 0, stdout: '{"userReady":false}', stderr: '' }
+      signOutCommands.push(cmd)
+      if (cmd === 'config-remove') {
+        appRemoved = true
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      if (cmd === 'config-show') {
+        return { exitCode: 0, stdout: appRemoved ? '{}' : '{"appId":"cli_123"}', stderr: '' }
+      }
+      if (cmd === 'auth-status') return { exitCode: 0, stdout: '{"identities":{"user":{"available":false,"status":"missing"}}}', stderr: '' }
       return { exitCode: 0, stdout: '', stderr: '' }
     })
     await reg.perform('sign-out', ctrlSignOut, new AbortController().signal)
     assert.ok(ctrlSignOut.stages.includes('signing-out'))
-    assert.strictEqual(ctrlSignOut.published.at(-1).state, 'signed-out')
+    assert.ok(signOutCommands.includes('auth-logout'), 'sign-out 应执行 auth-logout 清除用户登录态')
+    assert.ok(signOutCommands.includes('config-remove'), 'sign-out 应同步执行 config-remove 解绑应用')
+    assert.strictEqual(ctrlSignOut.published.at(-1).state, 'no-app', '退出并解绑后状态应回到 no-app')
 
     const cliStateRoute = registeredRoutes.get('/api/dsh-lark/connect/cli/state')
     assert.ok(cliStateRoute, '应注册 /api/dsh-lark/connect/cli/state 路由')
@@ -3339,7 +3353,26 @@ test('17.3 stderr 错误信封解析、先查后做多步批量确认执行、�
             return {
               done: Promise.resolve({
                 exitCode: 0,
-                stdout: JSON.stringify({ ok: true, appId: 'cli_test', identities: { user: { available: true, userName: 'Tester', status: 'valid', scope: 'task:task:write' } } }),
+                stdout: JSON.stringify({
+                  ok: true,
+                  appId: 'cli_test',
+                  identities: {
+                    user: {
+                      available: true,
+                      userName: 'Tester',
+                      status: 'valid',
+                      scope: [
+                        'base:app:read', 'calendar:calendar:readonly', 'task:task:read', 'task:task:write',
+                        'im:chat:read', 'mail:user_mailbox:readonly', 'contact:user.base:readonly',
+                        'approval:task:read', 'docx:document:readonly', 'drive:drive.metadata:readonly',
+                        'wiki:space:read', 'sheets:spreadsheet:read', 'slides:presentation:read',
+                        'mindnote:node:read', 'board:whiteboard:node:read', 'vc:meeting.search:read',
+                        'minutes:minutes.basic:read', 'vc:note:read', 'okr:okr.period:readonly',
+                        'attendance:task:readonly', 'spark:app:read', 'application:bot.basic_info:read',
+                      ].join(' '),
+                    },
+                  },
+                }),
                 stderr: '',
               }),
               terminate() {},
@@ -3762,6 +3795,230 @@ test('17.5 错误 query flag、多余 --as 及误调 propose_write 的只读查�
   assert.strictEqual(resFromRejectedPropose.ok, true)
   assert.strictEqual(resFromRejectedPropose.needsConfirm, undefined, '即使模型误调用 propose_write 提交纯只读查询，也会被闸门退回改用 run_readonly')
   assert.ok(resFromRejectedPropose.reply.includes('测试确认卡片'))
+})
+
+test('17.6 退出登录同步解绑应用、清理品牌/权限缓存，且未登录与 tenant_scopes 绝不误报能力已开通', async () => {
+  const { readFileSync } = await import('node:fs')
+  const cliPath = decodeURIComponent(new URL('./package.json', import.meta.url).pathname)
+  const calls = []
+  let scenario = 'logged_out_with_app' // logged_out_with_app | partial_user_scope | fallback_no_tenant_leak | after_logout_feishu
+
+  const opsAuth = createOperations({
+    ctx: {
+      subprocess: {
+        spawn({ argv }) {
+          const args = argv.slice(1)
+          calls.push(args)
+          if (args[0] === 'config' && args[1] === 'show') {
+            if (scenario === 'after_logout_feishu') {
+              return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_new_feishu', brand: 'feishu' }), stderr: '' }), terminate() {} }
+            }
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ appId: 'cli_old_lark', brand: 'lark' }), stderr: '' }), terminate() {} }
+          }
+          if (args[0] === 'auth' && args[1] === 'status') {
+            if (scenario === 'logged_out_with_app') {
+              return {
+                done: Promise.resolve({
+                  exitCode: 0,
+                  stdout: JSON.stringify({
+                    appId: 'cli_old_lark',
+                    brand: 'lark',
+                    identity: 'bot',
+                    identities: {
+                      bot: { status: 'ready', available: true },
+                      user: { status: 'missing', available: false },
+                    },
+                  }),
+                  stderr: '',
+                }),
+                terminate() {},
+              }
+            }
+            if (scenario === 'partial_user_scope') {
+              return {
+                done: Promise.resolve({
+                  exitCode: 0,
+                  stdout: JSON.stringify({
+                    appId: 'cli_old_lark',
+                    brand: 'lark',
+                    identity: 'user',
+                    identities: {
+                      user: { status: 'valid', available: true, userName: 'Alice', scope: 'task:task:read' },
+                    },
+                  }),
+                  stderr: '',
+                }),
+                terminate() {},
+              }
+            }
+            if (scenario === 'fallback_no_tenant_leak') {
+              return {
+                done: Promise.resolve({
+                  exitCode: 0,
+                  stdout: JSON.stringify({
+                    appId: 'cli_old_lark',
+                    brand: 'lark',
+                    identity: 'user',
+                    identities: {
+                      user: { status: 'valid', available: true, userName: 'Alice' },
+                    },
+                  }),
+                  stderr: '',
+                }),
+                terminate() {},
+              }
+            }
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({
+                  appId: 'cli_new_feishu',
+                  brand: 'feishu',
+                  identity: 'user',
+                  identities: {
+                    user: { status: 'valid', available: true, userName: 'Bob', scope: 'base:app:read' },
+                  },
+                }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (args[0] === 'auth' && args[1] === 'scopes') {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({
+                  appId: 'cli_old_lark',
+                  brand: 'lark',
+                  userScopes: ['base:app:read'],
+                  tenant_scopes: ['calendar:calendar:read', 'mail:user_mailbox:readonly'],
+                }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (args[0] === 'auth' && args[1] === 'logout') {
+            return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, loggedOut: true }), stderr: '' }), terminate() {} }
+          }
+          if (args[0] === 'config' && args[1] === 'init' && args.includes('--new')) {
+            return {
+              done: new Promise(() => {}),
+              collected: {
+                stdout: { readFrom: () => ({ text: 'https://open.feishu.cn/page/cli?user_code=TEST-CODE\n' }) },
+                stderr: { readFrom: () => ({ text: '' }) },
+              },
+              terminate() {},
+            }
+          }
+          if (args[0] === 'config' && args[1] === 'init' && args.includes('--app-id')) {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'ok', stderr: '' }), terminate() {} }
+          }
+          if (args[0] === 'api' && args[1] === 'GET' && args[2] === '/open-apis/bot/v3/info') {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({
+                  ok: true,
+                  data: { bot: { app_name: scenario === 'after_logout_feishu' ? '飞书工作台新应用' : '我的海外版应用', open_id: 'ou_bot' } },
+                }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (args[0] === 'config' && args[1] === 'remove') {
+            return { done: Promise.resolve({ exitCode: 0, stdout: 'removed', stderr: '' }), terminate() {} }
+          }
+          return { done: Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' }), terminate() {} }
+        },
+      },
+    },
+    config: { larkCliPath: cliPath },
+  })
+
+  // 1. 未登录但残留应用时：所有领域必须 ready=false，且不应误查应用级 auth scopes
+  const loggedOutScopes = await opsAuth.getScopes(undefined, { force: true })
+  assert.strictEqual(loggedOutScopes.ok, true)
+  assert.strictEqual(loggedOutScopes.userReady, false)
+  assert.strictEqual(loggedOutScopes.totalGranted, 0)
+  assert.ok(Object.values(loggedOutScopes.domains).every((d) => d.ready === false), '未登录态下不得将任何领域标记为已开通')
+  assert.strictEqual(calls.some((c) => c[0] === 'auth' && c[1] === 'scopes'), false, '未登录态下无需发起应用级 auth scopes 查询')
+  assert.strictEqual(loggedOutScopes.brand, 'lark')
+
+  // 2. 已登录但用户 token 仅授权 task：不得被应用后台的 base 权限污染
+  scenario = 'partial_user_scope'
+  calls.length = 0
+  const partialScopes = await opsAuth.getScopes(undefined, { force: true })
+  assert.strictEqual(partialScopes.userReady, true)
+  assert.strictEqual(partialScopes.domains.task.ready, true)
+  assert.strictEqual(partialScopes.domains.base.ready, false, '用户 token 未授 base 权限时不得被应用级 scopes 假绿')
+  assert.strictEqual(partialScopes.domains.calendar.ready, false)
+
+  // 3. auth status 省略 scope 时回退 auth scopes，但严禁把 tenant_scopes 混入用户权限
+  scenario = 'fallback_no_tenant_leak'
+  calls.length = 0
+  const fallbackScopes = await opsAuth.getScopes(undefined, { force: true })
+  assert.strictEqual(fallbackScopes.domains.base.ready, true)
+  assert.strictEqual(fallbackScopes.domains.calendar.ready, false, 'tenant_scopes 不得污染用户能力大盘')
+  assert.strictEqual(fallbackScopes.domains.mail.ready, false, 'tenant_scopes 不得污染用户能力大盘')
+
+  // 4. ops.logout 必须同时执行 auth logout 与 config remove，并清理 brand/scopes 缓存
+  calls.length = 0
+  const logoutRes = await opsAuth.logout()
+  assert.strictEqual(logoutRes.ok, true)
+  assert.ok(calls.some((c) => c[0] === 'auth' && c[1] === 'logout'), 'ops.logout 必须执行 auth logout')
+  assert.ok(calls.some((c) => c[0] === 'config' && c[1] === 'remove'), 'ops.logout 必须同步执行 config remove 解绑应用')
+
+  // 5. 退出并切换为新 Feishu 应用后，brand 缓存必须已失效并正确识别为 feishu
+  scenario = 'after_logout_feishu'
+  const switchedScopes = await opsAuth.getScopes()
+  assert.strictEqual(switchedScopes.brand, 'feishu', '退出解绑后 detectedBrandCache 应被清空，切回 feishu 品牌')
+  assert.strictEqual(switchedScopes.appId, 'cli_new_feishu')
+  assert.strictEqual(switchedScopes.domains.base.ready, true)
+
+  // 5b. startAppInit 必须调用不带 --brand 的 config init --new，手动 bindApp 保留 --brand
+  calls.length = 0
+  const initRes = await opsAuth.startAppInit()
+  assert.strictEqual(initRes.ok, true)
+  const newInitCall = calls.find((c) => c[0] === 'config' && c[1] === 'init' && c.includes('--new'))
+  assert.deepStrictEqual(newInitCall, ['config', 'init', '--new'], 'startAppInit 严禁传递 --brand')
+  await opsAuth.logout()
+  calls.length = 0
+  await opsAuth.bindApp('cli_manual123', 'secret_12345678', undefined, 'lark')
+  const manualInitCall = calls.find((c) => c[0] === 'config' && c[1] === 'init' && c.includes('--app-id'))
+  assert.ok(manualInitCall && manualInitCall.includes('--brand') && manualInitCall.includes('lark'), '手动 bindApp 应保留 --brand 参数')
+
+  // 5c. connectStatus 自动获取 appName、按 appId 缓存，退出后清空缓存重新获取
+  scenario = 'partial_user_scope'
+  calls.length = 0
+  const st1 = await opsAuth.connectStatus()
+  assert.strictEqual(st1.app.appName, '我的海外版应用', 'connectStatus 应返回 bot/v3/info 中的应用名称')
+  const botInfoCalls1 = calls.filter((c) => c[0] === 'api' && c[2] === '/open-apis/bot/v3/info').length
+  assert.strictEqual(botInfoCalls1, 1)
+  const st2 = await opsAuth.connectStatus()
+  assert.strictEqual(st2.app.appName, '我的海外版应用')
+  const botInfoCalls2 = calls.filter((c) => c[0] === 'api' && c[2] === '/open-apis/bot/v3/info').length
+  assert.strictEqual(botInfoCalls2, 1, '同一 appId 应命中 appNameCache，避免重复查询')
+  await opsAuth.logout()
+  scenario = 'after_logout_feishu'
+  const st3 = await opsAuth.connectStatus()
+  assert.strictEqual(st3.app.appName, '飞书工作台新应用', '退出后 appNameCache 应被清空并拉取新应用名称')
+
+  // 6. client.js 前端契约：未登录态文案、切换应用入口、AccountModal 登录态门禁与 Web 纯净性
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  for (const key of ['account.scopesNeedLogin', 'account.scopesNeedApp', 'account.signInNow', 'gate.noAuth.switchApp', 'gate.noApp.checking', 'gate.noApp.pending', 'gate.noApp.expired']) {
+    const matches = clientSrc.match(new RegExp(`'${key.replace(/\./g, '\\.')}'`, 'g')) || []
+    assert.ok(matches.length >= 2, `client.js 中英文词典应同时包含 ${key}`)
+  }
+  assert.ok(clientSrc.includes('const switchApp = useCallback'), 'ConnectGate 应在 no-auth 阶段提供更换应用能力')
+  assert.ok(clientSrc.includes('const checkAppNow = useCallback'), 'ConnectGate 应在 no-app 阶段提供带反馈的手动检测')
+  assert.strictEqual(
+    /\brequire\s*\(\s*['"](?:node:|fs|path|os|child_process|crypto|http|https)['"]|\bprocess\.env\b|\bBuffer\.from\b/.test(clientSrc),
+    false,
+    'client.js 严禁混入 Node.js 专有 API',
+  )
 })
 
 Promise.all(pendingTests).then(() => {

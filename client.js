@@ -527,7 +527,10 @@ window.__ModuleLoader__.load({
       'gate.noApp.body': '在飞书页面填个名称并确认默认权限（约 1 分钟）',
       'gate.noApp.cta': '前往飞书创建',
       'gate.noApp.done': '已完成，检测',
+      'gate.noApp.checking': '正在检测…',
       'gate.noApp.reopen': '重新打开',
+      'gate.noApp.pending': '尚未检测到应用配置，请先在打开的飞书页面点击确认创建；若页面已关闭，请重新发起',
+      'gate.noApp.expired': '创建应用的等待已结束或已取消，请重新点击「前往飞书创建」',
       'gate.brandLabel': '账号版本',
       'gate.brandFeishu': '飞书 (中国区)',
       'gate.brandLark': 'Lark (海外版)',
@@ -541,6 +544,7 @@ window.__ModuleLoader__.load({
       'gate.noAuth.cta': '去授权',
       'gate.noAuth.done': '已授权，立即核验',
       'gate.noAuth.reopen': '重新打开',
+      'gate.noAuth.switchApp': '更换应用',
       'gate.waiting': '正在确认',
       'gate.autoChecking': '正在自动检测连接状态…',
       'gate.pending': '尚未收到飞书确认，请在浏览器显示成功后重试',
@@ -563,6 +567,9 @@ window.__ModuleLoader__.load({
       'account.scopeOff': '未开通',
       'account.scopeRetry': '重新核验',
       'account.scopeError': '权限核验失败，请检查网络或重试',
+      'account.scopesNeedLogin': '当前未登录飞书账号，登录后即可核验并使用各项能力权限',
+      'account.scopesNeedApp': '当前未关联飞书应用，请先关联应用并登录账号',
+      'account.signInNow': '去登录账号',
       'account.reauthBanner': '飞书授权已过期，重新授权后可继续操作（若频繁过期请在开放平台开启「刷新 user_access_token」）',
       'account.reauthCta': '重新授权',
       'account.allReady': '全域协同能力已就绪',
@@ -570,8 +577,8 @@ window.__ModuleLoader__.load({
       'account.granting': '正在等待确认…',
       'account.logout': '退出登录',
       'account.unbind': '解绑应用',
-      'account.logoutTitle': '退出当前飞书账号？',
-      'account.logoutBody': '将清除「%s」的本地授权，可随时切换其他账号重新登录',
+      'account.logoutTitle': '退出并解绑当前飞书连接？',
+      'account.logoutBody': '将清除「%s」的本地登录态并解绑当前应用，方便切换其他账号或企业应用',
       'account.logoutConfirm': '确认退出',
       'account.unbindTitle': '解绑当前飞书应用？',
       'account.unbindBody': '将清除应用凭据 (%s)，之后可重新绑定其他企业应用',
@@ -796,7 +803,10 @@ window.__ModuleLoader__.load({
       'gate.noApp.body': 'Name your app and accept default permissions (~1 min).',
       'gate.noApp.cta': 'Open Feishu',
       'gate.noApp.done': 'Done, verify',
+      'gate.noApp.checking': 'Checking…',
       'gate.noApp.reopen': 'Open again',
+      'gate.noApp.pending': 'No app detected yet. Finish creating and confirming the app in the opened Feishu page first.',
+      'gate.noApp.expired': 'The app creation session ended or timed out. Click "Open Feishu" to start again.',
       'gate.brandLabel': 'Edition',
       'gate.brandFeishu': 'Feishu (China)',
       'gate.brandLark': 'Lark (Global)',
@@ -810,6 +820,7 @@ window.__ModuleLoader__.load({
       'gate.noAuth.cta': 'Authorize',
       'gate.noAuth.done': 'Authorized, verify',
       'gate.noAuth.reopen': 'Open again',
+      'gate.noAuth.switchApp': 'Switch app',
       'gate.waiting': 'Confirming',
       'gate.autoChecking': 'Auto-detecting authorization…',
       'gate.pending': 'Not confirmed yet. Finish authorization in the browser and retry.',
@@ -832,6 +843,9 @@ window.__ModuleLoader__.load({
       'account.scopeOff': 'Inactive',
       'account.scopeRetry': 'Recheck',
       'account.scopeError': 'Could not verify capabilities. Check network and retry.',
+      'account.scopesNeedLogin': 'Sign in to your Feishu account to verify and enable capability permissions.',
+      'account.scopesNeedApp': 'No Feishu app linked yet. Link an app and sign in to get started.',
+      'account.signInNow': 'Sign in',
       'account.reauthBanner': 'Feishu sign-in expired. Re-authorize to continue (enable "Refresh user_access_token" in Feishu Console to avoid 2-hour expiry).',
       'account.reauthCta': 'Re-authorize',
       'account.allReady': 'All capabilities ready',
@@ -839,8 +853,8 @@ window.__ModuleLoader__.load({
       'account.granting': 'Waiting…',
       'account.logout': 'Sign out',
       'account.unbind': 'Unbind app',
-      'account.logoutTitle': 'Sign out of Feishu?',
-      'account.logoutBody': 'Clears the local token for “%s”. You can sign in with another account anytime.',
+      'account.logoutTitle': 'Sign out and unbind Feishu?',
+      'account.logoutBody': 'Clears the local session for “%s” and unbinds the linked app so you can switch accounts or enterprise apps.',
       'account.logoutConfirm': 'Sign out',
       'account.unbindTitle': 'Unbind this Feishu app?',
       'account.unbindBody': 'Removes stored credentials (%s) so you can bind another enterprise app.',
@@ -1636,6 +1650,12 @@ window.__ModuleLoader__.load({
 .lw-btn:active:not(:disabled) { transform: scale(0.975); }
 .lw-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--lw-accent) 42%, transparent); }
 .lw-btn:disabled { opacity: 0.42; cursor: default; }
+.lw-btn.is-active {
+  background: var(--lw-accent-soft);
+  border-color: var(--lw-accent);
+  color: var(--lw-accent);
+  font-weight: 600;
+}
 
 .lw-btn.is-primary {
   background: var(--lw-solid);
@@ -2978,7 +2998,7 @@ window.__ModuleLoader__.load({
 .lw-modal-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   padding-top: 12px;
   border-top: 0.5px solid var(--lw-line);
@@ -3044,7 +3064,7 @@ window.__ModuleLoader__.load({
 @media (hover: hover) {
   .lw-status:hover { background: var(--lw-surface-3); color: var(--lw-ink); }
   .lw-back:hover:not(:disabled) { background: var(--lw-surface-3); color: var(--lw-ink); }
-  .lw-btn:hover:not(:disabled) { background: var(--lw-surface-2); border-color: color-mix(in srgb, var(--lw-ink) 20%, transparent); }
+  .lw-btn:hover:not(:disabled):not(.is-active) { background: var(--lw-surface-2); border-color: color-mix(in srgb, var(--lw-ink) 20%, transparent); }
   .lw-btn.is-primary:hover:not(:disabled) { background: var(--lw-solid-hover); border-color: transparent; }
   .lw-btn.is-ghost:hover:not(:disabled) { background: var(--lw-surface-3); color: var(--lw-ink); border-color: transparent; }
   .lw-btn.is-link:hover:not(:disabled) { color: var(--lw-ink); background: none; }
@@ -4125,39 +4145,75 @@ body:has(.lw) [class*="viewArea"] {
       useEffect(() => {
         let active = true
         let timer = null
+        let inFlight = false
+        let tickCount = 0
 
-        const pollLoop = async () => {
-          if (!active) return
-          if (stage === 'no-app' && link) {
-            try {
+        const pollLoop = async (forceFull = false) => {
+          if (!active || inFlight) return
+          inFlight = true
+          tickCount += 1
+          try {
+            if (stage === 'no-app' && link) {
               const poll = await authFetch(`${API}/connect/app/poll`).then((r) => r.json()).catch(() => null)
-              if (active && poll && poll.done) { onRecheck(); return }
-              const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
-              if (active && st && st.app && st.app.ready) { onRecheck(); return }
-            } catch {}
-          }
-          if (stage === 'no-auth' && (link || deviceCode)) {
-            try {
-              const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
-              if (active && st && st.stage === 'ready' && st.auth && st.auth.userReady) { onRecheck(); return }
+              if (!active) return
+              if (poll && poll.configured) {
+                setAutoChecking(false)
+                onRecheck()
+                return
+              }
+              if (poll && poll.done && !poll.configured) {
+                setAutoChecking(false)
+                setLink(null)
+                setError(humanize(poll.message || t('gate.noApp.expired'), t))
+                onRecheck()
+                return
+              }
+            }
+            if (stage === 'no-auth' && (link || deviceCode)) {
               const loginState = await authFetch(`${API}/connect/login/state`).then((r) => r.json()).catch(() => null)
-              if (active && loginState && loginState.done && loginState.ok) { onRecheck(); return }
-            } catch {}
+              if (!active) return
+              if (loginState && loginState.done && loginState.ok) {
+                onRecheck()
+                return
+              }
+              if (forceFull || tickCount % 3 === 0) {
+                const st = await authFetch(`${API}/state`).then((r) => r.json()).catch(() => null)
+                if (!active) return
+                if (st && st.stage === 'ready' && st.auth && st.auth.userReady) {
+                  onRecheck()
+                  return
+                }
+              }
+            }
+          } catch {} finally {
+            inFlight = false
           }
-          if (active) timer = setTimeout(pollLoop, 1200)
+          if (active) timer = setTimeout(() => pollLoop(false), 800)
         }
 
-        if ((stage === 'no-app' && link) || (stage === 'no-auth' && (link || deviceCode))) {
+        const shouldPoll = (stage === 'no-app' && link) || (stage === 'no-auth' && (link || deviceCode))
+        const onWindowFocus = () => {
+          if (!active || !shouldPoll) return
+          if (timer) {
+            clearTimeout(timer)
+            timer = null
+          }
+          pollLoop(true)
+        }
+
+        if (shouldPoll) {
           setAutoChecking(true)
-          timer = setTimeout(pollLoop, 600)
+          timer = setTimeout(() => pollLoop(false), 400)
+          if (typeof window !== 'undefined') window.addEventListener('focus', onWindowFocus)
         } else {
           setAutoChecking(false)
         }
         return () => {
           active = false
           if (timer) clearTimeout(timer)
+          if (typeof window !== 'undefined') window.removeEventListener('focus', onWindowFocus)
         }
-      }, [stage, link, deviceCode, onRecheck])
+      }, [stage, link, deviceCode, onRecheck, t])
 
       const copyInstall = useCallback(() => {
         const command = health.installCommand || 'npm i -g @larksuite/cli'
@@ -4175,7 +4231,7 @@ body:has(.lw) [class*="viewArea"] {
         setBusyAction('start')
         setError(null)
         try {
-          const payload = await post('/connect/app/start', { brand })
+          const payload = await post('/connect/app/start', {})
           if (payload.ok && payload.url) {
             setLink(payload.url)
             window.open(payload.url, '_blank', 'noopener')
@@ -4187,7 +4243,35 @@ body:has(.lw) [class*="viewArea"] {
         } finally {
           setBusyAction(null)
         }
-      }, [brand, post, t])
+      }, [post, t])
+
+      const checkAppNow = useCallback(async () => {
+        setBusyAction('check')
+        setError(null)
+        try {
+          const [poll, st] = await Promise.all([
+            authFetch(`${API}/connect/app/poll`).then((r) => r.json()).catch(() => null),
+            authFetch(`${API}/state`).then((r) => r.json()).catch(() => null),
+          ])
+          if (poll?.configured || st?.app?.appId || (st?.stage && st.stage !== 'no-app')) {
+            await onRecheck()
+            return
+          }
+          if (poll && poll.done && !poll.configured) {
+            setAutoChecking(false)
+            setLink(null)
+            setError(humanize(poll.message || t('gate.noApp.expired'), t))
+            await onRecheck()
+            return
+          }
+          setError(t('gate.noApp.pending'))
+          await onRecheck()
+        } catch (failure) {
+          setError(humanize(String(failure), t))
+        } finally {
+          setBusyAction(null)
+        }
+      }, [onRecheck, t])
 
       const startAuth = useCallback(async () => {
         setBusyAction('start')
@@ -4273,6 +4357,25 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [brand, teamId, teamSecret, onRecheck, post, t])
 
+      const switchApp = useCallback(async () => {
+        setBusyAction('unbind')
+        setError(null)
+        try {
+          const payload = await post('/connect/unbind', {})
+          if (payload.ok) {
+            setLink(null)
+            setDeviceCode(null)
+            onRecheck()
+          } else {
+            setError(humanize(payload.message, t))
+          }
+        } catch (failure) {
+          setError(humanize(String(failure), t))
+        } finally {
+          setBusyAction(null)
+        }
+      }, [onRecheck, post, t])
+
       const title = stage === 'no-cli' ? t('gate.noTool.title') : stage === 'no-app' ? t('gate.noApp.title') : t('gate.noAuth.title')
       const bodyText = stage === 'no-cli' ? t('gate.noTool.body') : stage === 'no-app' ? t('gate.noApp.body') : t('gate.noAuth.body')
 
@@ -4298,7 +4401,14 @@ body:has(.lw) [class*="viewArea"] {
             ),
           )
         } else {
-          actions.push(h(Button, { key: 'done', variant: 'primary', disabled: busy, onClick: onRecheck }, t('gate.noApp.done')))
+          actions.push(
+            h(
+              Button,
+              { key: 'done', variant: 'primary', disabled: busy, onClick: checkAppNow },
+              busyAction === 'check' ? h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }) : null,
+              busyAction === 'check' ? t('gate.noApp.checking') : t('gate.noApp.done'),
+            ),
+          )
           actions.push(
             h(
               Button,
@@ -4316,6 +4426,13 @@ body:has(.lw) [class*="viewArea"] {
               { key: 'auth', variant: 'primary', disabled: busy, onClick: startAuth },
               busyAction === 'start' ? h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }) : null,
               busyAction === 'start' ? `${t('gate.waiting')}…` : t('gate.noAuth.cta'),
+            ),
+          )
+          actions.push(
+            h(
+              Button,
+              { key: 'switchApp', variant: 'ghost', disabled: busy, onClick: switchApp },
+              t('gate.noAuth.switchApp'),
             ),
           )
         } else {
@@ -4350,22 +4467,6 @@ body:has(.lw) [class*="viewArea"] {
           h('h2', { className: 'lw-h lw-h-lg', id: 'lw-gate-title' }, title),
           h('p', { className: 'lw-p' }, bodyText),
         ),
-        stage === 'no-app' && !link
-          ? h(
-              'div',
-              { className: 'lw-actions', role: 'group', 'aria-label': t('gate.brandLabel') },
-              h(
-                Button,
-                { size: 'sm', active: brand === 'feishu', disabled: busy, onClick: () => setBrand('feishu') },
-                t('gate.brandFeishu'),
-              ),
-              h(
-                Button,
-                { size: 'sm', active: brand === 'lark', disabled: busy, onClick: () => setBrand('lark') },
-                t('gate.brandLark'),
-              ),
-            )
-          : null,
         stage === 'no-cli' && busyAction === 'install'
           ? h(
               'div',
@@ -4463,6 +4564,20 @@ body:has(.lw) [class*="viewArea"] {
                 h(
                   'div',
                   { className: 'lw-field', style: { paddingTop: 8 } },
+                  h(
+                    'div',
+                    { className: 'lw-actions', role: 'group', 'aria-label': t('gate.brandLabel') },
+                    h(
+                      Button,
+                      { size: 'sm', active: brand === 'feishu', 'aria-pressed': brand === 'feishu', disabled: busy, onClick: () => setBrand('feishu') },
+                      t('gate.brandFeishu'),
+                    ),
+                    h(
+                      Button,
+                      { size: 'sm', active: brand === 'lark', 'aria-pressed': brand === 'lark', disabled: busy, onClick: () => setBrand('lark') },
+                      t('gate.brandLark'),
+                    ),
+                  ),
                   h('input', {
                     className: 'lw-input',
                     type: 'text',
@@ -5214,12 +5329,13 @@ body:has(.lw) [class*="viewArea"] {
           ready: Boolean(entry?.ready),
         }
       })
-      const verified = Boolean(scopesInfo && scopesInfo.scopesVerified !== false)
-      const readyDomains = domainList.filter((d) => d.ready)
-      const offDomains = domainList.filter((d) => !d.ready)
+      const hasApp = Boolean(health?.app?.appId)
+      const verified = Boolean(connected && scopesInfo && scopesInfo.scopesVerified !== false && scopesInfo.userReady !== false)
+      const readyDomains = verified ? domainList.filter((d) => d.ready) : []
+      const offDomains = verified ? domainList.filter((d) => !d.ready) : domainList
       const readyCount = readyDomains.length
       const allReady = Boolean(verified && domainList.length > 0 && readyCount === domainList.length)
-      const checkingNow = Boolean(scopesLoading && !scopesInfo)
+      const checkingNow = Boolean(connected && scopesLoading && !scopesInfo)
 
       return h(
         'div',
@@ -5273,7 +5389,24 @@ body:has(.lw) [class*="viewArea"] {
               'div',
               { className: 'lw-kv-row' },
               h('span', { className: 'lw-kv-key' }, t('account.app')),
-              h('span', { className: 'lw-kv-val lw-mono' }, health?.app?.appId || t('account.notConfigured')),
+              health?.app?.appName
+                ? h(
+                    'span',
+                    {
+                      className: 'lw-kv-val',
+                      style: { flexDirection: 'column', alignItems: 'flex-end', gap: 1, lineHeight: 1.25 },
+                      title: health.app.appId || '',
+                    },
+                    h('span', null, health.app.appName),
+                    health.app.appId
+                      ? h(
+                          'span',
+                          { className: 'lw-mono', style: { fontSize: 10.5, fontWeight: 400, color: 'var(--lw-ink-3)' } },
+                          health.app.appId,
+                        )
+                      : null,
+                  )
+                : h('span', { className: 'lw-kv-val lw-mono' }, health?.app?.appId || t('account.notConfigured')),
             ),
             h(
               'div',
@@ -5308,7 +5441,7 @@ body:has(.lw) [class*="viewArea"] {
               h(
                 'div',
                 { style: { display: 'inline-flex', alignItems: 'center', gap: 10 } },
-                onRetryScopes
+                connected && onRetryScopes
                   ? h(
                       'button',
                       {
@@ -5332,7 +5465,7 @@ body:has(.lw) [class*="viewArea"] {
                       t('account.scopeRetry'),
                     )
                   : null,
-                scopesInfo?.consoleUrl
+                connected && scopesInfo?.consoleUrl
                   ? h(
                       'a',
                       {
@@ -5348,70 +5481,79 @@ body:has(.lw) [class*="viewArea"] {
                   : null,
               ),
             ),
-            (scopesError || (scopesInfo && scopesInfo.scopesVerified === false))
+            !connected
+              ? h(
+                  'div',
+                  { className: 'lw-meta', style: { color: 'var(--lw-ink-3)' } },
+                  t(hasApp ? 'account.scopesNeedLogin' : 'account.scopesNeedApp'),
+                )
+              : null,
+            connected && (scopesError || (scopesInfo && scopesInfo.scopesVerified === false))
               ? h(
                   'div',
                   { className: 'lw-meta', style: { color: 'var(--lw-warn)' } },
                   scopesError || scopesInfo?.scopesError || t('account.scopeError'),
                 )
               : null,
-            checkingNow
-              ? h(
-                  'div',
-                  { className: 'lw-scope-loading-row' },
-                  h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }),
-                  h('span', null, t('account.scopesCheckingLine')),
-                )
-              : h(
-                  'div',
-                  { className: 'lw-scope-groups' },
-                  readyDomains.length > 0
-                    ? h(
-                        'div',
-                        { className: 'lw-scope-group' },
-                        h('div', { className: 'lw-scope-group-head' }, `${t('account.scopeReady')} (${readyDomains.length})`),
-                        h(
-                          'div',
-                          { className: 'lw-scope-flow' },
-                          readyDomains.map((item) =>
+            connected
+              ? (checkingNow
+                  ? h(
+                      'div',
+                      { className: 'lw-scope-loading-row' },
+                      h(Icon, { name: 'refresh', size: 13, className: 'lw-spin' }),
+                      h('span', null, t('account.scopesCheckingLine')),
+                    )
+                  : h(
+                      'div',
+                      { className: 'lw-scope-groups' },
+                      readyDomains.length > 0
+                        ? h(
+                            'div',
+                            { className: 'lw-scope-group' },
+                            h('div', { className: 'lw-scope-group-head' }, `${t('account.scopeReady')} (${readyDomains.length})`),
                             h(
-                              'span',
-                              { key: item.key, className: 'lw-scope-chip is-ready' },
-                              h('span', { className: 'lw-dot is-ok' }),
-                              h(Icon, { name: item.icon, size: 12, style: { color: 'var(--lw-ink-3)' } }),
-                              h('span', null, item.label),
+                              'div',
+                              { className: 'lw-scope-flow' },
+                              readyDomains.map((item) =>
+                                h(
+                                  'span',
+                                  { key: item.key, className: 'lw-scope-chip is-ready' },
+                                  h('span', { className: 'lw-dot is-ok' }),
+                                  h(Icon, { name: item.icon, size: 12, style: { color: 'var(--lw-ink-3)' } }),
+                                  h('span', null, item.label),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      )
-                    : null,
-                  offDomains.length > 0
-                    ? h(
-                        'div',
-                        { className: 'lw-scope-group' },
-                        h('div', { className: 'lw-scope-group-head' }, `${t('account.scopeOff')} (${offDomains.length})`),
-                        h(
-                          'div',
-                          { className: 'lw-scope-flow' },
-                          offDomains.map((item) =>
+                          )
+                        : null,
+                      offDomains.length > 0
+                        ? h(
+                            'div',
+                            { className: 'lw-scope-group' },
+                            h('div', { className: 'lw-scope-group-head' }, `${t('account.scopeOff')} (${offDomains.length})`),
                             h(
-                              'span',
-                              { key: item.key, className: 'lw-scope-chip is-off' },
-                              h('span', { className: 'lw-dot' }),
-                              h(Icon, { name: item.icon, size: 12, style: { color: 'var(--lw-ink-3)' } }),
-                              h('span', null, item.label),
+                              'div',
+                              { className: 'lw-scope-flow' },
+                              offDomains.map((item) =>
+                                h(
+                                  'span',
+                                  { key: item.key, className: 'lw-scope-chip is-off' },
+                                  h('span', { className: 'lw-dot' }),
+                                  h(Icon, { name: item.icon, size: 12, style: { color: 'var(--lw-ink-3)' } }),
+                                  h('span', null, item.label),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      )
-                    : null,
-                ),
-            !allReady && (verified || !checkingNow)
+                          )
+                        : null,
+                    ))
+              : null,
+            (connected ? (!allReady && (verified || !checkingNow)) : hasApp)
               ? h(
                   Button,
                   { size: 'sm', variant: 'primary', disabled: busyAccount || syncingAuth, onClick: onGrantAll, style: { width: '100%' } },
                   syncingAuth ? h(Icon, { name: 'refresh', size: 12, className: 'lw-spin' }) : null,
-                  syncingAuth ? t('account.granting') : t('account.grantAll'),
+                  syncingAuth ? t('account.granting') : t(connected ? 'account.grantAll' : 'account.signInNow'),
                 )
               : null,
           ),
@@ -5443,20 +5585,23 @@ body:has(.lw) [class*="viewArea"] {
                   ),
                 ),
               )
-            : h(
-                'div',
-                { className: 'lw-modal-footer' },
-                h(
-                  Button,
-                  { size: 'sm', variant: 'ghost', disabled: busyAccount || !connected, onClick: () => setConfirmMode('logout') },
-                  t('account.logout'),
-                ),
-                h(
-                  Button,
-                  { size: 'sm', variant: 'danger', disabled: busyAccount || !health?.app?.appId, onClick: () => setConfirmMode('unbind') },
-                  t('account.unbind'),
-                ),
-              ),
+            : (connected || hasApp)
+              ? h(
+                  'div',
+                  { className: 'lw-modal-footer' },
+                  connected
+                    ? h(
+                        Button,
+                        { size: 'sm', variant: 'danger', disabled: busyAccount, onClick: () => setConfirmMode('logout') },
+                        t('account.logout'),
+                      )
+                    : h(
+                        Button,
+                        { size: 'sm', variant: 'danger', disabled: busyAccount, onClick: () => setConfirmMode('unbind') },
+                        t('account.unbind'),
+                      ),
+                )
+              : null,
         ),
       )
     }
@@ -5688,11 +5833,16 @@ body:has(.lw) [class*="viewArea"] {
         const onVisible = () => {
           if (typeof document !== 'undefined' && !document.hidden && alive.current) refreshHealth()
         }
+        const onFocus = () => {
+          if (alive.current) refreshHealth()
+        }
         document.addEventListener('visibilitychange', onVisible)
+        if (typeof window !== 'undefined') window.addEventListener('focus', onFocus)
         return () => {
           alive.current = false
           clearInterval(timer)
           document.removeEventListener('visibilitychange', onVisible)
+          if (typeof window !== 'undefined') window.removeEventListener('focus', onFocus)
         }
       }, [refreshHealth, connected])
 
@@ -6573,16 +6723,20 @@ body:has(.lw) [class*="viewArea"] {
       }, [t])
 
       useEffect(() => {
-        if (!connected) return
+        if (!connected) {
+          setScopesInfo(null)
+          setScopesError(null)
+          return
+        }
         if (!scopesInfo && !scopesLoading) {
           refreshScopes(false)
         }
       }, [connected, scopesInfo, scopesLoading, refreshScopes])
 
       useEffect(() => {
-        if (!showAccountModal) return
+        if (!showAccountModal || !connected) return
         refreshScopes(false)
-      }, [showAccountModal, refreshScopes])
+      }, [showAccountModal, connected, refreshScopes])
 
       const handleGrantAll = useCallback(async () => {
         setSyncingAuth(true)

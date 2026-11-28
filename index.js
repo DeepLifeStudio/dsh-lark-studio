@@ -962,6 +962,7 @@ export function apply(ctx, config = {}) {
       { path: '/api/dsh-lark/connect/login/start', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/connect/login/finish', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/connect/login/state', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/dsh-lark/connect/cancel', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/connect/logout', methods: ['POST'], requestBody: 'buffered' },
       { path: '/api/dsh-lark/connect/unbind', methods: ['POST'], requestBody: 'buffered' },
     ]
@@ -1115,6 +1116,10 @@ export function apply(ctx, config = {}) {
 
               if (method === 'GET' && route === '/connect/login/state') {
                 return jsonResponse(200, ops.exchangeState())
+              }
+
+              if (method === 'POST' && route === '/connect/cancel') {
+                return jsonResponse(200, ops.cancelConnect())
               }
 
               if (method === 'POST' && route === '/connect/logout') {
@@ -1560,6 +1565,12 @@ export function apply(ctx, config = {}) {
         if (cliAccountHandle === handle) cliAccountHandle = null
         return handle.dispose()
       }
+    })
+  }
+
+  if (typeof ctx.effect === 'function') {
+    ctx.effect(() => () => {
+      if (typeof ops.cancelConnect === 'function') ops.cancelConnect()
     })
   }
 }

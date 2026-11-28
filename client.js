@@ -545,6 +545,8 @@ window.__ModuleLoader__.load({
       'gate.noAuth.done': '已授权，立即核验',
       'gate.noAuth.reopen': '重新打开',
       'gate.noAuth.switchApp': '更换应用',
+      'gate.linkedApp': '已关联应用',
+      'gate.cancel': '取消',
       'gate.waiting': '正在确认',
       'gate.autoChecking': '正在自动检测连接状态…',
       'gate.pending': '尚未收到飞书确认，请在浏览器显示成功后重试',
@@ -821,6 +823,8 @@ window.__ModuleLoader__.load({
       'gate.noAuth.done': 'Authorized, verify',
       'gate.noAuth.reopen': 'Open again',
       'gate.noAuth.switchApp': 'Switch app',
+      'gate.linkedApp': 'Linked app',
+      'gate.cancel': 'Cancel',
       'gate.waiting': 'Confirming',
       'gate.autoChecking': 'Auto-detecting authorization…',
       'gate.pending': 'Not confirmed yet. Finish authorization in the browser and retry.',
@@ -1863,6 +1867,50 @@ window.__ModuleLoader__.load({
   user-select: all;
   overflow-x: auto;
   white-space: nowrap;
+}
+.lw-gate-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--lw-surface-2);
+  border: 0.5px solid var(--lw-line);
+}
+.lw-gate-context-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.lw-gate-context-label {
+  font-size: 12px;
+  color: var(--lw-ink-3);
+  flex: none;
+}
+.lw-gate-context-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lw-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.lw-gate-context-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--lw-ink-3);
+}
+.lw-gate-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--lw-line);
 }
 .lw-url {
   font-family: var(--mono);
@@ -4357,6 +4405,13 @@ body:has(.lw) [class*="viewArea"] {
         }
       }, [brand, teamId, teamSecret, onRecheck, post, t])
 
+      useEffect(() => {
+        setLink(null)
+        setDeviceCode(null)
+        setError(null)
+        setAutoChecking(false)
+      }, [stage])
+
       const switchApp = useCallback(async () => {
         setBusyAction('unbind')
         setError(null)
@@ -4365,6 +4420,7 @@ body:has(.lw) [class*="viewArea"] {
           if (payload.ok) {
             setLink(null)
             setDeviceCode(null)
+            setAutoChecking(false)
             onRecheck()
           } else {
             setError(humanize(payload.message, t))
@@ -4375,6 +4431,19 @@ body:has(.lw) [class*="viewArea"] {
           setBusyAction(null)
         }
       }, [onRecheck, post, t])
+
+      const cancelFlow = useCallback(async () => {
+        setBusyAction('cancel')
+        setError(null)
+        try {
+          await post('/connect/cancel', {})
+        } catch {} finally {
+          setLink(null)
+          setDeviceCode(null)
+          setAutoChecking(false)
+          setBusyAction(null)
+        }
+      }, [post])
 
       const title = stage === 'no-cli' ? t('gate.noTool.title') : stage === 'no-app' ? t('gate.noApp.title') : t('gate.noAuth.title')
       const bodyText = stage === 'no-cli' ? t('gate.noTool.body') : stage === 'no-app' ? t('gate.noApp.body') : t('gate.noAuth.body')
@@ -4412,7 +4481,7 @@ body:has(.lw) [class*="viewArea"] {
           actions.push(
             h(
               Button,
-              { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') },
+              { key: 'reopen', variant: 'default', onClick: () => window.open(link, '_blank', 'noopener') },
               t('gate.noApp.reopen'),
               h(Icon, { name: 'arrowUpRight', size: 13 }),
             ),
@@ -4428,13 +4497,6 @@ body:has(.lw) [class*="viewArea"] {
               busyAction === 'start' ? `${t('gate.waiting')}…` : t('gate.noAuth.cta'),
             ),
           )
-          actions.push(
-            h(
-              Button,
-              { key: 'switchApp', variant: 'ghost', disabled: busy, onClick: switchApp },
-              t('gate.noAuth.switchApp'),
-            ),
-          )
         } else {
           actions.push(
             h(
@@ -4448,7 +4510,7 @@ body:has(.lw) [class*="viewArea"] {
             actions.push(
               h(
                 Button,
-                { key: 'reopen', variant: 'ghost', onClick: () => window.open(link, '_blank', 'noopener') },
+                { key: 'reopen', variant: 'default', onClick: () => window.open(link, '_blank', 'noopener') },
                 t('gate.noAuth.reopen'),
                 h(Icon, { name: 'arrowUpRight', size: 13 }),
               ),
@@ -4456,6 +4518,10 @@ body:has(.lw) [class*="viewArea"] {
           }
         }
       }
+
+      const isWaitingFlow = (stage === 'no-app' && Boolean(link)) || (stage === 'no-auth' && Boolean(deviceCode))
+      const linkedAppName = health?.app?.appName || ''
+      const linkedAppId = health?.app?.appId || ''
 
       return h(
         'section',
@@ -4467,6 +4533,37 @@ body:has(.lw) [class*="viewArea"] {
           h('h2', { className: 'lw-h lw-h-lg', id: 'lw-gate-title' }, title),
           h('p', { className: 'lw-p' }, bodyText),
         ),
+        stage === 'no-auth' && (linkedAppName || linkedAppId)
+          ? h(
+              'div',
+              { className: 'lw-gate-context' },
+              h(
+                'div',
+                { className: 'lw-gate-context-main' },
+                h('span', { className: 'lw-gate-context-label' }, t('gate.linkedApp')),
+                linkedAppName
+                  ? h('span', { className: 'lw-gate-context-name', title: linkedAppName }, linkedAppName)
+                  : null,
+                linkedAppId
+                  ? h(
+                      'span',
+                      { className: linkedAppName ? 'lw-gate-context-id' : 'lw-gate-context-name lw-mono', title: linkedAppId },
+                      linkedAppId,
+                    )
+                  : null,
+              ),
+              h(
+                Button,
+                {
+                  key: 'switchApp',
+                  variant: 'link',
+                  disabled: busyAction === 'cancel' || busyAction === 'unbind',
+                  onClick: switchApp,
+                },
+                t('gate.noAuth.switchApp'),
+              ),
+            )
+          : null,
         stage === 'no-cli' && busyAction === 'install'
           ? h(
               'div',
@@ -4476,14 +4573,6 @@ body:has(.lw) [class*="viewArea"] {
             )
           : null,
         actions.length > 0 ? h('div', { className: 'lw-actions' }, actions) : null,
-        autoChecking
-          ? h(
-              'div',
-              { className: 'lw-wait', role: 'status', 'aria-live': 'polite' },
-              h('span', { className: 'lw-dot is-busy' }),
-              t('gate.autoChecking'),
-            )
-          : null,
         error
           ? h(Banner, {
               tone: 'error',
@@ -4501,6 +4590,30 @@ body:has(.lw) [class*="viewArea"] {
                     t('error.retry'),
                   ),
             })
+          : null,
+        isWaitingFlow
+          ? h(
+              'div',
+              { className: 'lw-gate-footer' },
+              autoChecking
+                ? h(
+                    'div',
+                    { className: 'lw-wait', role: 'status', 'aria-live': 'polite' },
+                    h('span', { className: 'lw-dot is-busy' }),
+                    t('gate.autoChecking'),
+                  )
+                : h('span'),
+              h(
+                Button,
+                {
+                  key: 'cancelFlow',
+                  variant: 'link',
+                  disabled: busyAction === 'cancel' || busyAction === 'unbind',
+                  onClick: cancelFlow,
+                },
+                t('gate.cancel'),
+              ),
+            )
           : null,
         stage === 'no-cli'
           ? h(

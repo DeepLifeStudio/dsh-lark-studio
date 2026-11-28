@@ -1256,11 +1256,25 @@ export function createOperations({ ctx, config = {}, planner }) {
     if (exchange && !exchange.done && exchange.code === deviceCode) {
       return { ok: true, started: false }
     }
-    const record = { code: deviceCode, done: false, ok: false, message: undefined, startedAt: Date.now() }
+    if (exchange && !exchange.done) {
+      exchange.cancelled = true
+      exchange.done = true
+      try { exchange.controller?.abort?.() } catch {}
+    }
+    const controller = new AbortController()
+    const record = { code: deviceCode, done: false, ok: false, cancelled: false, message: undefined, startedAt: Date.now(), controller }
     exchange = record
-    runJson(['auth', 'login', '--device-code', deviceCode, '--json'])
+    runJson(['auth', 'login', '--device-code', deviceCode, '--json'], controller.signal)
       .then(async (result) => {
+        if (record.cancelled || controller.signal.aborted) {
+          record.ok = false
+          return
+        }
         const auth = await authStatus(undefined).catch(() => undefined)
+        if (record.cancelled || controller.signal.aborted) {
+          record.ok = false
+          return
+        }
         const partialGrantOk = !result.ok && result.exitCode === 3 && Boolean(auth && auth.userReady)
         if (result.ok || partialGrantOk) {
           record.ok = true
@@ -1273,7 +1287,9 @@ export function createOperations({ ctx, config = {}, planner }) {
       })
       .catch((error) => {
         record.ok = false
-        record.message = error instanceof Error ? error.message : String(error)
+        if (!record.cancelled && !controller.signal.aborted) {
+          record.message = error instanceof Error ? error.message : String(error)
+        }
       })
       .finally(() => {
         record.done = true
@@ -1286,6 +1302,7 @@ export function createOperations({ ctx, config = {}, planner }) {
     return {
       done: exchange.done,
       ok: exchange.ok,
+      cancelled: Boolean(exchange.cancelled),
       message: exchange.message,
       waitedMs: Date.now() - exchange.startedAt,
       auth: exchange.auth,
@@ -1295,24 +1312,46 @@ export function createOperations({ ctx, config = {}, planner }) {
   async function finishLogin(deviceCode, signal) {
     const started = beginExchange(deviceCode)
     if (!started.ok) return started
+    const activeRecord = exchange
     const deadline = Date.now() + 25000
-    while (Date.now() < deadline && !exchange.done) await sleep(300)
-    if (!exchange.done) {
+    while (Date.now() < deadline && activeRecord && !activeRecord.done && !activeRecord.cancelled) await sleep(300)
+    if (!activeRecord || activeRecord.cancelled) {
+      return { ok: false, cancelled: true, message: '已取消授权。' }
+    }
+    if (!activeRecord.done) {
       return { ok: false, pending: true, message: '还在等飞书确认。你可以在浏览器里再点一次，或者稍等片刻。' }
     }
-    if (!exchange.ok) {
-      return { ok: false, message: exchange.message ?? '授权没有完成。', hint: '先在浏览器里点「同意」，再回来。' }
+    if (!activeRecord.ok) {
+      return { ok: false, message: activeRecord.message ?? '授权没有完成。', hint: '先在浏览器里点「同意」，再回来。' }
     }
     invalidateScopesCache()
     return { ok: true, auth: await authStatus(signal) }
   }
 
+  function cancelConnect() {
+    if (appInit) {
+      const prev = appInit
+      appInit = null
+      prev.cancelled = true
+      prev.done = true
+      if (prev.timer) clearTimeout(prev.timer)
+      try { prev.handle?.terminate?.() } catch {}
+    }
+    if (exchange) {
+      const prev = exchange
+      exchange = null
+      prev.cancelled = true
+      prev.done = true
+      try { prev.controller?.abort?.() } catch {}
+    }
+    return { ok: true, cancelled: true }
+  }
+
   function clearConnectionCaches() {
+    cancelConnect()
     invalidateScopesCache()
     detectedBrandCache = ''
     appNameCache = { appId: '', name: '', at: 0, promise: null }
-    appInit = null
-    exchange = null
   }
 
   async function logout(signal) {
@@ -3320,6 +3359,7 @@ export function createOperations({ ctx, config = {}, planner }) {
     finishLogin,
     logout,
     unbindApp,
+    cancelConnect,
     clearConnectionCaches,
     exchangeState,
     getScopes,

@@ -773,7 +773,7 @@ test('10.1 旧 /dsh-lark/api HTTP 路由与固定 desktop-workbench 绕过已彻
   apply(mockCtx)
 
   assert.strictEqual(webServerRegisterCalled, false, '不应注册任何旧版 webServer /dsh-lark/api 路由')
-  assert.strictEqual(registeredRoutes.size, 19, '全部 19 个端点应仅通过 DSH Connection Fetch 注册')
+  assert.strictEqual(registeredRoutes.size, 20, '全部 20 个端点应仅通过 DSH Connection Fetch 注册')
 })
 
 test('10.4 DSH Connection Fetch 路由注册与调用测试 (官方 Connection 机制)', async () => {
@@ -816,6 +816,7 @@ test('10.4 DSH Connection Fetch 路由注册与调用测试 (官方 Connection �
     '/api/dsh-lark/connect/login/start',
     '/api/dsh-lark/connect/login/finish',
     '/api/dsh-lark/connect/login/state',
+    '/api/dsh-lark/connect/cancel',
     '/api/dsh-lark/connect/logout',
     '/api/dsh-lark/connect/unbind',
   ]
@@ -1214,6 +1215,12 @@ test('12.1 明面与暗面全部请求及其返回响应结构穷尽验证 (27 �
   const r12 = await callConnection('/api/dsh-lark/connect/logout', 'POST')
   assert.ok(r12.status === 200 || r12.status === 422)
   assert.strictEqual(typeof r12.data.ok, 'boolean')
+
+  // 12b. POST /connect/cancel
+  const r12b = await callConnection('/api/dsh-lark/connect/cancel', 'POST')
+  assert.strictEqual(r12b.status, 200)
+  assert.strictEqual(r12b.data.ok, true)
+  assert.strictEqual(r12b.data.cancelled, true)
 
   // 13. POST /connect/unbind
   const r13 = await callConnection('/api/dsh-lark/connect/unbind', 'POST')
@@ -3802,11 +3809,14 @@ test('17.6 退出登录同步解绑应用、清理品牌/权限缓存，且未�
   const cliPath = decodeURIComponent(new URL('./package.json', import.meta.url).pathname)
   const calls = []
   let scenario = 'logged_out_with_app' // logged_out_with_app | partial_user_scope | fallback_no_tenant_leak | after_logout_feishu
+  let appInitSeq = 0
+  let appInitTerminated = 0
+  let exchangeAborted = false
 
   const opsAuth = createOperations({
     ctx: {
       subprocess: {
-        spawn({ argv }) {
+        spawn({ argv, signal }) {
           const args = argv.slice(1)
           calls.push(args)
           if (args[0] === 'config' && args[1] === 'show') {
@@ -3903,12 +3913,37 @@ test('17.6 退出登录同步解绑应用、清理品牌/权限缓存，且未�
             return { done: Promise.resolve({ exitCode: 0, stdout: JSON.stringify({ ok: true, loggedOut: true }), stderr: '' }), terminate() {} }
           }
           if (args[0] === 'config' && args[1] === 'init' && args.includes('--new')) {
+            appInitSeq += 1
+            const seq = appInitSeq
             return {
               done: new Promise(() => {}),
               collected: {
-                stdout: { readFrom: () => ({ text: 'https://open.feishu.cn/page/cli?user_code=TEST-CODE\n' }) },
+                stdout: { readFrom: () => ({ text: `https://open.feishu.cn/page/cli?user_code=TEST-CODE-${seq}\n` }) },
                 stderr: { readFrom: () => ({ text: '' }) },
               },
+              terminate() { appInitTerminated += 1 },
+            }
+          }
+          if (args[0] === 'auth' && args[1] === 'login' && args.includes('--no-wait')) {
+            return {
+              done: Promise.resolve({
+                exitCode: 0,
+                stdout: JSON.stringify({ ok: true, verification_url: 'https://accounts.feishu.cn/device?code=dc_cancel', device_code: 'dc_cancel' }),
+                stderr: '',
+              }),
+              terminate() {},
+            }
+          }
+          if (args[0] === 'auth' && args[1] === 'login' && args.includes('--device-code')) {
+            return {
+              done: new Promise((resolve) => {
+                if (signal) {
+                  signal.addEventListener('abort', () => {
+                    exchangeAborted = true
+                    resolve({ exitCode: 1, stdout: '', stderr: 'aborted' })
+                  }, { once: true })
+                }
+              }),
               terminate() {},
             }
           }
@@ -4006,13 +4041,30 @@ test('17.6 退出登录同步解绑应用、清理品牌/权限缓存，且未�
   const st3 = await opsAuth.connectStatus()
   assert.strictEqual(st3.app.appName, '飞书工作台新应用', '退出后 appNameCache 应被清空并拉取新应用名称')
 
+  // 5d. cancelConnect 必须终止进行中的 appInit 与 auth exchange 子进程，取消后可重新发起新链接
+  appInitTerminated = 0
+  exchangeAborted = false
+  const initBeforeCancel = await opsAuth.startAppInit()
+  assert.ok(initBeforeCancel.ok && initBeforeCancel.url.includes('TEST-CODE-'))
+  const loginBeforeCancel = await opsAuth.startLogin()
+  assert.strictEqual(loginBeforeCancel.ok, true)
+  const cancelRes = opsAuth.cancelConnect()
+  assert.strictEqual(cancelRes.ok, true)
+  assert.strictEqual(appInitTerminated, 1, 'cancelConnect 应 terminate 正在运行的 config init --new 子进程')
+  assert.strictEqual(exchangeAborted, true, 'cancelConnect 应通过 AbortSignal 中止后台 auth login --device-code 子进程')
+  assert.strictEqual(opsAuth.exchangeState().idle, true, '取消后 exchangeState 应回到 idle 状态')
+  const initAfterCancel = await opsAuth.startAppInit()
+  assert.notStrictEqual(initAfterCancel.url, initBeforeCancel.url, '取消后重新发起应拿到新的创建链接而非复用旧进程')
+  opsAuth.cancelConnect()
+
   // 6. client.js 前端契约：未登录态文案、切换应用入口、AccountModal 登录态门禁与 Web 纯净性
   const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
-  for (const key of ['account.scopesNeedLogin', 'account.scopesNeedApp', 'account.signInNow', 'gate.noAuth.switchApp', 'gate.noApp.checking', 'gate.noApp.pending', 'gate.noApp.expired']) {
+  for (const key of ['account.scopesNeedLogin', 'account.scopesNeedApp', 'account.signInNow', 'gate.noAuth.switchApp', 'gate.linkedApp', 'gate.cancel', 'gate.noApp.checking', 'gate.noApp.pending', 'gate.noApp.expired']) {
     const matches = clientSrc.match(new RegExp(`'${key.replace(/\./g, '\\.')}'`, 'g')) || []
     assert.ok(matches.length >= 2, `client.js 中英文词典应同时包含 ${key}`)
   }
   assert.ok(clientSrc.includes('const switchApp = useCallback'), 'ConnectGate 应在 no-auth 阶段提供更换应用能力')
+  assert.ok(clientSrc.includes('const cancelFlow = useCallback'), 'ConnectGate 应在关联应用与授权等待阶段提供取消流程')
   assert.ok(clientSrc.includes('const checkAppNow = useCallback'), 'ConnectGate 应在 no-app 阶段提供带反馈的手动检测')
   assert.strictEqual(
     /\brequire\s*\(\s*['"](?:node:|fs|path|os|child_process|crypto|http|https)['"]|\bprocess\.env\b|\bBuffer\.from\b/.test(clientSrc),
